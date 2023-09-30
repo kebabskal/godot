@@ -3250,6 +3250,7 @@ void RenderingServer::_bind_methods() {
 	BIND_ENUM_CONSTANT(FEATURE_MULTITHREADED);
 
 	ADD_SIGNAL(MethodInfo("frame_pre_draw"));
+	ADD_SIGNAL(MethodInfo("frame_custom_hook"));
 	ADD_SIGNAL(MethodInfo("frame_post_draw"));
 
 	ClassDB::bind_method(D_METHOD("force_sync"), &RenderingServer::sync);

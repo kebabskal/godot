@@ -483,6 +483,13 @@ void RendererSceneRenderRD::_render_buffers_post_process_and_tonemap(const Rende
 	}
 
 	{
+		RENDER_TIMESTAMP("Custom Render Hook");
+		RD::get_singleton()->draw_command_begin_label("Custom Render Hook");
+		RS::get_singleton()->emit_signal(SNAME("frame_custom_hook"), p_render_data->render_buffers);
+		RD::get_singleton()->draw_command_end_label();
+	}
+
+	{
 		RENDER_TIMESTAMP("Tonemap");
 		RD::get_singleton()->draw_command_begin_label("Tonemap");
 
