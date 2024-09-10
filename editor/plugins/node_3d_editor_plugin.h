@@ -899,6 +899,9 @@ public:
 	real_t get_translate_snap() const;
 	real_t get_rotate_snap() const;
 	real_t get_scale_snap() const;
+	void set_translate_snap(real_t v);
+	void set_rotate_snap(real_t v);
+	void set_scale_snap(real_t v);
 
 	Ref<ArrayMesh> get_move_gizmo(int idx) const { return move_gizmo[idx]; }
 	Ref<ArrayMesh> get_axis_gizmo(int idx) const { return axis_gizmo[idx]; }

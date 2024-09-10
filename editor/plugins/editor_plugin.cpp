@@ -517,6 +517,18 @@ real_t EditorPlugin::get_node_3d_scale_snap() {
 	return Node3DEditor::get_singleton()->get_scale_snap();
 }
 
+void EditorPlugin::set_node_3d_translate_snap(real_t v) {
+	Node3DEditor::get_singleton()->set_translate_snap(v);
+}
+
+void EditorPlugin::set_node_3d_rotate_snap(real_t v) {
+	Node3DEditor::get_singleton()->set_rotate_snap(v);
+}
+
+void EditorPlugin::set_node_3d_scale_snap(real_t v) {
+	Node3DEditor::get_singleton()->set_scale_snap(v);
+}
+
 int find(const PackedStringArray &a, const String &v) {
 	const String *r = a.ptr();
 	for (int j = 0; j < a.size(); ++j) {
@@ -663,6 +675,9 @@ void EditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_node_3d_translate_snap"), &EditorPlugin::get_node_3d_translate_snap);
 	ClassDB::bind_method(D_METHOD("get_node_3d_rotate_snap"), &EditorPlugin::get_node_3d_rotate_snap);
 	ClassDB::bind_method(D_METHOD("get_node_3d_scale_snap"), &EditorPlugin::get_node_3d_scale_snap);
+	ClassDB::bind_method(D_METHOD("set_node_3d_translate_snap", "double"), &EditorPlugin::set_node_3d_translate_snap);
+	ClassDB::bind_method(D_METHOD("set_node_3d_rotate_snap", "double"), &EditorPlugin::set_node_3d_rotate_snap);
+	ClassDB::bind_method(D_METHOD("set_node_3d_scale_snap", "double"), &EditorPlugin::set_node_3d_scale_snap);
 
 	ClassDB::bind_method(D_METHOD("get_editor_interface"), &EditorPlugin::get_editor_interface);
 	ClassDB::bind_method(D_METHOD("get_script_create_dialog"), &EditorPlugin::get_script_create_dialog);

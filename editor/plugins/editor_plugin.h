@@ -264,6 +264,9 @@ public:
 	real_t get_node_3d_translate_snap();
 	real_t get_node_3d_rotate_snap();
 	real_t get_node_3d_scale_snap();
+	void set_node_3d_translate_snap(real_t v);
+	void set_node_3d_rotate_snap(real_t v);
+	void set_node_3d_scale_snap(real_t v);
 
 	void enable_plugin();
 	void disable_plugin();

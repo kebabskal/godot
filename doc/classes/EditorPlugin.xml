@@ -605,6 +605,27 @@
 				Returns the amount of units the 3D editor's translation snapping is set to.
 			</description>
 		</method>
+		<method name="set_node_3d_rotate_snap">
+			<return type="void" />
+			<param index="0" name="value" type="float" />
+			<description>
+				Sets the 3D editor's rotational snapping in degrees.
+			</description>
+		</method>
+		<method name="set_node_3d_scale_snap">
+			<return type="void" />
+			<param index="0" name="value" type="float" />
+			<description>
+				Sets the 3D editor's scale snapping.
+			</description>
+		</method>
+		<method name="set_node_3d_translate_snap">
+			<return type="void" />
+			<param index="0" name="value" type="float" />
+			<description>
+				Sets the 3D editor's translation snapping.
+			</description>
+		</method>
 		<method name="get_plugin_version" qualifiers="const">
 			<return type="String" />
 			<description>

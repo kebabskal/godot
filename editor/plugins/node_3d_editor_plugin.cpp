@@ -9293,6 +9293,21 @@ real_t Node3DEditor::get_scale_snap() const {
 	return snap_value;
 }
 
+void Node3DEditor::set_translate_snap(real_t v) {
+	snap_translate_value = v;
+	_snap_update();
+}
+
+void Node3DEditor::set_rotate_snap(real_t v) {
+	snap_rotate_value = v;
+	_snap_update();
+}
+
+void Node3DEditor::set_scale_snap(real_t v) {
+	snap_scale_value = v;
+	_snap_update();
+}
+
 struct _GizmoPluginPriorityComparator {
 	bool operator()(const Ref<EditorNode3DGizmoPlugin> &p_a, const Ref<EditorNode3DGizmoPlugin> &p_b) const {
 		if (p_a->get_priority() == p_b->get_priority()) {
