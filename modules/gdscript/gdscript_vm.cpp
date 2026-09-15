@@ -309,6 +309,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_CALL_NATIVE_STATIC_VALIDATED_NO_RETURN, \
 		&&OPCODE_CALL_METHOD_BIND_VALIDATED_RETURN, \
 		&&OPCODE_CALL_METHOD_BIND_VALIDATED_NO_RETURN, \
+		&&OPCODE_CALL_SCRIPT,                          \
 		&&OPCODE_AWAIT, \
 		&&OPCODE_AWAIT_RESUME, \
 		&&OPCODE_CREATE_LAMBDA, \
@@ -2275,6 +2276,97 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 #endif
 
 				ip += 3;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_CALL_SCRIPT) {
+				LOAD_INSTRUCTION_ARGS
+				CHECK_SPACE(4 + instr_arg_count);
+
+				ip += instr_arg_count;
+
+				int argc = _code_ptr[ip + 1];
+				GD_ERR_BREAK(argc < 0);
+
+				int slot = _code_ptr[ip + 2];
+
+				int methodname_idx = _code_ptr[ip + 3];
+				GD_ERR_BREAK(methodname_idx < 0 || methodname_idx >= _global_names_count);
+				const StringName *methodname = &_global_names_ptr[methodname_idx];
+
+				GodotProfileZoneScriptSystemCall(methodname, source, name, *methodname, line);
+
+				Variant **argptrs = instruction_args;
+
+				GET_INSTRUCTION_ARG(base, argc);
+				GET_INSTRUCTION_ARG(dst, argc + 1);
+
+				// Resolve the target instance. `self` is the common case and needs no object lookup.
+				GDScriptInstance *target_instance = nullptr;
+				if (base == &stack[ADDR_STACK_SELF]) {
+					target_instance = p_instance;
+				} else if (base->get_type() == Variant::OBJECT) {
+					Object *base_obj = base->get_validated_object();
+					if (base_obj != nullptr) {
+						ScriptInstance *si = base_obj->get_script_instance();
+						if (si != nullptr && si->get_language() == GDScriptLanguage::get_singleton()) {
+							target_instance = static_cast<GDScriptInstance *>(si);
+						}
+					}
+				}
+
+				GDScriptFunction *target_function = nullptr;
+				if (target_instance != nullptr) {
+					target_function = target_instance->script->find_vtable_function(slot, *methodname);
+				}
+
+#ifdef DEBUG_ENABLED
+				uint64_t call_time = 0;
+				if (GDScriptLanguage::get_singleton()->profiling) {
+					call_time = OS::get_singleton()->get_ticks_usec();
+				}
+#endif
+
+				Callable::CallError err;
+				if (likely(target_function != nullptr)) {
+					*dst = target_function->call(target_instance, (const Variant **)argptrs, argc, err);
+				} else {
+					// Slot is stale (hot reload in progress), the base is not a GDScript object, or the method
+					// was removed. Fall back to the generic name-based call, which reports the proper error.
+					Variant temp_ret;
+					base->callp(*methodname, (const Variant **)argptrs, argc, temp_ret, err);
+					*dst = temp_ret;
+				}
+
+#ifdef DEBUG_ENABLED
+				if (GDScriptLanguage::get_singleton()->profiling) {
+					function_call_time += OS::get_singleton()->get_ticks_usec() - call_time;
+				}
+#endif
+
+				if (err.error != Callable::CallError::CALL_OK) {
+#ifdef DEBUG_ENABLED
+					String methodstr = *methodname;
+					String basestr = _get_var_type(base);
+					err_text = _get_call_error("function '" + methodstr + "' in base '" + basestr + "'", (const Variant **)argptrs, argc, *dst, err);
+#endif
+					OPCODE_BREAK;
+				}
+
+#ifdef DEBUG_ENABLED
+				if (dst->get_type() == Variant::OBJECT) {
+					// Check if getting a function state without await.
+					bool was_freed = false;
+					Object *obj = dst->get_validated_object_with_check(was_freed);
+
+					if (obj && obj->is_class_ptr(GDScriptFunctionState::get_class_ptr_static())) {
+						err_text = R"(Trying to call an async function without "await".)";
+						OPCODE_BREAK;
+					}
+				}
+#endif
+
+				ip += 4;
 			}
 			DISPATCH_OPCODE;
 

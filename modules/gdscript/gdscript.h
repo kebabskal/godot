@@ -96,6 +96,12 @@ class GDScript : public Script {
 
 	HashMap<StringName, Variant> constants;
 	HashMap<StringName, GDScriptFunction *> member_functions;
+	// Method slot table used by `OPCODE_CALL_SCRIPT` to dispatch script-to-script calls without a name lookup.
+	// `vtable_indices` maps every method name visible in this class (including inherited ones) to a slot,
+	// and is laid out so that a subclass shares its base's slots. `vtable` only holds the functions this
+	// class defines itself; inherited slots are `nullptr` and resolved by walking `base`.
+	HashMap<StringName, int> vtable_indices;
+	Vector<GDScriptFunction *> vtable;
 	HashMap<StringName, Ref<GDScript>> subclasses;
 	HashMap<StringName, MethodInfo> _signals;
 	Dictionary rpc_config;
@@ -250,6 +256,30 @@ public:
 	}
 
 	_FORCE_INLINE_ const HashMap<StringName, GDScriptFunction *> &get_member_functions() const { return member_functions; }
+
+	// Compile-time slot lookup for `OPCODE_CALL_SCRIPT`; -1 when the method is unknown to this class.
+	_FORCE_INLINE_ int get_vtable_slot(const StringName &p_name) const {
+		const int *slot = vtable_indices.getptr(p_name);
+		return slot != nullptr ? *slot : -1;
+	}
+
+	// Resolves a method slot to the most-derived definition on this script's inheritance chain.
+	// Returns `nullptr` if the slot is out of date (e.g. mid hot-reload) so callers can fall back to
+	// a name-based lookup. The name check makes a stale slot safe rather than wrong.
+	_FORCE_INLINE_ GDScriptFunction *find_vtable_function(int p_slot, const StringName &p_name) const {
+		for (const GDScript *s = this; s != nullptr; s = s->base.ptr()) {
+			if (unlikely(!s->valid)) {
+				return nullptr;
+			}
+			if ((uint32_t)p_slot < (uint32_t)s->vtable.size()) {
+				GDScriptFunction *f = s->vtable[p_slot];
+				if (f != nullptr) {
+					return f->get_name() == p_name ? f : nullptr;
+				}
+			}
+		}
+		return nullptr;
+	}
 	_FORCE_INLINE_ const HashMap<GDScriptFunction *, LambdaInfo> &get_lambda_info() const { return lambda_info; }
 
 	_FORCE_INLINE_ const GDScriptFunction *get_implicit_initializer() const { return implicit_initializer; }

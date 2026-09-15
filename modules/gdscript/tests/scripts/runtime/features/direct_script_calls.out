@@ -1,0 +1,12 @@
+GDTEST_OK
+42
+via base: base
+via base: derived
+14
+derived
+15
+["no_return"]
+610
+3
+["set 3", "get"]
+unrelated
