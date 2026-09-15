@@ -70,3 +70,69 @@ func test():
 	# Float division by zero follows IEEE like the generic path.
 	var z := 0.0
 	print(1.0 / z)
+
+	# Int division, modulo (truncating toward zero, like C), bitwise and shifts.
+	var n := -7
+	@warning_ignore("integer_division")
+	print(n / 2, " ", n % 3, " ", 7 / 2, " ", 7 % 3)
+	var m := 12
+	m = m & 10
+	print(m)
+	m = m | 1
+	print(m)
+	m = m ^ 15
+	print(m)
+	m = m << 3
+	print(m)
+	m = m >> 2
+	print(m)
+
+	# Unary operators into locals and temporaries.
+	var neg := -m
+	print(neg)
+	neg = -neg
+	print(neg)
+	var nf := -1.25
+	nf = -nf
+	print(nf)
+	var flag := true
+	flag = not flag
+	print(flag, not flag)
+	var bits := 5
+	bits = ~bits
+	print(bits)
+
+	# Vector2 and Vector3 arithmetic with vectors and scalars in both orders.
+	var p := Vector2(1.0, 2.0)
+	var q := Vector2(3.0, 5.0)
+	p = p + q
+	print(p)
+	p = p - Vector2(1.0, 1.0)
+	print(p)
+	p = p * q
+	print(p)
+	p = p / q
+	print(p)
+	p = p * 2.0
+	print(p)
+	p = 0.5 * p
+	print(p)
+	p = p * 3
+	print(p)
+	p = 2 * p
+	print(p)
+	p = p / 4.0
+	print(p)
+	p = p / 2
+	print(p)
+	p = -p
+	print(p)
+	print(p == Vector2(-1.5, -3.0), p != q)
+	var r := Vector3(1.0, 2.0, 3.0)
+	r = r + Vector3(1.0, 1.0, 1.0)
+	r = r * 2.0
+	r = 2 * r
+	r = r / Vector3(2.0, 2.0, 2.0)
+	r = -r
+	print(r)
+	print(r == Vector3(-4.0, -6.0, -8.0))

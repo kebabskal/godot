@@ -554,8 +554,41 @@ void GDScriptByteCodeGenerator::write_type_adjust(const Address &p_target, Varia
 	append(p_target);
 }
 
+// The inline typed opcode for `p_operator` on these built-in operand types, or -1 if there is none.
+static int _get_typed_binary_opcode(Variant::Operator p_operator, Variant::Type p_left, Variant::Type p_right) {
+#define _GDS_TYPED_BINOP_MATCH(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr, m_check) \
+	if (p_operator == Variant::m_vop && p_left == Variant::m_ta && p_right == Variant::m_tb) {           \
+		return GDScriptFunction::OPCODE_##m_name;                                                       \
+	}
+	GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_MATCH)
+#undef _GDS_TYPED_BINOP_MATCH
+	return -1;
+}
+
+// The inline typed opcode for unary `p_operator` on this built-in operand type, or -1 if there is none.
+static int _get_typed_unary_opcode(Variant::Operator p_operator, Variant::Type p_operand) {
+#define _GDS_TYPED_UNOP_MATCH(m_name, m_vop, m_ta, m_tr, m_sym, m_expr) \
+	if (p_operator == Variant::m_vop && p_operand == Variant::m_ta) {   \
+		return GDScriptFunction::OPCODE_##m_name;                       \
+	}
+	GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_MATCH)
+#undef _GDS_TYPED_UNOP_MATCH
+	return -1;
+}
+
 void GDScriptByteCodeGenerator::write_unary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand) {
 	if (HAS_BUILTIN_TYPE(p_left_operand)) {
+		const int typed_opcode = _get_typed_unary_opcode(p_operator, p_left_operand.type.builtin_type);
+		if (typed_opcode >= 0) {
+			append_opcode((GDScriptFunction::Opcode)typed_opcode);
+			append(p_left_operand);
+			append(p_target);
+			typed_binop_dst_pos = opcodes.size() - 1;
+			typed_binop_end = opcodes.size();
+			typed_binop_result_type = Variant::get_operator_return_type(p_operator, p_left_operand.type.builtin_type, Variant::NIL);
+			return;
+		}
+
 		// Gather specific operator.
 		Variant::ValidatedOperatorEvaluator op_func = Variant::get_validated_operator_evaluator(p_operator, p_left_operand.type.builtin_type, Variant::NIL);
 
@@ -584,19 +617,24 @@ void GDScriptByteCodeGenerator::write_unary_operator(const Address &p_target, Va
 	}
 }
 
-// The inline typed opcode for `p_operator` on these built-in operand types, or -1 if there is none.
-static int _get_typed_binary_opcode(Variant::Operator p_operator, Variant::Type p_left, Variant::Type p_right) {
-#define _GDS_TYPED_BINOP_MATCH(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr) \
-	if (p_operator == Variant::m_vop && p_left == Variant::m_ta && p_right == Variant::m_tb) {  \
-		return GDScriptFunction::OPCODE_##m_name;                                              \
-	}
-	GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_MATCH)
-#undef _GDS_TYPED_BINOP_MATCH
-	return -1;
-}
-
 void GDScriptByteCodeGenerator::write_binary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand, const Address &p_right_operand) {
 	bool valid = HAS_BUILTIN_TYPE(p_left_operand) && HAS_BUILTIN_TYPE(p_right_operand);
+
+	if (valid) {
+		// Inline typed opcode. Checked before the division/modulo exclusion below, since these opcodes
+		// do their own zero check.
+		const int typed_opcode = _get_typed_binary_opcode(p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type);
+		if (typed_opcode >= 0) {
+			append_opcode((GDScriptFunction::Opcode)typed_opcode);
+			append(p_left_operand);
+			append(p_right_operand);
+			append(p_target);
+			typed_binop_dst_pos = opcodes.size() - 1;
+			typed_binop_end = opcodes.size();
+			typed_binop_result_type = Variant::get_operator_return_type(p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type);
+			return;
+		}
+	}
 
 	// Avoid validated evaluator for modulo and division when operands are int or integer vector, since there's no check for division by zero.
 	if (valid && (p_operator == Variant::OP_DIVIDE || p_operator == Variant::OP_MODULE)) {
@@ -622,18 +660,6 @@ void GDScriptByteCodeGenerator::write_binary_operator(const Address &p_target, V
 			if (result_type != temp_type) {
 				write_type_adjust(p_target, result_type);
 			}
-		}
-
-		const int typed_opcode = _get_typed_binary_opcode(p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type);
-		if (typed_opcode >= 0) {
-			append_opcode((GDScriptFunction::Opcode)typed_opcode);
-			append(p_left_operand);
-			append(p_right_operand);
-			append(p_target);
-			typed_binop_dst_pos = opcodes.size() - 1;
-			typed_binop_end = opcodes.size();
-			typed_binop_result_type = Variant::get_operator_return_type(p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type);
-			return;
 		}
 
 		// Gather specific operator.

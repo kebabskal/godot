@@ -105,6 +105,30 @@ func run_vec2_add4(n: int) -> void:
 		acc = acc + d
 		acc = acc + d
 
+func run_int_divmod(n: int) -> void:
+	var acc := 0
+	for i in n:
+		acc = (acc + i) % 1000
+		acc = acc / 3
+		acc = -acc
+
+func run_vec2_scale4(n: int) -> void:
+	var acc := Vector2(1.0, 1.0)
+	for i in n:
+		acc = acc * 1.0000001
+		acc = acc * 1.0000001
+		acc = acc * 1.0000001
+		acc = acc * 1.0000001
+
+func run_vec3_add4(n: int) -> void:
+	var acc := Vector3.ZERO
+	var d := Vector3(1.0, 2.0, 3.0)
+	for i in n:
+		acc = acc + d
+		acc = acc + d
+		acc = acc + d
+		acc = acc + d
+
 func run_compare_branch(n: int) -> void:
 	var acc := 0
 	for i in n:
@@ -213,6 +237,9 @@ func _init() -> void:
 		bench("int add x4", run_int_add4, n)
 		bench("float mul x4", run_float_mul4, n)
 		bench("vec2 add x4", run_vec2_add4, n)
+		bench("int mod, div, neg", run_int_divmod, n)
+		bench("vec2 scale x4", run_vec2_scale4, n)
+		bench("vec3 add x4", run_vec3_add4, n)
 		bench("compare+branch", run_compare_branch, n)
 		bench("untyped int add x4", run_untyped_add4, n)
 		bench("self call", run_self, n)

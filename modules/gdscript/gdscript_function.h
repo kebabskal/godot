@@ -148,45 +148,90 @@ public:
 
 // Binary operators on built-in types that the VM executes inline instead of through a validated
 // evaluator function pointer: name, Variant::Operator, left type, right type, result type, symbol,
-// expression over the unboxed operands `va` and `vb`. Shared by the opcode enum, the VM, the code
-// generator and the disassembler so they cannot drift apart.
+// expression over the unboxed operands `va` and `vb`, and a check macro run before the expression
+// (see the VM for `_GDS_NO_CHECK`, `_GDS_CHECK_ZERO` and `_GDS_CHECK_SHIFT`). Shared by the opcode
+// enum, the VM, the code generator and the disassembler so they cannot drift apart.
 #define GDSCRIPT_TYPED_BINARY_OPCODES(m_op) \
-	m_op(INT_ADD, OP_ADD, INT, INT, INT, "+", va + vb) \
-	m_op(INT_SUB, OP_SUBTRACT, INT, INT, INT, "-", va - vb) \
-	m_op(INT_MUL, OP_MULTIPLY, INT, INT, INT, "*", va * vb) \
-	m_op(INT_EQ, OP_EQUAL, INT, INT, BOOL, "==", va == vb) \
-	m_op(INT_NE, OP_NOT_EQUAL, INT, INT, BOOL, "!=", va != vb) \
-	m_op(INT_LT, OP_LESS, INT, INT, BOOL, "<", va < vb) \
-	m_op(INT_LE, OP_LESS_EQUAL, INT, INT, BOOL, "<=", va <= vb) \
-	m_op(INT_GT, OP_GREATER, INT, INT, BOOL, ">", va > vb) \
-	m_op(INT_GE, OP_GREATER_EQUAL, INT, INT, BOOL, ">=", va >= vb) \
-	m_op(FLOAT_ADD, OP_ADD, FLOAT, FLOAT, FLOAT, "+", va + vb) \
-	m_op(FLOAT_SUB, OP_SUBTRACT, FLOAT, FLOAT, FLOAT, "-", va - vb) \
-	m_op(FLOAT_MUL, OP_MULTIPLY, FLOAT, FLOAT, FLOAT, "*", va * vb) \
-	m_op(FLOAT_DIV, OP_DIVIDE, FLOAT, FLOAT, FLOAT, "/", va / vb) \
-	m_op(FLOAT_EQ, OP_EQUAL, FLOAT, FLOAT, BOOL, "==", va == vb) \
-	m_op(FLOAT_NE, OP_NOT_EQUAL, FLOAT, FLOAT, BOOL, "!=", va != vb) \
-	m_op(FLOAT_LT, OP_LESS, FLOAT, FLOAT, BOOL, "<", va < vb) \
-	m_op(FLOAT_LE, OP_LESS_EQUAL, FLOAT, FLOAT, BOOL, "<=", va <= vb) \
-	m_op(FLOAT_GT, OP_GREATER, FLOAT, FLOAT, BOOL, ">", va > vb) \
-	m_op(FLOAT_GE, OP_GREATER_EQUAL, FLOAT, FLOAT, BOOL, ">=", va >= vb) \
-	m_op(INT_FLOAT_ADD, OP_ADD, INT, FLOAT, FLOAT, "+", (double)va + vb) \
-	m_op(INT_FLOAT_SUB, OP_SUBTRACT, INT, FLOAT, FLOAT, "-", (double)va - vb) \
-	m_op(INT_FLOAT_MUL, OP_MULTIPLY, INT, FLOAT, FLOAT, "*", (double)va * vb) \
-	m_op(INT_FLOAT_DIV, OP_DIVIDE, INT, FLOAT, FLOAT, "/", (double)va / vb) \
-	m_op(FLOAT_INT_ADD, OP_ADD, FLOAT, INT, FLOAT, "+", va + (double)vb) \
-	m_op(FLOAT_INT_SUB, OP_SUBTRACT, FLOAT, INT, FLOAT, "-", va - (double)vb) \
-	m_op(FLOAT_INT_MUL, OP_MULTIPLY, FLOAT, INT, FLOAT, "*", va * (double)vb) \
-	m_op(FLOAT_INT_DIV, OP_DIVIDE, FLOAT, INT, FLOAT, "/", va / (double)vb)
+	m_op(INT_ADD, OP_ADD, INT, INT, INT, "+", va + vb, _GDS_NO_CHECK) \
+	m_op(INT_SUB, OP_SUBTRACT, INT, INT, INT, "-", va - vb, _GDS_NO_CHECK) \
+	m_op(INT_MUL, OP_MULTIPLY, INT, INT, INT, "*", va * vb, _GDS_NO_CHECK) \
+	m_op(INT_DIV, OP_DIVIDE, INT, INT, INT, "/", va / vb, _GDS_CHECK_ZERO("Division by zero error")) \
+	m_op(INT_MOD, OP_MODULE, INT, INT, INT, "%", va % vb, _GDS_CHECK_ZERO("Modulo by zero error")) \
+	m_op(INT_BIT_AND, OP_BIT_AND, INT, INT, INT, "&", va & vb, _GDS_NO_CHECK) \
+	m_op(INT_BIT_OR, OP_BIT_OR, INT, INT, INT, "|", va | vb, _GDS_NO_CHECK) \
+	m_op(INT_BIT_XOR, OP_BIT_XOR, INT, INT, INT, "^", va ^ vb, _GDS_NO_CHECK) \
+	m_op(INT_SHIFT_LEFT, OP_SHIFT_LEFT, INT, INT, INT, "<<", va << vb, _GDS_CHECK_SHIFT) \
+	m_op(INT_SHIFT_RIGHT, OP_SHIFT_RIGHT, INT, INT, INT, ">>", va >> vb, _GDS_CHECK_SHIFT) \
+	m_op(INT_EQ, OP_EQUAL, INT, INT, BOOL, "==", va == vb, _GDS_NO_CHECK) \
+	m_op(INT_NE, OP_NOT_EQUAL, INT, INT, BOOL, "!=", va != vb, _GDS_NO_CHECK) \
+	m_op(INT_LT, OP_LESS, INT, INT, BOOL, "<", va < vb, _GDS_NO_CHECK) \
+	m_op(INT_LE, OP_LESS_EQUAL, INT, INT, BOOL, "<=", va <= vb, _GDS_NO_CHECK) \
+	m_op(INT_GT, OP_GREATER, INT, INT, BOOL, ">", va > vb, _GDS_NO_CHECK) \
+	m_op(INT_GE, OP_GREATER_EQUAL, INT, INT, BOOL, ">=", va >= vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_ADD, OP_ADD, FLOAT, FLOAT, FLOAT, "+", va + vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_SUB, OP_SUBTRACT, FLOAT, FLOAT, FLOAT, "-", va - vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_MUL, OP_MULTIPLY, FLOAT, FLOAT, FLOAT, "*", va * vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_DIV, OP_DIVIDE, FLOAT, FLOAT, FLOAT, "/", va / vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_EQ, OP_EQUAL, FLOAT, FLOAT, BOOL, "==", va == vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_NE, OP_NOT_EQUAL, FLOAT, FLOAT, BOOL, "!=", va != vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_LT, OP_LESS, FLOAT, FLOAT, BOOL, "<", va < vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_LE, OP_LESS_EQUAL, FLOAT, FLOAT, BOOL, "<=", va <= vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_GT, OP_GREATER, FLOAT, FLOAT, BOOL, ">", va > vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_GE, OP_GREATER_EQUAL, FLOAT, FLOAT, BOOL, ">=", va >= vb, _GDS_NO_CHECK) \
+	m_op(INT_FLOAT_ADD, OP_ADD, INT, FLOAT, FLOAT, "+", (double)va + vb, _GDS_NO_CHECK) \
+	m_op(INT_FLOAT_SUB, OP_SUBTRACT, INT, FLOAT, FLOAT, "-", (double)va - vb, _GDS_NO_CHECK) \
+	m_op(INT_FLOAT_MUL, OP_MULTIPLY, INT, FLOAT, FLOAT, "*", (double)va * vb, _GDS_NO_CHECK) \
+	m_op(INT_FLOAT_DIV, OP_DIVIDE, INT, FLOAT, FLOAT, "/", (double)va / vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_INT_ADD, OP_ADD, FLOAT, INT, FLOAT, "+", va + (double)vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_INT_SUB, OP_SUBTRACT, FLOAT, INT, FLOAT, "-", va - (double)vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_INT_MUL, OP_MULTIPLY, FLOAT, INT, FLOAT, "*", va * (double)vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_INT_DIV, OP_DIVIDE, FLOAT, INT, FLOAT, "/", va / (double)vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_ADD, OP_ADD, VECTOR2, VECTOR2, VECTOR2, "+", va + vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_SUB, OP_SUBTRACT, VECTOR2, VECTOR2, VECTOR2, "-", va - vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_MUL, OP_MULTIPLY, VECTOR2, VECTOR2, VECTOR2, "*", va * vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_DIV, OP_DIVIDE, VECTOR2, VECTOR2, VECTOR2, "/", va / vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_EQ, OP_EQUAL, VECTOR2, VECTOR2, BOOL, "==", va == vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_NE, OP_NOT_EQUAL, VECTOR2, VECTOR2, BOOL, "!=", va != vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_FLOAT_MUL, OP_MULTIPLY, VECTOR2, FLOAT, VECTOR2, "*", va * (real_t)vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_FLOAT_DIV, OP_DIVIDE, VECTOR2, FLOAT, VECTOR2, "/", va / (real_t)vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_INT_MUL, OP_MULTIPLY, VECTOR2, INT, VECTOR2, "*", va * (real_t)vb, _GDS_NO_CHECK) \
+	m_op(VECTOR2_INT_DIV, OP_DIVIDE, VECTOR2, INT, VECTOR2, "/", va / (real_t)vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_VECTOR2_MUL, OP_MULTIPLY, FLOAT, VECTOR2, VECTOR2, "*", (real_t)va * vb, _GDS_NO_CHECK) \
+	m_op(INT_VECTOR2_MUL, OP_MULTIPLY, INT, VECTOR2, VECTOR2, "*", (real_t)va * vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_ADD, OP_ADD, VECTOR3, VECTOR3, VECTOR3, "+", va + vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_SUB, OP_SUBTRACT, VECTOR3, VECTOR3, VECTOR3, "-", va - vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_MUL, OP_MULTIPLY, VECTOR3, VECTOR3, VECTOR3, "*", va * vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_DIV, OP_DIVIDE, VECTOR3, VECTOR3, VECTOR3, "/", va / vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_EQ, OP_EQUAL, VECTOR3, VECTOR3, BOOL, "==", va == vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_NE, OP_NOT_EQUAL, VECTOR3, VECTOR3, BOOL, "!=", va != vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_FLOAT_MUL, OP_MULTIPLY, VECTOR3, FLOAT, VECTOR3, "*", va * (real_t)vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_FLOAT_DIV, OP_DIVIDE, VECTOR3, FLOAT, VECTOR3, "/", va / (real_t)vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_INT_MUL, OP_MULTIPLY, VECTOR3, INT, VECTOR3, "*", va * (real_t)vb, _GDS_NO_CHECK) \
+	m_op(VECTOR3_INT_DIV, OP_DIVIDE, VECTOR3, INT, VECTOR3, "/", va / (real_t)vb, _GDS_NO_CHECK) \
+	m_op(FLOAT_VECTOR3_MUL, OP_MULTIPLY, FLOAT, VECTOR3, VECTOR3, "*", (real_t)va * vb, _GDS_NO_CHECK) \
+	m_op(INT_VECTOR3_MUL, OP_MULTIPLY, INT, VECTOR3, VECTOR3, "*", (real_t)va * vb, _GDS_NO_CHECK)
+
+// Unary operators executed inline: name, Variant::Operator, operand type, result type, symbol,
+// expression over the unboxed operand `va`.
+#define GDSCRIPT_TYPED_UNARY_OPCODES(m_op) \
+	m_op(NEG_INT, OP_NEGATE, INT, INT, "-", -va) \
+	m_op(NEG_FLOAT, OP_NEGATE, FLOAT, FLOAT, "-", -va) \
+	m_op(NEG_VECTOR2, OP_NEGATE, VECTOR2, VECTOR2, "-", -va) \
+	m_op(NEG_VECTOR3, OP_NEGATE, VECTOR3, VECTOR3, "-", -va) \
+	m_op(NOT_BOOL, OP_NOT, BOOL, BOOL, "not ", !va) \
+	m_op(BIT_NEG_INT, OP_BIT_NEGATE, INT, INT, "~", ~va)
 
 class GDScriptFunction {
 public:
 	enum Opcode {
 		OPCODE_OPERATOR,
 		OPCODE_OPERATOR_VALIDATED,
-#define _GDS_TYPED_BINOP_ENUM(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr) OPCODE_##m_name,
+#define _GDS_TYPED_BINOP_ENUM(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr, m_check) OPCODE_##m_name,
 		GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_ENUM)
 #undef _GDS_TYPED_BINOP_ENUM
+#define _GDS_TYPED_UNOP_ENUM(m_name, m_vop, m_ta, m_tr, m_sym, m_expr) OPCODE_##m_name,
+		GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_ENUM)
+#undef _GDS_TYPED_UNOP_ENUM
 		OPCODE_TYPE_TEST_BUILTIN,
 		OPCODE_TYPE_TEST_ARRAY,
 		OPCODE_TYPE_TEST_DICTIONARY,

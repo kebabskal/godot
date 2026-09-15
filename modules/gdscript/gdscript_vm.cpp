@@ -252,13 +252,15 @@ void (*type_init_function_table[])(Variant *) = {
 };
 
 #if defined(__GNUC__) || defined(__clang__)
-#define _GDS_TYPED_BINOP_LABEL(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr) &&OPCODE_##m_name,
+#define _GDS_TYPED_BINOP_LABEL(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr, m_check) &&OPCODE_##m_name,
+#define _GDS_TYPED_UNOP_LABEL(m_name, m_vop, m_ta, m_tr, m_sym, m_expr) &&OPCODE_##m_name,
 
 #define OPCODES_TABLE \
 	static const void *switch_table_ops[] = { \
 		&&OPCODE_OPERATOR, \
 		&&OPCODE_OPERATOR_VALIDATED, \
 		GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_LABEL) \
+		GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_LABEL) \
 		&&OPCODE_TYPE_TEST_BUILTIN, \
 		&&OPCODE_TYPE_TEST_ARRAY, \
 		&&OPCODE_TYPE_TEST_DICTIONARY, \
@@ -907,7 +909,38 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 #define _GDS_GET_INT get_int
 #define _GDS_GET_FLOAT get_float
 #define _GDS_GET_BOOL get_bool
-#define _GDS_TYPED_BINOP_IMPL(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr) \
+#define _GDS_GET_VECTOR2 get_vector2
+#define _GDS_GET_VECTOR3 get_vector3
+			// A failed check reports the error like the generic operator does in debug builds, and stores
+			// the message in the result like `Variant::evaluate()` does otherwise.
+#ifdef DEBUG_ENABLED
+#define _GDS_TYPED_OP_FAIL(m_msg) \
+	{ \
+		err_text = String(m_msg) + " in operator '" + op_sym + "'."; \
+		OPCODE_BREAK; \
+	}
+#else
+#define _GDS_TYPED_OP_FAIL(m_msg) \
+	{ \
+		*dst = String(m_msg); \
+		ip += 4; \
+		DISPATCH_OPCODE; \
+	}
+#endif
+#define _GDS_NO_CHECK
+#define _GDS_CHECK_ZERO(m_msg) \
+	if (unlikely(vb == 0)) { \
+		_GDS_TYPED_OP_FAIL(m_msg); \
+	}
+#ifdef DEBUG_ENABLED
+#define _GDS_CHECK_SHIFT \
+	if (unlikely(va < 0 || vb < 0)) { \
+		_GDS_TYPED_OP_FAIL("Invalid operands for bit shifting. Only positive operands are supported."); \
+	}
+#else
+#define _GDS_CHECK_SHIFT
+#endif
+#define _GDS_TYPED_BINOP_IMPL(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr, m_check) \
 	OPCODE(OPCODE_##m_name) { \
 		CHECK_SPACE(4); \
 		GET_VARIANT_PTR(a, 0); \
@@ -916,6 +949,9 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 		GD_ERR_BREAK(a->get_type() != Variant::m_ta || b->get_type() != Variant::m_tb); \
 		const auto va = *VariantInternal::_GDS_GET_##m_ta(a); \
 		const auto vb = *VariantInternal::_GDS_GET_##m_tb(b); \
+		const char *op_sym = m_sym; \
+		(void)op_sym; \
+		m_check \
 		if (unlikely(dst->get_type() != Variant::m_tr)) { \
 			VariantInternal::initialize(dst, Variant::m_tr); \
 		} \
@@ -925,9 +961,31 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 	DISPATCH_OPCODE;
 			GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_IMPL)
 #undef _GDS_TYPED_BINOP_IMPL
+#define _GDS_TYPED_UNOP_IMPL(m_name, m_vop, m_ta, m_tr, m_sym, m_expr) \
+	OPCODE(OPCODE_##m_name) { \
+		CHECK_SPACE(3); \
+		GET_VARIANT_PTR(a, 0); \
+		GET_VARIANT_PTR(dst, 1); \
+		GD_ERR_BREAK(a->get_type() != Variant::m_ta); \
+		const auto va = *VariantInternal::_GDS_GET_##m_ta(a); \
+		if (unlikely(dst->get_type() != Variant::m_tr)) { \
+			VariantInternal::initialize(dst, Variant::m_tr); \
+		} \
+		*VariantInternal::_GDS_GET_##m_tr(dst) = (m_expr); \
+		ip += 3; \
+	} \
+	DISPATCH_OPCODE;
+			GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_IMPL)
+#undef _GDS_TYPED_UNOP_IMPL
+#undef _GDS_TYPED_OP_FAIL
+#undef _GDS_NO_CHECK
+#undef _GDS_CHECK_ZERO
+#undef _GDS_CHECK_SHIFT
 #undef _GDS_GET_INT
 #undef _GDS_GET_FLOAT
 #undef _GDS_GET_BOOL
+#undef _GDS_GET_VECTOR2
+#undef _GDS_GET_VECTOR3
 
 			OPCODE(OPCODE_TYPE_TEST_BUILTIN) {
 				CHECK_SPACE(4);
