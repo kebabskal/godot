@@ -676,7 +676,6 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 9 + argc * 2;
 			} break;
-			case OPCODE_CALL:
 			case OPCODE_CALL_SCRIPT: {
 				int instr_var_args = _code_ptr[++ip];
 				int argc = _code_ptr[ip + 1 + instr_var_args];
@@ -697,6 +696,7 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr = 6 + argc;
 			} break;
+			case OPCODE_CALL:
 			case OPCODE_CALL_RETURN:
 			case OPCODE_CALL_ASYNC: {
 				bool ret = (_code_ptr[ip]) == OPCODE_CALL_RETURN;

@@ -2,13 +2,13 @@
 # instead of a name lookup. Every case here must dispatch exactly like a name-based call.
 
 class Base:
-	var log: Array[String] = []
+	var events: Array[String] = []
 	var value: int = 0:
 		set(v):
-			log.append("set %d" % v)
+			events.append("set %d" % v)
 			value = v
 		get:
-			log.append("get")
+			events.append("get")
 			return value
 
 	func describe() -> String:
@@ -22,7 +22,7 @@ class Base:
 		return a + b
 
 	func no_return() -> void:
-		log.append("no_return")
+		events.append("no_return")
 
 	func fib(n: int) -> int:
 		if n < 2:
@@ -67,15 +67,31 @@ func test():
 
 	# Void call and recursion.
 	b.no_return()
-	print(b.log)
+	print(b.events)
 	print(b.fib(15))
 
 	# Inline setter/getter go through the same path.
 	d.value = 3
 	print(d.value)
-	print(d.log)
+	print(d.events)
 
 	# Stale-slot safety: an object whose script changed at runtime must still resolve by name.
 	var swapped: Base = Base.new()
 	swapped.set_script(Unrelated)
 	print(swapped.describe())
+
+	# Discarded return values must not leak into the shared `nil` stack slot (see GH-70964).
+	check_discarded_self_call(false)
+	check_discarded_typed_call(d, false)
+
+
+func check_discarded_self_call(f):
+	@warning_ignore("return_value_discarded")
+	helper_defined_later(1) # Self call through a method slot.
+	Utils.check(not f) # Test unary operator reading from `nil`.
+
+
+func check_discarded_typed_call(v: Base, f):
+	@warning_ignore("return_value_discarded")
+	v.only_in_base(1) # Typed script call through a method slot.
+	Utils.check(not f) # Test unary operator reading from `nil`.

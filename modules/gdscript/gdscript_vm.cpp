@@ -2327,15 +2327,21 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 #endif
 
+				// A discarded result points `dst` at the shared `nil` stack slot, which must never be written
+				// (GH-70964). Route it through a local instead, which also releases the value right away.
+				Variant discarded_ret;
+				const bool has_ret = dst != &stack[ADDR_STACK_NIL];
+				Variant *ret = has_ret ? dst : &discarded_ret;
+
 				Callable::CallError err;
 				if (likely(target_function != nullptr)) {
-					*dst = target_function->call(target_instance, (const Variant **)argptrs, argc, err);
+					*ret = target_function->call(target_instance, (const Variant **)argptrs, argc, err);
 				} else {
 					// Slot is stale (hot reload in progress), the base is not a GDScript object, or the method
 					// was removed. Fall back to the generic name-based call, which reports the proper error.
 					Variant temp_ret;
 					base->callp(*methodname, (const Variant **)argptrs, argc, temp_ret, err);
-					*dst = temp_ret;
+					*ret = temp_ret;
 				}
 
 #ifdef DEBUG_ENABLED
@@ -2348,16 +2354,16 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 #ifdef DEBUG_ENABLED
 					String methodstr = *methodname;
 					String basestr = _get_var_type(base);
-					err_text = _get_call_error("function '" + methodstr + "' in base '" + basestr + "'", (const Variant **)argptrs, argc, *dst, err);
+					err_text = _get_call_error("function '" + methodstr + "' in base '" + basestr + "'", (const Variant **)argptrs, argc, *ret, err);
 #endif
 					OPCODE_BREAK;
 				}
 
 #ifdef DEBUG_ENABLED
-				if (dst->get_type() == Variant::OBJECT) {
-					// Check if getting a function state without await.
+				if (has_ret && ret->get_type() == Variant::OBJECT) {
+					// Check if getting a function state without await. A discarded coroutine call is fine.
 					bool was_freed = false;
-					Object *obj = dst->get_validated_object_with_check(was_freed);
+					Object *obj = ret->get_validated_object_with_check(was_freed);
 
 					if (obj && obj->is_class_ptr(GDScriptFunctionState::get_class_ptr_static())) {
 						err_text = R"(Trying to call an async function without "await".)";

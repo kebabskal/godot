@@ -40,6 +40,7 @@
 #include "core/config/project_settings.h"
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
+#include "scene/scene_string_names.h"
 
 bool GDScriptCompiler::_is_class_member_property(CodeGen &codegen, const StringName &p_name) {
 	if (codegen.function_node && codegen.function_node->is_static) {
@@ -2870,7 +2871,11 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
 		StringName function_name;
 		if (member.type == GDScriptParser::ClassNode::Member::FUNCTION) {
-			function_name = member.function->identifier->name;
+			// `_ready` must keep going through `GDScriptInstance::callp()`, which runs the implicit
+			// `@onready` initializers before it. A slot would bypass that.
+			if (member.function->identifier->name != SceneStringName(_ready)) {
+				function_name = member.function->identifier->name;
+			}
 		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 			if (member.variable->setter != nullptr && !p_script->vtable_indices.has(member.variable->setter->identifier->name)) {
 				const int slot = p_script->vtable_indices.size();
