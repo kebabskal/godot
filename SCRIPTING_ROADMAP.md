@@ -141,6 +141,19 @@ group are independent and can proceed in any order.
   compare-and-branch and int vector / Color / Vector4 coverage, then a
   real unboxed slot representation only if a profile shows the slot
   size matters.
+- Constraint found while extending 4d: `GDScriptFunction::call()` is one
+  function with every opcode as a case. On MSVC, each opcode's local
+  copies get their own stack slot (bloating the frame that every script
+  call recurses through), and past a certain function size MSVC stops
+  optimizing it entirely (frame ~50x, ~4x slower everywhere). The inline
+  operator set is therefore limited to int, float, bool, Vector2 and
+  Vector3, with operands bound by reference, and the `deep_recursion`
+  test (depth 1000) guards the frame. Adding Vector2i/Vector4/Color
+  would need a separate out-of-line family opcode with an inner switch.
+  Also noted: even the upstream MSVC build crashes between 1000 and 1500
+  nested calls, so `MAX_CALL_DEPTH` (2048) is not actually reachable on
+  Windows; raising `/STACK` to 16 MB in the Windows platform config
+  would fix that independently of this work.
 - Measurement note: numbers from the editor build drift by up to ~15 ns
   between builds for opcodes that were not touched (code layout of the
   VM's dispatch function). Compare only within one build, min of 3 runs.
