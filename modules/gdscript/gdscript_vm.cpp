@@ -506,6 +506,20 @@ void (*type_init_function_table[])(Variant *) = {
 #define METHOD_CALL_ON_NULL_VALUE_ERROR(method_pointer) "Cannot call method '" + (method_pointer)->get_name() + "' on a null value."
 #define METHOD_CALL_ON_FREED_INSTANCE_ERROR(method_pointer) "Cannot call method '" + (method_pointer)->get_name() + "' on a previously freed instance."
 
+#if defined(_MSC_VER)
+#define GDS_NOINLINE __declspec(noinline)
+#else
+#define GDS_NOINLINE __attribute__((noinline))
+#endif
+
+// Kept out of line: inlining the String formatting into each typed opcode that can fail would grow
+// `GDScriptFunction::call()`, whose frame bounds the reachable script call depth.
+#ifdef DEBUG_ENABLED
+static GDS_NOINLINE String _typed_op_error(const char *p_message, const char *p_operator) {
+	return String(p_message) + " in operator '" + p_operator + "'.";
+}
+#endif
+
 // The GDScript instance behind an object Variant, or `nullptr` if the Variant is not a live object with a
 // real (non-placeholder) GDScript instance. Used by the opcodes that reach into script instances directly.
 static _FORCE_INLINE_ GDScriptInstance *_get_gdscript_instance(const Variant *p_base) {
@@ -918,7 +932,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 #ifdef DEBUG_ENABLED
 #define _GDS_TYPED_OP_FAIL(m_msg) \
 	{ \
-		err_text = String(m_msg) + " in operator '" + op_sym + "'."; \
+		err_text = _typed_op_error(m_msg, op_sym); \
 		OPCODE_BREAK; \
 	}
 #else
@@ -949,9 +963,9 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 		GET_VARIANT_PTR(b, 1); \
 		GET_VARIANT_PTR(dst, 2); \
 		GD_ERR_BREAK(a->get_type() != Variant::m_ta || b->get_type() != Variant::m_tb); \
-		const auto va = *VariantInternal::_GDS_GET_##m_ta(a); \
-		const auto vb = *VariantInternal::_GDS_GET_##m_tb(b); \
-		const char *op_sym = m_sym; \
+		const auto &va = *VariantInternal::_GDS_GET_##m_ta(a); \
+		const auto &vb = *VariantInternal::_GDS_GET_##m_tb(b); \
+		constexpr const char *op_sym = m_sym; \
 		(void)op_sym; \
 		m_check \
 		if (unlikely(dst->get_type() != Variant::m_tr)) { \
@@ -969,7 +983,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 		GET_VARIANT_PTR(a, 0); \
 		GET_VARIANT_PTR(dst, 1); \
 		GD_ERR_BREAK(a->get_type() != Variant::m_ta); \
-		const auto va = *VariantInternal::_GDS_GET_##m_ta(a); \
+		const auto &va = *VariantInternal::_GDS_GET_##m_ta(a); \
 		if (unlikely(dst->get_type() != Variant::m_tr)) { \
 			VariantInternal::initialize(dst, Variant::m_tr); \
 		} \
@@ -987,8 +1001,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 		GET_VARIANT_PTR(a, 0); \
 		GET_VARIANT_PTR(b, 1); \
 		GD_ERR_BREAK(a->get_type() != Variant::m_ta || b->get_type() != Variant::m_tb); \
-		const auto va = *VariantInternal::_GDS_GET_##m_ta(a); \
-		const auto vb = *VariantInternal::_GDS_GET_##m_tb(b); \
+		const auto &va = *VariantInternal::_GDS_GET_##m_ta(a); \
+		const auto &vb = *VariantInternal::_GDS_GET_##m_tb(b); \
 		if (!(m_expr)) { \
 			int to = _code_ptr[ip + 3]; \
 			GD_ERR_BREAK(to < 0 || to > _code_size); \

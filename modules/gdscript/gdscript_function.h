@@ -147,7 +147,10 @@ public:
 };
 
 // Binary operators on built-in types that the VM executes inline instead of through a validated
-// evaluator function pointer: name, Variant::Operator, left type, right type, result type, symbol,
+// evaluator function pointer. Keep this set small and its VM bodies free of local copies: every entry
+// adds a case to `GDScriptFunction::call()`, whose stack frame bounds the reachable script call depth,
+// and past a certain size MSVC stops optimizing that function entirely (its frame grows ~50x and
+// everything runs ~4x slower). The deep_recursion test guards against both. Entries: name, Variant::Operator, left type, right type, result type, symbol,
 // expression over the unboxed operands `va` and `vb`, and a check macro run before the expression
 // (see the VM for `_GDS_NO_CHECK`, `_GDS_CHECK_ZERO` and `_GDS_CHECK_SHIFT`). Shared by the opcode
 // enum, the VM, the code generator and the disassembler so they cannot drift apart.
