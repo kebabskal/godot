@@ -101,13 +101,25 @@ group are independent and can proceed in any order.
   96 -> 72, 4 args 134 -> 98, typed var call 108 -> 88, setter+getter
   187 -> 164. A 2-argument call is now ~57 ns over the loop, of which
   ~45 ns is fixed per call and ~6 ns per argument.
-- 4c, tried and rejected (each measured, no gain, reverted): skipping the
-  `self` reference when the caller holds one (atomics are not the cost);
-  a precomputed stack template copied in per call (copying 24 bytes per
-  slot costs what the NIL loop and typed init saved). What remains is
-  spread thinly over the prologue and epilogue; no single item left is
-  worth more than a few ns in the interpreter design. Further call cost
-  reduction belongs to 4d.
+- 4c, second round: `OPCODE_CALL_SCRIPT` skips the `self` reference when
+  the caller's frame holds the base (self, local, parameter, temporary,
+  constant). Saves ~10 ns per call into a RefCounted script object
+  (exact class 90 -> 80, virtual via base 133 -> 117). An earlier note
+  here called this a no-gain; that was measured on a stale binary
+  because the scons shim returns 0 on compile errors. Always verify a
+  build by grepping the log for ` error C` and checking the binary's
+  timestamp.
+- 4c, tried and rejected (measured on a verified build, reverted): a
+  precomputed stack template copied in per call. Copying 24 bytes per
+  slot costs what the NIL loop and typed init saved. What remains in the
+  prologue is spread thinly; further call cost reduction belongs to 4d.
+- 4b landed as `OPCODE_GET_SCRIPT_MEMBER` / `OPCODE_SET_SCRIPT_MEMBER`:
+  member access on a variable of known script type goes by index with a
+  name guard, falling back to the name lookup when stale. Field set+get
+  on a typed variable: 77 -> 49 ns (self members were already ~free at
+  2 ns per pair via direct slot addressing). Untyped variables stay on
+  the name lookup by design; strict mode (item 5) is what makes 4b pay
+  off broadly.
 - Release template builds (`target=template_release`) hang on this
   Windows machine when loading any script via `-s`, also at the branch's
   base commit, so it is not caused by this work. Numbers above are from
