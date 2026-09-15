@@ -75,6 +75,29 @@ Editor and tooling:
 Critical path: 1 -> 5 -> 4d. Items 4a-4c, the syntax group and the editor
 group are independent and can proceed in any order.
 
+## Progress
+
+- 4a landed as `OPCODE_CALL_SCRIPT` (slot + name guard, falls back to the
+  name lookup when the slot is stale). Measured with
+  `modules/gdscript/benchmarks/call_bench.gd`, Windows/MSVC editor build,
+  ns per iteration, before -> after:
+
+  | Case                  | Before  | After   |
+  |-----------------------|---------|---------|
+  | loop only (baseline)  | 17      | 16      |
+  | self call             | 112-122 | 97      |
+  | typed var call        | 127-141 | 110     |
+  | virtual via base      | 165-186 | 142-150 |
+  | setter+getter         | 189-204 | 189-207 |
+
+  Only 15-20% off a call. The name lookup was not the dominant cost;
+  what remains is `GDScriptFunction::call` itself (stack allocation,
+  argument copying, Variant construction), which is item 4c. Expect 4c
+  to matter more than 4a did. Setter/getter calls did not move at all.
+- Lessons from 4a: the result of a discarded call must never be written
+  to the shared `nil` stack slot (GH-70964), and `_ready` must keep
+  going through `GDScriptInstance::callp()` so `@onready` runs first.
+
 ## Rough performance expectations (times slower than well-written C)
 
 | Axis                          | Today    | 4a-4c   | 4d      |
