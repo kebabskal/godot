@@ -9,6 +9,6 @@ true
 text
 [1, 2]
 3
-["set 3", "get"]
+["set 3", "get", "set 2"]
 9
 unrelated

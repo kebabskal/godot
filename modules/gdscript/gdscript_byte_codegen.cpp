@@ -845,30 +845,57 @@ void GDScriptByteCodeGenerator::write_get(const Address &p_target, const Address
 	append(p_target);
 }
 
-// The member of a known script type that `p_name` refers to, if it can be reached by index: it must be an
-// instance variable of that script without the given accessor (an accessor must still be called).
-static const GDScript::MemberInfo *_get_direct_script_member(const GDScriptCodeGenerator::Address &p_base, const StringName &p_name, bool p_for_set) {
+// How `p_name` on a base of known script type can be reached without a name lookup, if at all:
+// by member index (`r_member_index`), or through a direct slot call of its inline accessor
+// (`r_accessor`, `r_accessor_slot`). Only inline accessors qualify: their parameter carries the
+// member's type, so the call converts the value exactly like `GDScriptInstance::set()` would.
+static bool _resolve_direct_script_member(const GDScriptCodeGenerator::Address &p_base, const StringName &p_name, bool p_for_set, int &r_member_index, StringName &r_accessor, int &r_accessor_slot) {
+	r_member_index = -1;
+	r_accessor = StringName();
+	r_accessor_slot = -1;
 	if (p_base.type.kind != GDScriptDataType::GDSCRIPT && p_base.type.kind != GDScriptDataType::SCRIPT) {
-		return nullptr;
+		return false;
 	}
 	const GDScript *gds = Object::cast_to<GDScript>(p_base.type.script_type);
 	if (gds == nullptr) {
-		return nullptr;
+		return false;
 	}
 	const GDScript::MemberInfo *info = gds->get_member_indices().getptr(p_name);
-	if (info == nullptr || (p_for_set ? info->setter : info->getter) != StringName()) {
-		return nullptr;
+	if (info == nullptr) {
+		return false;
 	}
-	return info;
+	const StringName &accessor = p_for_set ? info->setter : info->getter;
+	if (accessor == StringName()) {
+		r_member_index = info->index;
+		return true;
+	}
+	if (String(accessor).begins_with("@")) { // Inline accessor (`@name_setter` / `@name_getter`).
+		const int slot = gds->get_vtable_slot(accessor);
+		if (slot >= 0) {
+			r_accessor = accessor;
+			r_accessor_slot = slot;
+			return true;
+		}
+	}
+	return false;
 }
 
 void GDScriptByteCodeGenerator::write_set_named(const Address &p_target, const StringName &p_name, const Address &p_source) {
-	if (const GDScript::MemberInfo *member = _get_direct_script_member(p_target, p_name, true)) {
-		append_opcode(GDScriptFunction::OPCODE_SET_SCRIPT_MEMBER);
-		append(p_target);
-		append(p_source);
-		append(member->index);
-		append(p_name);
+	int member_index;
+	StringName accessor;
+	int accessor_slot;
+	if (_resolve_direct_script_member(p_target, p_name, true, member_index, accessor, accessor_slot)) {
+		if (member_index >= 0) {
+			append_opcode(GDScriptFunction::OPCODE_SET_SCRIPT_MEMBER);
+			append(p_target);
+			append(p_source);
+			append(member_index);
+			append(p_name);
+		} else {
+			Vector<Address> args;
+			args.push_back(p_source);
+			write_call_script(Address(), p_target, accessor, accessor_slot, args);
+		}
 		return;
 	}
 	if (HAS_BUILTIN_TYPE(p_target) && Variant::get_member_validated_setter(p_target.type.builtin_type, p_name) &&
@@ -890,12 +917,19 @@ void GDScriptByteCodeGenerator::write_set_named(const Address &p_target, const S
 }
 
 void GDScriptByteCodeGenerator::write_get_named(const Address &p_target, const StringName &p_name, const Address &p_source) {
-	if (const GDScript::MemberInfo *member = _get_direct_script_member(p_source, p_name, false)) {
-		append_opcode(GDScriptFunction::OPCODE_GET_SCRIPT_MEMBER);
-		append(p_source);
-		append(p_target);
-		append(member->index);
-		append(p_name);
+	int member_index;
+	StringName accessor;
+	int accessor_slot;
+	if (_resolve_direct_script_member(p_source, p_name, false, member_index, accessor, accessor_slot)) {
+		if (member_index >= 0) {
+			append_opcode(GDScriptFunction::OPCODE_GET_SCRIPT_MEMBER);
+			append(p_source);
+			append(p_target);
+			append(member_index);
+			append(p_name);
+		} else {
+			write_call_script(p_target, p_source, accessor, accessor_slot, Vector<Address>());
+		}
 		return;
 	}
 	if (HAS_BUILTIN_TYPE(p_source) && Variant::get_member_validated_getter(p_source.type.builtin_type, p_name)) {

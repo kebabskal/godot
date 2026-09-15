@@ -55,9 +55,12 @@ func test():
 	b.untyped = [1, 2]
 	print(b.untyped)
 
-	# Members with accessors still go through the accessors.
+	# Members with accessors still go through the accessors, and a convertible value is converted
+	# to the member type before the setter sees it.
 	b.with_accessors = 3
 	print(b.with_accessors)
+	@warning_ignore("narrowing_conversion")
+	b.with_accessors = 2.7
 	print(b.events)
 
 	# Chained access through a member of a known type.
