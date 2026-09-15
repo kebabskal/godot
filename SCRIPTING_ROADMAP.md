@@ -94,6 +94,25 @@ group are independent and can proceed in any order.
   what remains is `GDScriptFunction::call` itself (stack allocation,
   argument copying, Variant construction), which is item 4c. Expect 4c
   to matter more than 4a did. Setter/getter calls did not move at all.
+- 4c, first round: plain-value arguments and returns (int, float, bool,
+  vectors; untyped or matching the declared built-in type) are copied
+  bitwise instead of through the type check and the Variant copy
+  constructor. Editor build, ns per iteration, before -> after: self call
+  96 -> 72, 4 args 134 -> 98, typed var call 108 -> 88, setter+getter
+  187 -> 164. A 2-argument call is now ~57 ns over the loop, of which
+  ~45 ns is fixed per call and ~6 ns per argument.
+- 4c, tried and rejected (each measured, no gain, reverted): skipping the
+  `self` reference when the caller holds one (atomics are not the cost);
+  a precomputed stack template copied in per call (copying 24 bytes per
+  slot costs what the NIL loop and typed init saved). What remains is
+  spread thinly over the prologue and epilogue; no single item left is
+  worth more than a few ns in the interpreter design. Further call cost
+  reduction belongs to 4d.
+- Release template builds (`target=template_release`) hang on this
+  Windows machine when loading any script via `-s`, also at the branch's
+  base commit, so it is not caused by this work. Numbers above are from
+  the editor build, which adds line tracking and call stack bookkeeping
+  to every call.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
