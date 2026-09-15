@@ -18,6 +18,10 @@ class Base:
 	func call_poly() -> int:
 		return poly()
 
+class Fields:
+	var x: int = 0
+	var y: int = 0
+
 class Derived extends Base:
 	func poly() -> int:
 		return 2
@@ -135,6 +139,26 @@ func run_virtual(n: int) -> void:
 	for i in n:
 		acc += d.call_poly()
 
+func run_field_typed(n: int) -> void:
+	var f := Fields.new()
+	for i in n:
+		f.x = i
+		f.y = f.x
+
+func run_field_untyped(n: int) -> void:
+	var f = Fields.new()
+	for i in n:
+		f.x = i
+		f.y = f.x
+
+func run_self_member(n: int) -> void:
+	for i in n:
+		self_x = i
+		self_y = self_x
+
+var self_x: int = 0
+var self_y: int = 0
+
 func run_property(n: int) -> void:
 	var d := Base.new()
 	for i in n:
@@ -159,4 +183,7 @@ func _init() -> void:
 		bench("typed var call (Object)", run_plain_object, n)
 		bench("virtual via base", run_virtual, n)
 		bench("setter+getter", run_property, n)
+		bench("field set+get (typed var)", run_field_typed, n)
+		bench("field set+get (untyped var)", run_field_untyped, n)
+		bench("self member set+get", run_self_member, n)
 	quit()

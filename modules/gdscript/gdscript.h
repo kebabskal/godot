@@ -61,14 +61,17 @@ class GDScript : public Script {
 	bool reloading = false;
 	bool _is_abstract = false;
 
+public:
 	struct MemberInfo {
 		int index = 0;
+		StringName name;
 		StringName setter;
 		StringName getter;
 		GDScriptDataType data_type;
 		PropertyInfo property_info;
 	};
 
+private:
 	friend class GDScriptInstance;
 	friend class GDScriptFunction;
 	friend class GDScriptAnalyzer;
@@ -102,6 +105,9 @@ class GDScript : public Script {
 	// class defines itself; inherited slots are `nullptr` and resolved by walking `base`.
 	HashMap<StringName, int> vtable_indices;
 	Vector<GDScriptFunction *> vtable;
+	// Member variables by index (including inherited ones), used by `OPCODE_GET_SCRIPT_MEMBER` and
+	// `OPCODE_SET_SCRIPT_MEMBER` to reach a member without a name lookup. Points into `member_indices`.
+	LocalVector<const MemberInfo *> member_info_by_index;
 	HashMap<StringName, Ref<GDScript>> subclasses;
 	HashMap<StringName, MethodInfo> _signals;
 	Dictionary rpc_config;
@@ -256,6 +262,19 @@ public:
 	}
 
 	_FORCE_INLINE_ const HashMap<StringName, GDScriptFunction *> &get_member_functions() const { return member_functions; }
+	_FORCE_INLINE_ const HashMap<StringName, MemberInfo> &get_member_indices() const { return member_indices; }
+
+	// Resolves a member index to its info, or `nullptr` if the index is stale (e.g. mid hot-reload) so the
+	// caller can fall back to a name lookup. The name check makes a stale index safe rather than wrong.
+	_FORCE_INLINE_ const MemberInfo *find_member_by_index(int p_index, const StringName &p_name) const {
+		if ((uint32_t)p_index < member_info_by_index.size()) {
+			const MemberInfo *info = member_info_by_index[p_index];
+			if (info != nullptr && info->name == p_name) {
+				return info;
+			}
+		}
+		return nullptr;
+	}
 
 	// Compile-time slot lookup for `OPCODE_CALL_SCRIPT`; -1 when the method is unknown to this class.
 	_FORCE_INLINE_ int get_vtable_slot(const StringName &p_name) const {

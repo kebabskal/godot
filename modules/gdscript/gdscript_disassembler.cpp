@@ -332,6 +332,27 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 4;
 			} break;
+			case OPCODE_SET_SCRIPT_MEMBER: {
+				text += "set script member ";
+				text += DADDR(1);
+				text += "[\"";
+				text += _global_names_ptr[_code_ptr[ip + 4]];
+				text += "\" @" + itos(_code_ptr[ip + 3]) + "] = ";
+				text += DADDR(2);
+
+				incr += 5;
+			} break;
+			case OPCODE_GET_SCRIPT_MEMBER: {
+				text += "get script member ";
+				text += DADDR(2);
+				text += " = ";
+				text += DADDR(1);
+				text += "[\"";
+				text += _global_names_ptr[_code_ptr[ip + 4]];
+				text += "\" @" + itos(_code_ptr[ip + 3]) + "]";
+
+				incr += 5;
+			} break;
 			case OPCODE_GET_NAMED_VALIDATED: {
 				text += "get_named validated ";
 				text += DADDR(2);

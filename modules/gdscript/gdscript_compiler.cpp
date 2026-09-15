@@ -2775,6 +2775,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	memdelete(p_script->static_initializer);
 
 	p_script->member_functions.clear();
+	p_script->member_info_by_index.clear();
 	p_script->member_indices.clear();
 	p_script->vtable.clear();
 	p_script->vtable_indices.clear();
@@ -2962,6 +2963,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 				}
 				prop_info.usage |= PROPERTY_USAGE_SCRIPT_VARIABLE;
 				minfo.property_info = prop_info;
+				minfo.name = name;
 
 				if (variable->is_static) {
 					minfo.index = p_script->static_variables_indices.size();
@@ -3126,6 +3128,20 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 		const int *slot = p_script->vtable_indices.getptr(E.key);
 		if (slot != nullptr) {
 			p_script->vtable.write[*slot] = E.value;
+		}
+	}
+
+	// Index the member variables (see `GDScript::member_info_by_index`). Pointers into `member_indices`
+	// stay valid until it is cleared, which also clears this table. Export group/subgroup/category
+	// entries also live in `member_indices` but have no `name` and no slot; skip them.
+	p_script->member_info_by_index.clear();
+	p_script->member_info_by_index.resize(p_script->member_indices.size());
+	for (uint32_t i = 0; i < p_script->member_info_by_index.size(); i++) {
+		p_script->member_info_by_index[i] = nullptr;
+	}
+	for (const KeyValue<StringName, GDScript::MemberInfo> &E : p_script->member_indices) {
+		if (E.value.name != StringName() && (uint32_t)E.value.index < p_script->member_info_by_index.size()) {
+			p_script->member_info_by_index[E.value.index] = &E.value;
 		}
 	}
 

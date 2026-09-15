@@ -273,6 +273,8 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_GET_NAMED_VALIDATED, \
 		&&OPCODE_SET_MEMBER, \
 		&&OPCODE_GET_MEMBER, \
+		&&OPCODE_SET_SCRIPT_MEMBER, \
+		&&OPCODE_GET_SCRIPT_MEMBER, \
 		&&OPCODE_SET_STATIC_VARIABLE, \
 		&&OPCODE_GET_STATIC_VARIABLE, \
 		&&OPCODE_ASSIGN, \
@@ -496,6 +498,23 @@ void (*type_init_function_table[])(Variant *) = {
 
 #define METHOD_CALL_ON_NULL_VALUE_ERROR(method_pointer) "Cannot call method '" + (method_pointer)->get_name() + "' on a null value."
 #define METHOD_CALL_ON_FREED_INSTANCE_ERROR(method_pointer) "Cannot call method '" + (method_pointer)->get_name() + "' on a previously freed instance."
+
+// The GDScript instance behind an object Variant, or `nullptr` if the Variant is not a live object with a
+// real (non-placeholder) GDScript instance. Used by the opcodes that reach into script instances directly.
+static _FORCE_INLINE_ GDScriptInstance *_get_gdscript_instance(const Variant *p_base) {
+	if (p_base->get_type() != Variant::OBJECT) {
+		return nullptr;
+	}
+	Object *base_obj = p_base->get_validated_object();
+	if (base_obj == nullptr) {
+		return nullptr;
+	}
+	ScriptInstance *si = base_obj->get_script_instance();
+	if (si == nullptr || si->get_language() != GDScriptLanguage::get_singleton() || si->is_placeholder()) {
+		return nullptr;
+	}
+	return static_cast<GDScriptInstance *>(si);
+}
 
 Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state) {
 	GodotProfileZoneScript(this, source, name, name, _initial_line);
@@ -1355,6 +1374,92 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 #endif
 				ip += 3;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_SET_SCRIPT_MEMBER) {
+				CHECK_SPACE(5);
+
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(value, 1);
+
+				int member_index = _code_ptr[ip + 3];
+				int indexname = _code_ptr[ip + 4];
+				GD_ERR_BREAK(indexname < 0 || indexname >= _global_names_count);
+				const StringName *index = &_global_names_ptr[indexname];
+
+				GDScriptInstance *target_instance = (dst == &stack[ADDR_STACK_SELF]) ? p_instance : _get_gdscript_instance(dst);
+				const GDScript::MemberInfo *member_info = target_instance != nullptr ? target_instance->script->find_member_by_index(member_index, *index) : nullptr;
+
+				if (likely(member_info != nullptr && member_info->setter == StringName() && (uint32_t)member_index < target_instance->members.size())) {
+					Variant *member = &target_instance->members[member_index];
+					const GDScriptDataType &member_type = member_info->data_type;
+					const Variant::Type value_type = value->get_type();
+					// Same rules as `GDScriptInstance::set()`: convert when needed, refuse when impossible.
+					if (!member_type.has_type() || (member_type.kind == GDScriptDataType::BUILTIN && member_type.builtin_type == value_type && VariantInternal::is_trivially_copyable(value_type)) || member_type.is_type(*value)) {
+						*member = *value;
+					} else {
+						const Variant *args = value;
+						Callable::CallError ce;
+						Variant converted;
+						Variant::construct(member_type.builtin_type, converted, &args, 1, ce);
+						if (ce.error == Callable::CallError::CALL_OK && member_type.is_type(converted)) {
+							*member = converted;
+						} else {
+#ifdef DEBUG_ENABLED
+							err_text = "Invalid assignment of property or key '" + String(*index) + "' with value of type '" + _get_var_type(value) + "' on a base object of type '" + _get_var_type(dst) + "'.";
+							OPCODE_BREAK;
+#endif
+						}
+					}
+				} else {
+					// Stale index (hot reload), a setter, or not a GDScript object: use the generic path.
+					bool valid;
+					dst->set_named(*index, *value, valid);
+#ifdef DEBUG_ENABLED
+					if (!valid) {
+						if (dst->is_read_only()) {
+							err_text = "Invalid assignment on read-only value (on base: '" + _get_var_type(dst) + "').";
+						} else {
+							err_text = "Invalid assignment of property or key '" + String(*index) + "' with value of type '" + _get_var_type(value) + "' on a base object of type '" + _get_var_type(dst) + "'.";
+						}
+						OPCODE_BREAK;
+					}
+#endif
+				}
+				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_GET_SCRIPT_MEMBER) {
+				CHECK_SPACE(5);
+
+				GET_VARIANT_PTR(src, 0);
+				GET_VARIANT_PTR(dst, 1);
+
+				int member_index = _code_ptr[ip + 3];
+				int indexname = _code_ptr[ip + 4];
+				GD_ERR_BREAK(indexname < 0 || indexname >= _global_names_count);
+				const StringName *index = &_global_names_ptr[indexname];
+
+				GDScriptInstance *target_instance = (src == &stack[ADDR_STACK_SELF]) ? p_instance : _get_gdscript_instance(src);
+				const GDScript::MemberInfo *member_info = target_instance != nullptr ? target_instance->script->find_member_by_index(member_index, *index) : nullptr;
+
+				if (likely(member_info != nullptr && member_info->getter == StringName() && (uint32_t)member_index < target_instance->members.size())) {
+					*dst = target_instance->members[member_index];
+				} else {
+					// Stale index (hot reload), a getter, or not a GDScript object: use the generic path.
+					bool valid;
+					Variant ret = src->get_named(*index, valid);
+#ifdef DEBUG_ENABLED
+					if (!valid) {
+						err_text = "Invalid access to property or key '" + index->string() + "' on a base object of type '" + _get_var_type(src) + "'.";
+						OPCODE_BREAK;
+					}
+#endif
+					*dst = ret;
+				}
+				ip += 5;
 			}
 			DISPATCH_OPCODE;
 
@@ -2313,18 +2418,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_INSTRUCTION_ARG(dst, argc + 1);
 
 				// Resolve the target instance. `self` is the common case and needs no object lookup.
-				GDScriptInstance *target_instance = nullptr;
-				if (base == &stack[ADDR_STACK_SELF]) {
-					target_instance = p_instance;
-				} else if (base->get_type() == Variant::OBJECT) {
-					Object *base_obj = base->get_validated_object();
-					if (base_obj != nullptr) {
-						ScriptInstance *si = base_obj->get_script_instance();
-						if (si != nullptr && si->get_language() == GDScriptLanguage::get_singleton()) {
-							target_instance = static_cast<GDScriptInstance *>(si);
-						}
-					}
-				}
+				GDScriptInstance *target_instance = (base == &stack[ADDR_STACK_SELF]) ? p_instance : _get_gdscript_instance(base);
 
 				GDScriptFunction *target_function = nullptr;
 				if (target_instance != nullptr) {

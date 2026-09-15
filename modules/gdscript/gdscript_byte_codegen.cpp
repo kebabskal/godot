@@ -845,7 +845,32 @@ void GDScriptByteCodeGenerator::write_get(const Address &p_target, const Address
 	append(p_target);
 }
 
+// The member of a known script type that `p_name` refers to, if it can be reached by index: it must be an
+// instance variable of that script without the given accessor (an accessor must still be called).
+static const GDScript::MemberInfo *_get_direct_script_member(const GDScriptCodeGenerator::Address &p_base, const StringName &p_name, bool p_for_set) {
+	if (p_base.type.kind != GDScriptDataType::GDSCRIPT && p_base.type.kind != GDScriptDataType::SCRIPT) {
+		return nullptr;
+	}
+	const GDScript *gds = Object::cast_to<GDScript>(p_base.type.script_type);
+	if (gds == nullptr) {
+		return nullptr;
+	}
+	const GDScript::MemberInfo *info = gds->get_member_indices().getptr(p_name);
+	if (info == nullptr || (p_for_set ? info->setter : info->getter) != StringName()) {
+		return nullptr;
+	}
+	return info;
+}
+
 void GDScriptByteCodeGenerator::write_set_named(const Address &p_target, const StringName &p_name, const Address &p_source) {
+	if (const GDScript::MemberInfo *member = _get_direct_script_member(p_target, p_name, true)) {
+		append_opcode(GDScriptFunction::OPCODE_SET_SCRIPT_MEMBER);
+		append(p_target);
+		append(p_source);
+		append(member->index);
+		append(p_name);
+		return;
+	}
 	if (HAS_BUILTIN_TYPE(p_target) && Variant::get_member_validated_setter(p_target.type.builtin_type, p_name) &&
 			IS_BUILTIN_TYPE(p_source, Variant::get_member_type(p_target.type.builtin_type, p_name))) {
 		Variant::ValidatedSetter setter = Variant::get_member_validated_setter(p_target.type.builtin_type, p_name);
@@ -865,6 +890,14 @@ void GDScriptByteCodeGenerator::write_set_named(const Address &p_target, const S
 }
 
 void GDScriptByteCodeGenerator::write_get_named(const Address &p_target, const StringName &p_name, const Address &p_source) {
+	if (const GDScript::MemberInfo *member = _get_direct_script_member(p_source, p_name, false)) {
+		append_opcode(GDScriptFunction::OPCODE_GET_SCRIPT_MEMBER);
+		append(p_source);
+		append(p_target);
+		append(member->index);
+		append(p_name);
+		return;
+	}
 	if (HAS_BUILTIN_TYPE(p_source) && Variant::get_member_validated_getter(p_source.type.builtin_type, p_name)) {
 		Variant::ValidatedGetter getter = Variant::get_member_validated_getter(p_source.type.builtin_type, p_name);
 		append_opcode(GDScriptFunction::OPCODE_GET_NAMED_VALIDATED);

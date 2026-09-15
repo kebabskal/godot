@@ -1463,6 +1463,7 @@ void GDScript::clear() {
 	vtable.clear();
 	vtable_indices.clear();
 
+	member_info_by_index.clear();
 	for (KeyValue<StringName, MemberInfo> &E : member_indices) {
 		E.value.data_type.script_type_ref = Ref<Script>();
 	}
