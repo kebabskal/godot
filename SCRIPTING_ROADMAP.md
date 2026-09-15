@@ -120,6 +120,14 @@ group are independent and can proceed in any order.
   2 ns per pair via direct slot addressing). Untyped variables stay on
   the name lookup by design; strict mode (item 5) is what makes 4b pay
   off broadly.
+- 4b, accessors: a member with an inline setter/getter on a variable of
+  known script type is now accessed by a direct slot call of the
+  accessor (setter+getter pair 168 -> 118 ns). Regular `set = f` /
+  `get = f` accessors stay on the named path, since their parameter may
+  be untyped and the named path converts the value first.
+- Measurement note: numbers from the editor build drift by up to ~15 ns
+  between builds for opcodes that were not touched (code layout of the
+  VM's dispatch function). Compare only within one build, min of 3 runs.
 - Release template builds (`target=template_release`) hang on this
   Windows machine when loading any script via `-s`, also at the branch's
   base commit, so it is not caused by this work. Numbers above are from
