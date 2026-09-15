@@ -146,11 +146,47 @@ public:
 	~GDScriptDataType() {}
 };
 
+// Binary operators on built-in types that the VM executes inline instead of through a validated
+// evaluator function pointer: name, Variant::Operator, left type, right type, result type, symbol,
+// expression over the unboxed operands `va` and `vb`. Shared by the opcode enum, the VM, the code
+// generator and the disassembler so they cannot drift apart.
+#define GDSCRIPT_TYPED_BINARY_OPCODES(m_op) \
+	m_op(INT_ADD, OP_ADD, INT, INT, INT, "+", va + vb) \
+	m_op(INT_SUB, OP_SUBTRACT, INT, INT, INT, "-", va - vb) \
+	m_op(INT_MUL, OP_MULTIPLY, INT, INT, INT, "*", va * vb) \
+	m_op(INT_EQ, OP_EQUAL, INT, INT, BOOL, "==", va == vb) \
+	m_op(INT_NE, OP_NOT_EQUAL, INT, INT, BOOL, "!=", va != vb) \
+	m_op(INT_LT, OP_LESS, INT, INT, BOOL, "<", va < vb) \
+	m_op(INT_LE, OP_LESS_EQUAL, INT, INT, BOOL, "<=", va <= vb) \
+	m_op(INT_GT, OP_GREATER, INT, INT, BOOL, ">", va > vb) \
+	m_op(INT_GE, OP_GREATER_EQUAL, INT, INT, BOOL, ">=", va >= vb) \
+	m_op(FLOAT_ADD, OP_ADD, FLOAT, FLOAT, FLOAT, "+", va + vb) \
+	m_op(FLOAT_SUB, OP_SUBTRACT, FLOAT, FLOAT, FLOAT, "-", va - vb) \
+	m_op(FLOAT_MUL, OP_MULTIPLY, FLOAT, FLOAT, FLOAT, "*", va * vb) \
+	m_op(FLOAT_DIV, OP_DIVIDE, FLOAT, FLOAT, FLOAT, "/", va / vb) \
+	m_op(FLOAT_EQ, OP_EQUAL, FLOAT, FLOAT, BOOL, "==", va == vb) \
+	m_op(FLOAT_NE, OP_NOT_EQUAL, FLOAT, FLOAT, BOOL, "!=", va != vb) \
+	m_op(FLOAT_LT, OP_LESS, FLOAT, FLOAT, BOOL, "<", va < vb) \
+	m_op(FLOAT_LE, OP_LESS_EQUAL, FLOAT, FLOAT, BOOL, "<=", va <= vb) \
+	m_op(FLOAT_GT, OP_GREATER, FLOAT, FLOAT, BOOL, ">", va > vb) \
+	m_op(FLOAT_GE, OP_GREATER_EQUAL, FLOAT, FLOAT, BOOL, ">=", va >= vb) \
+	m_op(INT_FLOAT_ADD, OP_ADD, INT, FLOAT, FLOAT, "+", (double)va + vb) \
+	m_op(INT_FLOAT_SUB, OP_SUBTRACT, INT, FLOAT, FLOAT, "-", (double)va - vb) \
+	m_op(INT_FLOAT_MUL, OP_MULTIPLY, INT, FLOAT, FLOAT, "*", (double)va * vb) \
+	m_op(INT_FLOAT_DIV, OP_DIVIDE, INT, FLOAT, FLOAT, "/", (double)va / vb) \
+	m_op(FLOAT_INT_ADD, OP_ADD, FLOAT, INT, FLOAT, "+", va + (double)vb) \
+	m_op(FLOAT_INT_SUB, OP_SUBTRACT, FLOAT, INT, FLOAT, "-", va - (double)vb) \
+	m_op(FLOAT_INT_MUL, OP_MULTIPLY, FLOAT, INT, FLOAT, "*", va * (double)vb) \
+	m_op(FLOAT_INT_DIV, OP_DIVIDE, FLOAT, INT, FLOAT, "/", va / (double)vb)
+
 class GDScriptFunction {
 public:
 	enum Opcode {
 		OPCODE_OPERATOR,
 		OPCODE_OPERATOR_VALIDATED,
+#define _GDS_TYPED_BINOP_ENUM(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr) OPCODE_##m_name,
+		GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_ENUM)
+#undef _GDS_TYPED_BINOP_ENUM
 		OPCODE_TYPE_TEST_BUILTIN,
 		OPCODE_TYPE_TEST_ARRAY,
 		OPCODE_TYPE_TEST_DICTIONARY,

@@ -100,6 +100,12 @@ class GDScriptByteCodeGenerator : public GDScriptCodeGenerator {
 	int current_line = 0;
 	int instr_args_max = 0;
 
+	// State for the assign peephole (see `write_assign()`): end of the last inline typed operator
+	// instruction, the position of its destination operand, and its result type.
+	int typed_binop_end = -1;
+	int typed_binop_dst_pos = -1;
+	Variant::Type typed_binop_result_type = Variant::NIL;
+
 	HashMap<Variant, int> constant_map;
 	RBMap<StringName, int> name_map;
 	RBMap<Variant::ValidatedOperatorEvaluator, int> operator_func_map;

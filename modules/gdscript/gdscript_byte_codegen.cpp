@@ -584,6 +584,17 @@ void GDScriptByteCodeGenerator::write_unary_operator(const Address &p_target, Va
 	}
 }
 
+// The inline typed opcode for `p_operator` on these built-in operand types, or -1 if there is none.
+static int _get_typed_binary_opcode(Variant::Operator p_operator, Variant::Type p_left, Variant::Type p_right) {
+#define _GDS_TYPED_BINOP_MATCH(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr) \
+	if (p_operator == Variant::m_vop && p_left == Variant::m_ta && p_right == Variant::m_tb) {  \
+		return GDScriptFunction::OPCODE_##m_name;                                              \
+	}
+	GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_MATCH)
+#undef _GDS_TYPED_BINOP_MATCH
+	return -1;
+}
+
 void GDScriptByteCodeGenerator::write_binary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand, const Address &p_right_operand) {
 	bool valid = HAS_BUILTIN_TYPE(p_left_operand) && HAS_BUILTIN_TYPE(p_right_operand);
 
@@ -611,6 +622,18 @@ void GDScriptByteCodeGenerator::write_binary_operator(const Address &p_target, V
 			if (result_type != temp_type) {
 				write_type_adjust(p_target, result_type);
 			}
+		}
+
+		const int typed_opcode = _get_typed_binary_opcode(p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type);
+		if (typed_opcode >= 0) {
+			append_opcode((GDScriptFunction::Opcode)typed_opcode);
+			append(p_left_operand);
+			append(p_right_operand);
+			append(p_target);
+			typed_binop_dst_pos = opcodes.size() - 1;
+			typed_binop_end = opcodes.size();
+			typed_binop_result_type = Variant::get_operator_return_type(p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type);
+			return;
 		}
 
 		// Gather specific operator.
@@ -1036,6 +1059,19 @@ void GDScriptByteCodeGenerator::write_assign_with_conversion(const Address &p_ta
 }
 
 void GDScriptByteCodeGenerator::write_assign(const Address &p_target, const Address &p_source) {
+	// Peephole: `local = <inline typed operator result held in a temporary>` becomes the operator
+	// writing into the local directly, saving the copy. The temporary is dead after this assignment
+	// (every user pops it right away), and the opcode sets the result slot's type itself.
+	if ((p_target.mode == Address::LOCAL_VARIABLE || p_target.mode == Address::FUNCTION_PARAMETER) && p_source.mode == Address::TEMPORARY && p_target.type.kind == GDScriptDataType::BUILTIN && p_target.type.builtin_type == typed_binop_result_type && typed_binop_end == opcodes.size()) {
+		Vector<int> &indices = temporaries.write[p_source.address].bytecode_indices;
+		if (!indices.is_empty() && indices[indices.size() - 1] == typed_binop_dst_pos) {
+			indices.remove_at(indices.size() - 1);
+			opcodes.write[typed_binop_dst_pos] = address_of(p_target);
+			typed_binop_end = -1;
+			return;
+		}
+	}
+
 	if (p_target.type.kind == GDScriptDataType::BUILTIN && p_target.type.builtin_type == Variant::ARRAY && p_target.type.has_container_element_type(0)) {
 		const GDScriptDataType &element_type = p_target.type.get_container_element_type(0);
 		append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_ARRAY);

@@ -129,6 +129,14 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 7 + _pointer_size;
 			} break;
+#define _GDS_TYPED_BINOP_DISASM(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr) \
+	case OPCODE_##m_name: {                                                          \
+		text += "typed operator " #m_name " ";                                       \
+		text += DADDR(3) + " = " + DADDR(1) + " " m_sym " " + DADDR(2);              \
+		incr += 4;                                                                   \
+	} break;
+			GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_DISASM)
+#undef _GDS_TYPED_BINOP_DISASM
 			case OPCODE_OPERATOR_VALIDATED: {
 				text += "validated operator ";
 

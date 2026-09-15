@@ -252,10 +252,13 @@ void (*type_init_function_table[])(Variant *) = {
 };
 
 #if defined(__GNUC__) || defined(__clang__)
+#define _GDS_TYPED_BINOP_LABEL(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr) &&OPCODE_##m_name,
+
 #define OPCODES_TABLE \
 	static const void *switch_table_ops[] = { \
 		&&OPCODE_OPERATOR, \
 		&&OPCODE_OPERATOR_VALIDATED, \
+		GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_LABEL) \
 		&&OPCODE_TYPE_TEST_BUILTIN, \
 		&&OPCODE_TYPE_TEST_ARRAY, \
 		&&OPCODE_TYPE_TEST_DICTIONARY, \
@@ -897,6 +900,35 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 			}
 			DISPATCH_OPCODE;
 
+			// Inline typed binary operators (see `GDSCRIPT_TYPED_BINARY_OPCODES`). Operand types are
+			// guaranteed by the compiler, like for validated operators; the result slot's type is set
+			// here so the target can be a local as well as a typed temporary. Operands are read before
+			// the result is written because the target may alias one of them (`a = a + b`).
+#define _GDS_GET_INT get_int
+#define _GDS_GET_FLOAT get_float
+#define _GDS_GET_BOOL get_bool
+#define _GDS_TYPED_BINOP_IMPL(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr) \
+	OPCODE(OPCODE_##m_name) { \
+		CHECK_SPACE(4); \
+		GET_VARIANT_PTR(a, 0); \
+		GET_VARIANT_PTR(b, 1); \
+		GET_VARIANT_PTR(dst, 2); \
+		GD_ERR_BREAK(a->get_type() != Variant::m_ta || b->get_type() != Variant::m_tb); \
+		const auto va = *VariantInternal::_GDS_GET_##m_ta(a); \
+		const auto vb = *VariantInternal::_GDS_GET_##m_tb(b); \
+		if (unlikely(dst->get_type() != Variant::m_tr)) { \
+			VariantInternal::initialize(dst, Variant::m_tr); \
+		} \
+		*VariantInternal::_GDS_GET_##m_tr(dst) = (m_expr); \
+		ip += 4; \
+	} \
+	DISPATCH_OPCODE;
+			GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_IMPL)
+#undef _GDS_TYPED_BINOP_IMPL
+#undef _GDS_GET_INT
+#undef _GDS_GET_FLOAT
+#undef _GDS_GET_BOOL
+
 			OPCODE(OPCODE_TYPE_TEST_BUILTIN) {
 				CHECK_SPACE(4);
 
@@ -1511,7 +1543,11 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(src, 1);
 
-				*dst = *src;
+				if (VariantInternal::is_trivially_copyable(dst->get_type()) && VariantInternal::is_trivially_copyable(src->get_type())) {
+					VariantInternal::copy_trivial(dst, src); // Neither side owns anything, so nothing to release.
+				} else {
+					*dst = *src;
+				}
 
 				ip += 3;
 			}

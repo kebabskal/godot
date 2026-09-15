@@ -348,8 +348,8 @@ public:
 		return !Variant::needs_deinit[p_type];
 	}
 
-	// Bitwise copy of a trivially copyable Variant. `r_dst` must be uninitialized memory or NIL;
-	// `p_src` must satisfy `is_trivially_copyable()`.
+	// Bitwise copy of a trivially copyable Variant. `r_dst` must be uninitialized memory, NIL, or of a
+	// trivially copyable type itself; `p_src` must satisfy `is_trivially_copyable()`.
 	_FORCE_INLINE_ static void copy_trivial(Variant *r_dst, const Variant *p_src) {
 		r_dst->type = p_src->type;
 		r_dst->_data = p_src->_data;
