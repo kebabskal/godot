@@ -116,6 +116,12 @@ func run_typed(n: int) -> void:
 	for i in n:
 		acc = d.add(acc, i)
 
+func run_typed_exact(n: int) -> void:
+	var b := Base.new()
+	var acc := 0
+	for i in n:
+		acc = b.add(acc, i)
+
 func run_plain_object(n: int) -> void:
 	var p := Plain.new()
 	var acc := 0
@@ -149,6 +155,7 @@ func _init() -> void:
 		bench("self call, 8 locals", run_self_locals, n)
 		bench("self call, 8 stmts 1 local", run_self_stmts, n)
 		bench("typed var call", run_typed, n)
+		bench("typed var call (exact class)", run_typed_exact, n)
 		bench("typed var call (Object)", run_plain_object, n)
 		bench("virtual via base", run_virtual, n)
 		bench("setter+getter", run_property, n)
