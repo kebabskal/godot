@@ -492,7 +492,9 @@ public:
 	Variant get_constant(int p_idx) const;
 	StringName get_global_name(int p_idx) const;
 
-	Variant call(GDScriptInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = nullptr);
+	// `p_self_is_held`: the caller guarantees `p_instance->owner` stays alive for the whole call (it holds
+	// a reference itself), so the callee does not need to take one of its own for `self`.
+	Variant call(GDScriptInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = nullptr, bool p_self_is_held = false);
 	void debug_get_stack_member_state(int p_line, List<Pair<StringName, int>> *r_stackvars) const;
 
 #ifdef DEBUG_ENABLED

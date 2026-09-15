@@ -516,7 +516,7 @@ static _FORCE_INLINE_ GDScriptInstance *_get_gdscript_instance(const Variant *p_
 	return static_cast<GDScriptInstance *>(si);
 }
 
-Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state) {
+Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state, bool p_self_is_held) {
 	GodotProfileZoneScript(this, source, name, name, _initial_line);
 
 	OPCODES_TABLE;
@@ -680,7 +680,14 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 	}
 
 	if (p_instance) {
-		memnew_placement(&stack[ADDR_STACK_SELF], Variant(p_instance->owner));
+		if (p_self_is_held) {
+			// The caller keeps `self` alive for the whole call, so skip the (atomic) reference.
+			// The destructor is skipped at the end accordingly.
+			memnew_placement(&stack[ADDR_STACK_SELF], Variant);
+			VariantInternal::object_assign_without_ref_unsafe(&stack[ADDR_STACK_SELF], p_instance->owner);
+		} else {
+			memnew_placement(&stack[ADDR_STACK_SELF], Variant(p_instance->owner));
+		}
 		script = p_instance->script.ptr();
 	} else {
 		memnew_placement(&stack[ADDR_STACK_SELF], Variant);
@@ -2397,7 +2404,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 			OPCODE(OPCODE_CALL_SCRIPT) {
 				LOAD_INSTRUCTION_ARGS
-				CHECK_SPACE(4 + instr_arg_count);
+				CHECK_SPACE(5 + instr_arg_count);
 
 				ip += instr_arg_count;
 
@@ -2406,7 +2413,11 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 				int slot = _code_ptr[ip + 2];
 
-				int methodname_idx = _code_ptr[ip + 3];
+				// Set by the code generator when the base lives in the caller's frame (self, a local,
+				// a parameter, a temporary or a constant) and therefore cannot be released mid-call.
+				const bool base_is_held = _code_ptr[ip + 3] != 0;
+
+				int methodname_idx = _code_ptr[ip + 4];
 				GD_ERR_BREAK(methodname_idx < 0 || methodname_idx >= _global_names_count);
 				const StringName *methodname = &_global_names_ptr[methodname_idx];
 
@@ -2440,7 +2451,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 				Callable::CallError err;
 				if (likely(target_function != nullptr)) {
-					*ret = target_function->call(target_instance, (const Variant **)argptrs, argc, err);
+					*ret = target_function->call(target_instance, (const Variant **)argptrs, argc, err, nullptr, base_is_held);
 				} else {
 					// Slot is stale (hot reload in progress), the base is not a GDScript object, or the method
 					// was removed. Fall back to the generic name-based call, which reports the proper error.
@@ -2477,7 +2488,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 #endif
 
-				ip += 4;
+				ip += 5;
 			}
 			DISPATCH_OPCODE;
 
@@ -4232,8 +4243,11 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 	GDScriptLanguage::get_singleton()->exit_function();
 
 	// We deliberately avoid calling the destructor for `ADDR_STACK_CLASS`, since we initialized it
-	// without incrementing any reference count that it might have.
-	stack[ADDR_STACK_SELF].~Variant();
+	// without incrementing any reference count that it might have. Same for `ADDR_STACK_SELF` when
+	// the caller holds the reference.
+	if (!p_self_is_held) {
+		stack[ADDR_STACK_SELF].~Variant();
+	}
 	stack[ADDR_STACK_NIL].~Variant();
 
 	for (int i = FIXED_ADDRESSES_MAX; i < _stack_size; i++) {

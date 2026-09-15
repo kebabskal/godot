@@ -1387,6 +1387,10 @@ void GDScriptByteCodeGenerator::write_call_method_bind_validated(const Address &
 }
 
 void GDScriptByteCodeGenerator::write_call_script(const Address &p_target, const Address &p_base, const StringName &p_function_name, int p_slot, const Vector<Address> &p_arguments) {
+	// A base that lives in this frame (or is a constant) stays alive for the whole call, so the
+	// callee can skip taking its own reference for `self`. A member could be reassigned mid-call.
+	const bool base_is_held = p_base.mode == Address::SELF || p_base.mode == Address::LOCAL_VARIABLE || p_base.mode == Address::FUNCTION_PARAMETER || p_base.mode == Address::TEMPORARY || p_base.mode == Address::CONSTANT;
+
 	append_opcode_and_argcount(GDScriptFunction::OPCODE_CALL_SCRIPT, 2 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
@@ -1396,12 +1400,14 @@ void GDScriptByteCodeGenerator::write_call_script(const Address &p_target, const
 		append(Address());
 		append(p_arguments.size());
 		append(p_slot);
+		append(base_is_held ? 1 : 0);
 		append(p_function_name);
 	} else {
 		CallTarget ct = get_call_target(p_target);
 		append(ct.target);
 		append(p_arguments.size());
 		append(p_slot);
+		append(base_is_held ? 1 : 0);
 		append(p_function_name);
 		ct.cleanup();
 	}

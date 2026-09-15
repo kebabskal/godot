@@ -704,8 +704,12 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += "call-script ";
 				text += DADDR(2 + argc) + " = ";
 				text += DADDR(1 + argc) + ".";
-				text += String(_global_names_ptr[_code_ptr[ip + 3 + instr_var_args]]);
-				text += "[slot " + itos(_code_ptr[ip + 2 + instr_var_args]) + "](";
+				text += String(_global_names_ptr[_code_ptr[ip + 4 + instr_var_args]]);
+				text += "[slot " + itos(_code_ptr[ip + 2 + instr_var_args]);
+				if (_code_ptr[ip + 3 + instr_var_args] != 0) {
+					text += ", held";
+				}
+				text += "](";
 
 				for (int i = 0; i < argc; i++) {
 					if (i > 0) {
@@ -715,7 +719,7 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 				}
 				text += ")";
 
-				incr = 6 + argc;
+				incr = 7 + argc;
 			} break;
 			case OPCODE_CALL:
 			case OPCODE_CALL_RETURN:
