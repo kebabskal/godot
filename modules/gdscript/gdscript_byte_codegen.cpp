@@ -565,6 +565,38 @@ static int _get_typed_binary_opcode(Variant::Operator p_operator, Variant::Type 
 	return -1;
 }
 
+// The compare-and-jump opcode fusing the inline comparison `p_compare_opcode`, or -1 if there is none.
+static int _get_typed_compare_jump_opcode(int p_compare_opcode) {
+#define _GDS_TYPED_JUMP_MATCH(m_name, m_cmp, m_ta, m_tb, m_sym, m_expr) \
+	if (p_compare_opcode == GDScriptFunction::OPCODE_##m_cmp) {         \
+		return GDScriptFunction::OPCODE_##m_name;                       \
+	}
+	GDSCRIPT_TYPED_COMPARE_JUMP_OPCODES(_GDS_TYPED_JUMP_MATCH)
+#undef _GDS_TYPED_JUMP_MATCH
+	return -1;
+}
+
+int GDScriptByteCodeGenerator::_fuse_compare_jump(const Address &p_condition) {
+	if (p_condition.mode != Address::TEMPORARY || typed_binop_end != opcodes.size()) {
+		return -1;
+	}
+	const int fused_opcode = _get_typed_compare_jump_opcode(typed_binop_opcode);
+	if (fused_opcode < 0) {
+		return -1;
+	}
+	Vector<int> &indices = temporaries.write[p_condition.address].bytecode_indices;
+	if (indices.is_empty() || indices[indices.size() - 1] != typed_binop_dst_pos) {
+		return -1;
+	}
+	// The condition temporary is dead after the jump (its user pops it right away), so the result
+	// operand of the comparison becomes the jump destination.
+	indices.remove_at(indices.size() - 1);
+	opcodes.write[typed_binop_start] = fused_opcode;
+	opcodes.write[typed_binop_dst_pos] = 0; // Jump destination, will be patched.
+	typed_binop_end = -1;
+	return typed_binop_dst_pos;
+}
+
 // The inline typed opcode for unary `p_operator` on this built-in operand type, or -1 if there is none.
 static int _get_typed_unary_opcode(Variant::Operator p_operator, Variant::Type p_operand) {
 #define _GDS_TYPED_UNOP_MATCH(m_name, m_vop, m_ta, m_tr, m_sym, m_expr) \
@@ -580,6 +612,8 @@ void GDScriptByteCodeGenerator::write_unary_operator(const Address &p_target, Va
 	if (HAS_BUILTIN_TYPE(p_left_operand)) {
 		const int typed_opcode = _get_typed_unary_opcode(p_operator, p_left_operand.type.builtin_type);
 		if (typed_opcode >= 0) {
+			typed_binop_start = opcodes.size();
+			typed_binop_opcode = typed_opcode;
 			append_opcode((GDScriptFunction::Opcode)typed_opcode);
 			append(p_left_operand);
 			append(p_target);
@@ -625,6 +659,8 @@ void GDScriptByteCodeGenerator::write_binary_operator(const Address &p_target, V
 		// do their own zero check.
 		const int typed_opcode = _get_typed_binary_opcode(p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type);
 		if (typed_opcode >= 0) {
+			typed_binop_start = opcodes.size();
+			typed_binop_opcode = typed_opcode;
 			append_opcode((GDScriptFunction::Opcode)typed_opcode);
 			append(p_left_operand);
 			append(p_right_operand);
@@ -1677,6 +1713,11 @@ void GDScriptByteCodeGenerator::write_await(const Address &p_target, const Addre
 }
 
 void GDScriptByteCodeGenerator::write_if(const Address &p_condition) {
+	const int fused_jump = _fuse_compare_jump(p_condition);
+	if (fused_jump >= 0) {
+		if_jmp_addrs.push_back(fused_jump);
+		return;
+	}
 	append_opcode(GDScriptFunction::OPCODE_JUMP_IF_NOT);
 	append(p_condition);
 	if_jmp_addrs.push_back(opcodes.size());
@@ -1952,6 +1993,11 @@ void GDScriptByteCodeGenerator::start_while_condition() {
 
 void GDScriptByteCodeGenerator::write_while(const Address &p_condition) {
 	// Condition check.
+	const int fused_jump = _fuse_compare_jump(p_condition);
+	if (fused_jump >= 0) {
+		while_jmp_addrs.push_back(fused_jump);
+		return;
+	}
 	append_opcode(GDScriptFunction::OPCODE_JUMP_IF_NOT);
 	append(p_condition);
 	while_jmp_addrs.push_back(opcodes.size());

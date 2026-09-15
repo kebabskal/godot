@@ -102,9 +102,16 @@ class GDScriptByteCodeGenerator : public GDScriptCodeGenerator {
 
 	// State for the assign peephole (see `write_assign()`): end of the last inline typed operator
 	// instruction, the position of its destination operand, and its result type.
+	int typed_binop_start = -1;
 	int typed_binop_end = -1;
 	int typed_binop_dst_pos = -1;
+	int typed_binop_opcode = -1;
 	Variant::Type typed_binop_result_type = Variant::NIL;
+
+	// Peephole for `write_if()` / `write_while()`: if `p_condition` was just produced by an inline
+	// typed comparison, patch that instruction in place into a compare-and-jump. Returns the position
+	// of the jump destination to patch later, or -1 when not applicable.
+	int _fuse_compare_jump(const Address &p_condition);
 
 	HashMap<Variant, int> constant_map;
 	RBMap<StringName, int> name_map;

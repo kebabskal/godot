@@ -254,6 +254,7 @@ void (*type_init_function_table[])(Variant *) = {
 #if defined(__GNUC__) || defined(__clang__)
 #define _GDS_TYPED_BINOP_LABEL(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr, m_check) &&OPCODE_##m_name,
 #define _GDS_TYPED_UNOP_LABEL(m_name, m_vop, m_ta, m_tr, m_sym, m_expr) &&OPCODE_##m_name,
+#define _GDS_TYPED_JUMP_LABEL(m_name, m_cmp, m_ta, m_tb, m_sym, m_expr) &&OPCODE_##m_name,
 
 #define OPCODES_TABLE \
 	static const void *switch_table_ops[] = { \
@@ -261,6 +262,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_OPERATOR_VALIDATED, \
 		GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_LABEL) \
 		GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_LABEL) \
+		GDSCRIPT_TYPED_COMPARE_JUMP_OPCODES(_GDS_TYPED_JUMP_LABEL) \
 		&&OPCODE_TYPE_TEST_BUILTIN, \
 		&&OPCODE_TYPE_TEST_ARRAY, \
 		&&OPCODE_TYPE_TEST_DICTIONARY, \
@@ -977,6 +979,27 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 	DISPATCH_OPCODE;
 			GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_IMPL)
 #undef _GDS_TYPED_UNOP_IMPL
+			// Fused compare-and-jump: jumps when the comparison is false, like `OPCODE_JUMP_IF_NOT` on
+			// the comparison's result would.
+#define _GDS_TYPED_JUMP_IMPL(m_name, m_cmp, m_ta, m_tb, m_sym, m_expr) \
+	OPCODE(OPCODE_##m_name) { \
+		CHECK_SPACE(4); \
+		GET_VARIANT_PTR(a, 0); \
+		GET_VARIANT_PTR(b, 1); \
+		GD_ERR_BREAK(a->get_type() != Variant::m_ta || b->get_type() != Variant::m_tb); \
+		const auto va = *VariantInternal::_GDS_GET_##m_ta(a); \
+		const auto vb = *VariantInternal::_GDS_GET_##m_tb(b); \
+		if (!(m_expr)) { \
+			int to = _code_ptr[ip + 3]; \
+			GD_ERR_BREAK(to < 0 || to > _code_size); \
+			ip = to; \
+		} else { \
+			ip += 4; \
+		} \
+	} \
+	DISPATCH_OPCODE;
+			GDSCRIPT_TYPED_COMPARE_JUMP_OPCODES(_GDS_TYPED_JUMP_IMPL)
+#undef _GDS_TYPED_JUMP_IMPL
 #undef _GDS_TYPED_OP_FAIL
 #undef _GDS_NO_CHECK
 #undef _GDS_CHECK_ZERO

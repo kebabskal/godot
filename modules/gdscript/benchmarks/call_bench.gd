@@ -135,6 +135,18 @@ func run_compare_branch(n: int) -> void:
 		if i > 5:
 			acc += 1
 
+func run_while(n: int) -> void:
+	var i := 0
+	while i < n:
+		i += 1
+
+func run_float_compare_branch(n: int) -> void:
+	var acc := 0.0
+	var f := 0.5
+	for i in n:
+		if f < 1.0:
+			acc += 1.0
+
 func run_untyped_add4(n: int) -> void:
 	var acc = 0
 	for i in n:
@@ -241,6 +253,8 @@ func _init() -> void:
 		bench("vec2 scale x4", run_vec2_scale4, n)
 		bench("vec3 add x4", run_vec3_add4, n)
 		bench("compare+branch", run_compare_branch, n)
+		bench("float compare+branch", run_float_compare_branch, n)
+		bench("while loop", run_while, n)
 		bench("untyped int add x4", run_untyped_add4, n)
 		bench("self call", run_self, n)
 		bench("self call, 0 args", run_self_zero, n)

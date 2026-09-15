@@ -145,6 +145,14 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 	} break;
 			GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_DISASM)
 #undef _GDS_TYPED_UNOP_DISASM
+#define _GDS_TYPED_JUMP_DISASM(m_name, m_cmp, m_ta, m_tb, m_sym, m_expr)                     \
+	case OPCODE_##m_name: {                                                                  \
+		text += "jump-if-not typed " #m_cmp " ";                                             \
+		text += DADDR(1) + " " m_sym " " + DADDR(2) + " to " + itos(_code_ptr[ip + 3]);      \
+		incr += 4;                                                                           \
+	} break;
+			GDSCRIPT_TYPED_COMPARE_JUMP_OPCODES(_GDS_TYPED_JUMP_DISASM)
+#undef _GDS_TYPED_JUMP_DISASM
 			case OPCODE_OPERATOR_VALIDATED: {
 				text += "validated operator ";
 

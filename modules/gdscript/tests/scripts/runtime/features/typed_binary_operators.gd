@@ -136,3 +136,37 @@ func test():
 	r = -r
 	print(r)
 	print(r == Vector3(-4.0, -6.0, -8.0))
+
+	# Fused compare-and-jump in `if`/`elif`, `while` and `match`, taken and not taken.
+	var k := 3
+	if k < 2:
+		print("lt")
+	elif k == 3:
+		print("eq")
+	else:
+		print("else")
+	if 2.5 > 1.0:
+		print("float gt")
+	if p != Vector2(-2.25, -4.5):
+		print("wrong")
+	else:
+		print("vec eq")
+	var count := 0
+	while count < 4:
+		count += 1
+	print(count)
+	var w := 10.0
+	while w >= 2.5:
+		w = w / 2.0
+	print(w)
+	match k:
+		1:
+			print("one")
+		3:
+			print("three")
+		_:
+			print("other")
+	# The condition result is still available when it is not fused into the jump.
+	var cond := k >= 3
+	if cond:
+		print("cond")

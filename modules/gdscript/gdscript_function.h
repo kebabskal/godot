@@ -221,6 +221,26 @@ public:
 	m_op(NOT_BOOL, OP_NOT, BOOL, BOOL, "not ", !va) \
 	m_op(BIT_NEG_INT, OP_BIT_NEGATE, INT, INT, "~", ~va)
 
+// Compare-and-jump forms of the inline comparisons above: name, the compare it fuses, left type,
+// right type, symbol, expression. Emitted by `if` and `while` when the condition is such a compare.
+#define GDSCRIPT_TYPED_COMPARE_JUMP_OPCODES(m_op) \
+	m_op(JUMP_IF_NOT_INT_EQ, INT_EQ, INT, INT, "==", va == vb) \
+	m_op(JUMP_IF_NOT_INT_NE, INT_NE, INT, INT, "!=", va != vb) \
+	m_op(JUMP_IF_NOT_INT_LT, INT_LT, INT, INT, "<", va < vb) \
+	m_op(JUMP_IF_NOT_INT_LE, INT_LE, INT, INT, "<=", va <= vb) \
+	m_op(JUMP_IF_NOT_INT_GT, INT_GT, INT, INT, ">", va > vb) \
+	m_op(JUMP_IF_NOT_INT_GE, INT_GE, INT, INT, ">=", va >= vb) \
+	m_op(JUMP_IF_NOT_FLOAT_EQ, FLOAT_EQ, FLOAT, FLOAT, "==", va == vb) \
+	m_op(JUMP_IF_NOT_FLOAT_NE, FLOAT_NE, FLOAT, FLOAT, "!=", va != vb) \
+	m_op(JUMP_IF_NOT_FLOAT_LT, FLOAT_LT, FLOAT, FLOAT, "<", va < vb) \
+	m_op(JUMP_IF_NOT_FLOAT_LE, FLOAT_LE, FLOAT, FLOAT, "<=", va <= vb) \
+	m_op(JUMP_IF_NOT_FLOAT_GT, FLOAT_GT, FLOAT, FLOAT, ">", va > vb) \
+	m_op(JUMP_IF_NOT_FLOAT_GE, FLOAT_GE, FLOAT, FLOAT, ">=", va >= vb) \
+	m_op(JUMP_IF_NOT_VECTOR2_EQ, VECTOR2_EQ, VECTOR2, VECTOR2, "==", va == vb) \
+	m_op(JUMP_IF_NOT_VECTOR2_NE, VECTOR2_NE, VECTOR2, VECTOR2, "!=", va != vb) \
+	m_op(JUMP_IF_NOT_VECTOR3_EQ, VECTOR3_EQ, VECTOR3, VECTOR3, "==", va == vb) \
+	m_op(JUMP_IF_NOT_VECTOR3_NE, VECTOR3_NE, VECTOR3, VECTOR3, "!=", va != vb)
+
 class GDScriptFunction {
 public:
 	enum Opcode {
@@ -232,6 +252,9 @@ public:
 #define _GDS_TYPED_UNOP_ENUM(m_name, m_vop, m_ta, m_tr, m_sym, m_expr) OPCODE_##m_name,
 		GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_ENUM)
 #undef _GDS_TYPED_UNOP_ENUM
+#define _GDS_TYPED_JUMP_ENUM(m_name, m_cmp, m_ta, m_tb, m_sym, m_expr) OPCODE_##m_name,
+		GDSCRIPT_TYPED_COMPARE_JUMP_OPCODES(_GDS_TYPED_JUMP_ENUM)
+#undef _GDS_TYPED_JUMP_ENUM
 		OPCODE_TYPE_TEST_BUILTIN,
 		OPCODE_TYPE_TEST_ARRAY,
 		OPCODE_TYPE_TEST_DICTIONARY,

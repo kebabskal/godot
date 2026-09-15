@@ -48,3 +48,10 @@ falsetrue
 falsetrue
 (-4.0, -6.0, -8.0)
 true
+eq
+float gt
+vec eq
+4
+1.25
+three
+cond
