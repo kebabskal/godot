@@ -125,6 +125,22 @@ group are independent and can proceed in any order.
   accessor (setter+getter pair 168 -> 118 ns). Regular `set = f` /
   `get = f` accessors stay on the named path, since their parameter may
   be untyped and the named path converts the value first.
+- 4d, interpreter part: binary and unary operators on statically known
+  int, float, bool, Vector2 and Vector3 operands execute inline in the
+  VM (`GDSCRIPT_TYPED_BINARY_OPCODES` / `GDSCRIPT_TYPED_UNARY_OPCODES`),
+  reading and writing the Variant payload in place instead of calling a
+  validated evaluator through a function pointer, and an assign peephole
+  writes the result straight into the target local. This is the
+  "unboxed at the operation, boxed in the slot" form of 4d: the 24-byte
+  Variant slot stays, but no tag dispatch or indirect call happens on
+  the hot path. Editor build, ns per iteration: loop only 16.5 -> 11.9,
+  `acc = acc + i` statement 8.1 -> 4.4, int mod/div/neg statements
+  15 -> 5.6, vec2 add 10 -> 6.5. Untyped operands are unchanged (by
+  design; see item 5). What remains per statement is opcode dispatch and
+  operand address decoding; the next steps would be fused
+  compare-and-branch and int vector / Color / Vector4 coverage, then a
+  real unboxed slot representation only if a profile shows the slot
+  size matters.
 - Measurement note: numbers from the editor build drift by up to ~15 ns
   between builds for opcodes that were not touched (code layout of the
   VM's dispatch function). Compare only within one build, min of 3 runs.
