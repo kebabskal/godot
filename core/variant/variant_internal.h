@@ -342,6 +342,19 @@ public:
 		r_variant->clear();
 	}
 
+	// True for types that own no heap or reference-counted data (int, float, bool, vectors, ...),
+	// so a Variant of that type can be copied bitwise.
+	_FORCE_INLINE_ static bool is_trivially_copyable(Variant::Type p_type) {
+		return !Variant::needs_deinit[p_type];
+	}
+
+	// Bitwise copy of a trivially copyable Variant. `r_dst` must be uninitialized memory or NIL;
+	// `p_src` must satisfy `is_trivially_copyable()`.
+	_FORCE_INLINE_ static void copy_trivial(Variant *r_dst, const Variant *p_src) {
+		r_dst->type = p_src->type;
+		r_dst->_data = p_src->_data;
+	}
+
 	_FORCE_INLINE_ static void object_assign(Variant *r_variant, const Variant *p_var_obj) {
 		r_variant->_get_obj().ref(p_var_obj->_get_obj());
 	}

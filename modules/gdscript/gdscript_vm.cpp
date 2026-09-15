@@ -580,6 +580,17 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 		const int non_vararg_arg_count = MIN(p_argcount, _argument_count);
 		for (int i = 0; i < non_vararg_arg_count; i++) {
+			// Fast path: a plain value (int, float, Vector2, ...) that is either untyped or already of
+			// the declared built-in type needs no conversion and holds no references, so copy it bitwise
+			// instead of going through the type check and the Variant copy constructor.
+			{
+				const Variant::Type arg_variant_type = p_args[i]->get_type();
+				const GDScriptDataType &arg_data_type = argument_types[i];
+				if (VariantInternal::is_trivially_copyable(arg_variant_type) && (!arg_data_type.has_type() || (arg_data_type.kind == GDScriptDataType::BUILTIN && arg_data_type.builtin_type == arg_variant_type))) {
+					VariantInternal::copy_trivial(&stack[i + FIXED_ADDRESSES_MAX], p_args[i]);
+					continue;
+				}
+			}
 			if (!argument_types[i].has_type()) {
 				memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(*p_args[i]));
 				continue;
@@ -2914,7 +2925,11 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 			OPCODE(OPCODE_RETURN) {
 				CHECK_SPACE(2);
 				GET_VARIANT_PTR(r, 0);
-				retvalue = *r;
+				if (VariantInternal::is_trivially_copyable(r->get_type())) {
+					VariantInternal::copy_trivial(&retvalue, r); // `retvalue` is still NIL here.
+				} else {
+					retvalue = *r;
+				}
 #ifdef DEBUG_ENABLED
 				exit_ok = true;
 #endif
@@ -2943,6 +2958,8 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 						Variant::construct(ret_type, retvalue, nullptr, 0, ce);
 						OPCODE_BREAK;
 					}
+				} else if (VariantInternal::is_trivially_copyable(ret_type)) {
+					VariantInternal::copy_trivial(&retvalue, r); // `retvalue` is still NIL here.
 				} else {
 					retvalue = *r;
 				}
