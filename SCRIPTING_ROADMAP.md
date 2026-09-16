@@ -267,6 +267,43 @@ group are independent and can proceed in any order.
   done: the rest of the engine's dictionary returns (a survey is the
   next step), deprecating the dictionary twins, and a doc page per
   engine layout.
+  Survey (from `extension_api.json`, 2026-09-16): 176 bound methods
+  return a `Dictionary` or an array of them, 150 in core. They split
+  into (a) fixed-shape records, the struct candidates: physics results
+  (done), `Time` date/time dicts, `TriangleMesh` hits, `OS.get_memory_info`,
+  `Engine.get_version_info`, `Image.compute_image_metrics`,
+  `Geometry2D.make_atlas`, `Input.get_joy_info`, `IP.get_local_interfaces`,
+  `DisplayServer.tts_get_voices`, `AStarGrid2D.get_point_data_in_region`,
+  `ProjectSettings.get_global_class_list`, `GraphEdit`/`VisualShader`
+  connections, `CodeEdit` completion options, `WebRTCMultiplayerPeer.get_peer`,
+  `XRInterface.get_system_info`, `TextServerManager`/`XRServer.get_interfaces`;
+  (b) the reflection records `Object.get_property_list/get_method_list/
+  get_signal_list`, `ClassDB.class_get_*_list`, `Script.get_script_*_list`,
+  `RenderingServer.*_get_shader_parameter_list`: PropertyInfo/MethodInfo
+  shapes with nested argument arrays, high impact but the largest change,
+  and the `ScriptExtension`/`ScriptLanguageExtension` virtuals that
+  produce them; (c) text: `TextServer.shaped_text_get_glyphs` and friends,
+  a hot path that wants unboxed struct arrays before converting; (d)
+  genuine maps to keep as dictionaries: font OpenType feature/variation
+  maps, `CodeHighlighter` colors, `AudioStream` tags, HTTP headers,
+  `RegExMatch.get_names`, `Script.get_script_constant_map`,
+  `InstancePlaceholder.get_stored_values`, `XRServer.get_trackers`,
+  JSON-RPC and glTF `to_dictionary` serialization; (e) editor-only
+  (`EditorVCSInterface`, export/import options), left alone.
+  Second batch landed: `Time` gets `DateTime`, `Date`, `TimeOfDay` and
+  `TimeZoneInfo` layouts with struct twins of every dict method
+  (`get_datetime_from_unix_time`, `get_unix_time_from_datetime`, ...;
+  the names drop `_dict`), the first bound methods that *take* a struct
+  (`Variant::operator TypedStruct<N>()` added for `VariantCaster`),
+  `TriangleMesh.intersect_ray_struct`/`intersect_segment_struct` ->
+  `TriangleMeshHit`, `OS.get_memory_info_struct` -> `MemoryInfo`,
+  `Engine.get_version_info_struct` -> `VersionInfo`. Core layouts
+  register in `register_core_types` next to their class and unregister
+  before `StructLayout::cleanup()`. `StructLayout::instantiate(Dictionary)`
+  fills a value by field name for engine code that still builds a
+  dictionary (platform `get_memory_info` overrides). Next in (a):
+  `Image.compute_image_metrics`, `Geometry2D.make_atlas`, the
+  `GraphEdit` connection records, `ProjectSettings.get_global_class_list`.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
