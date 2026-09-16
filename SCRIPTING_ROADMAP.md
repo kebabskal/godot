@@ -244,6 +244,29 @@ group are independent and can proceed in any order.
   optimization that would make a mutating call clone-free. Next: the
   array-element write-back through the assignment chain, then engine
   result structs for the remaining physics queries.
+  Decision after increment 4: struct methods follow the built-in value
+  types and return a new value (`p = p.scaled(2)`), which works on any
+  expression including array elements; mutating methods stay legal on
+  variables, members and fields but the array-element write-back is not
+  built. The error for other receivers points at the convention.
+- 2 (no `Dictionary` returns), physics first: every
+  `PhysicsDirectSpaceState2D/3D` query except `collide_shape` (already a
+  typed `Vector` array) has a struct-returning twin: `intersect_ray_struct`
+  -> `PhysicsRayResult`, `intersect_point_struct` and
+  `intersect_shape_struct` -> `Array[PhysicsShapeResult]`,
+  `cast_motion_struct` -> `PhysicsCastResult` (`safe_fraction`,
+  `unsafe_fraction`, both 1.0 on no hit), `get_rest_info_struct` ->
+  `PhysicsRestInfo` (`hit` plus the fields), each in 2D and 3D. Typed
+  arrays of engine structs: `TypedArray<TypedStruct<Name>>` puts the
+  layout name in the array hint, the analyzer resolves it through
+  `StructDB` (so `var hits: Array[PhysicsShapeResult3D]` is fully
+  typed), the API dump writes `typedarray::struct::Name`, and the class
+  reference shows `Struct[]` with the layout named in the description
+  (layouts have no class page yet). Element validation is by
+  `Variant::STRUCT` only; the layout is not enforced at runtime. Not
+  done: the rest of the engine's dictionary returns (a survey is the
+  next step), deprecating the dictionary twins, and a doc page per
+  engine layout.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
