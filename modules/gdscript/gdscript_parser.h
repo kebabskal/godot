@@ -1419,6 +1419,7 @@ private:
 	};
 
 	static bool is_project_ignoring_warnings;
+	static bool is_project_strict;
 	static GDScriptWarning::WarnLevel warning_levels[GDScriptWarning::WARNING_MAX];
 	static LocalVector<WarningDirectoryRule> warning_directory_rules;
 

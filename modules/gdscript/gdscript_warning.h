@@ -174,6 +174,9 @@ public:
 	static int get_default_value(Code p_code);
 	static PropertyInfo get_property_info(Code p_code);
 	static String get_name_from_code(Code p_code);
+	// Whether strict mode (`debug/gdscript/strict_mode`) turns this warning into an error: the ones
+	// that mean a declaration has no static type or an access could not be type checked.
+	static bool is_strict_mode_error(Code p_code);
 	static String get_setting_path_from_code(Code p_code);
 	static Code get_code_from_name(const String &p_name);
 };

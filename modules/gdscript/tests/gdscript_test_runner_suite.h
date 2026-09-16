@@ -30,10 +30,12 @@
 
 #pragma once
 
+#include "../gdscript_analyzer.h"
 #include "../gdscript_cache.h"
 #include "../gdscript_parser.h"
 #include "gdscript_test_runner.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "tests/test_macros.h"
@@ -176,5 +178,92 @@ TEST_CASE("[Modules][GDScript] Validate multi-line string error positions") {
 	check_single_multiline_string_error("\\uD800\\", 2, 5, 2, 7, "Invalid UTF-16 sequence in string, unpaired lead surrogate");
 	check_single_multiline_string_error("\\uD800\\\nx", 2, 5, 2, 7, "Invalid UTF-16 sequence in string, unpaired lead surrogate");
 }
+
+#ifdef DEBUG_ENABLED
+// Analyzes `p_source` with strict mode on and returns the error messages, restoring the setting afterwards.
+static Vector<String> analyze_in_strict_mode(const String &p_source) {
+	ProjectSettings::get_singleton()->set_setting("debug/gdscript/strict_mode", true);
+	GDScriptParser::update_project_settings();
+
+	GDScriptParser parser;
+	parser.parse(p_source, "", false);
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	Vector<String> errors;
+	for (const GDScriptParser::ParserError &error : parser.get_errors()) {
+		errors.push_back(error.message);
+	}
+
+	ProjectSettings::get_singleton()->set_setting("debug/gdscript/strict_mode", false);
+	GDScriptParser::update_project_settings();
+	return errors;
+}
+
+static bool has_strict_error(const Vector<String> &p_messages, const String &p_fragment) {
+	for (const String &message : p_messages) {
+		if (message.contains("(Strict mode.)") && message.contains(p_fragment)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+TEST_CASE("[Modules][GDScript] Strict mode") {
+	// Untyped declarations of every kind are errors, and `@warning_ignore` does not silence them.
+	{
+		const Vector<String> errors = analyze_in_strict_mode(
+				"var member = 1\n"
+				"func f(param):\n"
+				"\t@warning_ignore(\"untyped_declaration\")\n"
+				"\tvar local = param\n"
+				"\tfor i in [local]:\n"
+				"\t\tpass\n"
+				"\treturn local\n");
+		CHECK(has_strict_error(errors, "\"member\""));
+		CHECK(has_strict_error(errors, "\"param\""));
+		CHECK(has_strict_error(errors, "\"local\""));
+		CHECK(has_strict_error(errors, "\"i\""));
+		CHECK(has_strict_error(errors, "\"f()\""));
+	}
+	// Fully typed code, including explicit Variant and `:=` inference from typed values, is fine.
+	{
+		const Vector<String> errors = analyze_in_strict_mode(
+				"var member: int = 1\n"
+				"var anything: Variant = null\n"
+				"func f(param: int) -> int:\n"
+				"\tvar local := param + 1\n"
+				"\tfor i: int in [local]:\n"
+				"\t\tlocal += i\n"
+				"\treturn local\n");
+		CHECK(errors.is_empty());
+	}
+	// Inference from a Variant value and accesses that cannot be type checked are errors. Accessing
+	// members of an explicitly declared Variant is not: that declaration is the opt-in for dynamic code.
+	{
+		const Vector<String> errors = analyze_in_strict_mode(
+				"func f(anything: Variant, node: Node) -> int:\n"
+				"\tvar inferred := anything\n"
+				"\tnode.some_method()\n"
+				"\treturn node.some_property\n");
+		CHECK(has_strict_error(errors, "inferred from a Variant value"));
+		CHECK(has_strict_error(errors, "\"some_method()\""));
+		CHECK(has_strict_error(errors, "\"some_property\""));
+	}
+	{
+		const Vector<String> errors = analyze_in_strict_mode(
+				"func f(anything: Variant) -> Variant:\n"
+				"\treturn anything.some_property\n");
+		CHECK(errors.is_empty());
+	}
+	// With the setting off, the same code only produces warnings.
+	{
+		GDScriptParser parser;
+		parser.parse("var member = 1\n", "", false);
+		GDScriptAnalyzer analyzer(&parser);
+		analyzer.analyze();
+		CHECK(parser.get_errors().is_empty());
+	}
+}
+#endif // DEBUG_ENABLED
 
 } // namespace GDScriptTests

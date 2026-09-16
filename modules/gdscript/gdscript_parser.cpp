@@ -67,6 +67,7 @@ Variant::Type GDScriptParser::get_builtin_type(const StringName &p_type) {
 
 #ifdef DEBUG_ENABLED
 bool GDScriptParser::is_project_ignoring_warnings = false;
+bool GDScriptParser::is_project_strict = false;
 GDScriptWarning::WarnLevel GDScriptParser::warning_levels[GDScriptWarning::WARNING_MAX];
 LocalVector<GDScriptParser::WarningDirectoryRule> GDScriptParser::warning_directory_rules;
 #endif // DEBUG_ENABLED
@@ -95,6 +96,7 @@ bool GDScriptParser::annotation_exists(const String &p_annotation_name) const {
 #ifdef DEBUG_ENABLED
 void GDScriptParser::update_project_settings() {
 	is_project_ignoring_warnings = !GLOBAL_GET("debug/gdscript/warnings/enable").booleanize();
+	is_project_strict = GLOBAL_GET("debug/gdscript/strict_mode").booleanize();
 
 	for (int i = 0; i < GDScriptWarning::WARNING_MAX; i++) {
 		const String setting_path = GDScriptWarning::get_setting_path_from_code((GDScriptWarning::Code)i);
@@ -274,6 +276,16 @@ void GDScriptParser::push_warning(const Node *p_source, GDScriptWarning::Code p_
 
 void GDScriptParser::push_warning(int p_start_line, int p_start_column, int p_end_line, int p_end_column, GDScriptWarning::Code p_code, const Vector<String> &p_symbols) {
 	ERR_FAIL_INDEX(p_code, GDScriptWarning::WARNING_MAX);
+
+	if (is_project_strict && GDScriptWarning::is_strict_mode_error(p_code)) {
+		// Strict mode: untyped declarations and unchecked accesses are errors, regardless of the
+		// warning settings and of `@warning_ignore` (declare the type, `Variant` included, instead).
+		GDScriptWarning warning;
+		warning.code = p_code;
+		warning.symbols = p_symbols;
+		push_error(warning.get_message() + " (Strict mode.)", p_start_line, p_start_column, p_end_line, p_end_column);
+		return;
+	}
 
 	if (is_project_ignoring_warnings || is_script_ignoring_warnings) {
 		return;

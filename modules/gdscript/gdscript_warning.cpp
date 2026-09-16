@@ -201,6 +201,21 @@ String GDScriptWarning::get_name() const {
 	return get_name_from_code(code);
 }
 
+bool GDScriptWarning::is_strict_mode_error(Code p_code) {
+	switch (p_code) {
+		case UNTYPED_DECLARATION:
+		case INFERENCE_ON_VARIANT:
+		case UNSAFE_PROPERTY_ACCESS:
+		case UNSAFE_METHOD_ACCESS:
+		case UNSAFE_CAST:
+		case UNSAFE_CALL_ARGUMENT:
+		case UNSAFE_VOID_RETURN:
+			return true;
+		default:
+			return false;
+	}
+}
+
 String GDScriptWarning::get_name_from_code(Code p_code) {
 	ERR_FAIL_COND_V(p_code < 0 || p_code >= WARNING_MAX, String());
 
