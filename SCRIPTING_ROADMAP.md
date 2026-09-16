@@ -168,6 +168,10 @@ group are independent and can proceed in any order.
   `:=` from a typed value stays allowed. With it on, all code is on the
   4b/4d fast paths. Not done: a per-directory variant (the warning
   directory rules could carry it if addons need to stay lax).
+- 1 (structs): design draft in `STRUCTS_DESIGN.md`, with a touch-point
+  survey (~160 sites, 13 hard) and a four-increment plan: core type,
+  GDScript declaration and typing, engine registration plus the first
+  physics result and the C# side, then methods and operator overloads.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
