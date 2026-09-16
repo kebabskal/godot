@@ -365,6 +365,82 @@ bool StructLayout::has_field(const StringName &p_name) const {
 	return field_index.has(p_name);
 }
 
+int StructLayout::add_method(const StringName &p_name, const Callable &p_callable) {
+	ERR_FAIL_COND_V(p_name == StringName(), -1);
+	if (method_index.has(p_name)) {
+		return -1;
+	}
+	Method method;
+	method.name = p_name;
+	method.callable = p_callable;
+	methods.push_back(method);
+	method_index[p_name] = methods.size() - 1;
+	return methods.size() - 1;
+}
+
+int StructLayout::get_method_count() const {
+	return methods.size();
+}
+
+StringName StructLayout::get_method_name(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, methods.size(), StringName());
+	return methods[p_index].name;
+}
+
+const Callable &StructLayout::get_method(int p_index) const {
+	static const Callable invalid;
+	ERR_FAIL_INDEX_V(p_index, methods.size(), invalid);
+	return methods[p_index].callable;
+}
+
+int StructLayout::find_method(const StringName &p_name) const {
+	const int *index = method_index.getptr(p_name);
+	return index != nullptr ? *index : -1;
+}
+
+bool StructLayout::has_struct_method(const StringName &p_name) const {
+	return method_index.has(p_name);
+}
+
+void StructLayout::call_method(int p_index, Variant *p_self, const Variant **p_args, int p_argcount, Variant &r_ret, Callable::CallError &r_error) const {
+	ERR_FAIL_INDEX(p_index, methods.size());
+	const Variant **args = (const Variant **)alloca(sizeof(const Variant *) * (p_argcount + 1));
+	args[0] = p_self;
+	for (int i = 0; i < p_argcount; i++) {
+		args[i + 1] = p_args[i];
+	}
+	methods[p_index].callable.callp(args, p_argcount + 1, r_ret, r_error);
+	if (r_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT || r_error.error == Callable::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS || r_error.error == Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS) {
+		// Report positions as the caller sees them, without the implicit `self`.
+		if (r_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT) {
+			r_error.argument -= 1;
+		} else {
+			r_error.expected -= 1;
+		}
+	}
+}
+
+void StructLayout::set_operator(Variant::Operator p_op, const Callable &p_callable) {
+	ERR_FAIL_INDEX(p_op, Variant::OP_MAX);
+	operators[p_op] = p_callable;
+}
+
+bool StructLayout::has_operator(Variant::Operator p_op) const {
+	return operators.has(p_op);
+}
+
+const Callable &StructLayout::get_operator(Variant::Operator p_op) const {
+	static const Callable invalid;
+	const Callable *callable = operators.getptr(p_op);
+	return callable != nullptr ? *callable : invalid;
+}
+
+void StructLayout::clear_methods() {
+	methods.clear();
+	method_index.clear();
+	operators.clear();
+}
+
 bool StructLayout::validate_field_value(int p_index, Variant &r_value) const {
 	ERR_FAIL_INDEX_V(p_index, fields.size(), false);
 	return fields[p_index].type.validate(r_value, "assign");
@@ -442,6 +518,9 @@ void StructLayout::cleanup() {
 
 void StructLayout::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_name"), &StructLayout::get_name);
+	ClassDB::bind_method(D_METHOD("get_method_count"), &StructLayout::get_method_count);
+	ClassDB::bind_method(D_METHOD("get_method_name", "index"), &StructLayout::get_method_name);
+	ClassDB::bind_method(D_METHOD("find_method", "name"), &StructLayout::find_method);
 	ClassDB::bind_method(D_METHOD("get_field_count"), &StructLayout::get_field_count);
 	ClassDB::bind_method(D_METHOD("get_field_name", "index"), &StructLayout::get_field_name);
 	ClassDB::bind_method(D_METHOD("get_field_type", "index"), &StructLayout::get_field_type);

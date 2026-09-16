@@ -17,6 +17,13 @@
 				Returns the index of the field called [param name], or [code]-1[/code] if there is no such field.
 			</description>
 		</method>
+		<method name="find_method" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns the index of the method called [param name], or [code]-1[/code] if the struct declares no such method. Operator overloads are methods too, under their reserved names such as [code]_add[/code].
+			</description>
+		</method>
 		<method name="get_field_count" qualifiers="const">
 			<return type="int" />
 			<description>
@@ -42,6 +49,19 @@
 			<param index="0" name="index" type="int" />
 			<description>
 				Returns the type of the field at [param index]. A field declared as [Variant] returns [constant TYPE_NIL].
+			</description>
+		</method>
+		<method name="get_method_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of methods the struct declares, including operator overloads. Engine structs currently have none.
+			</description>
+		</method>
+		<method name="get_method_name" qualifiers="const">
+			<return type="StringName" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the name of the method at [param index], in declaration order.
 			</description>
 		</method>
 		<method name="get_name" qualifiers="const">

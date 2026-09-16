@@ -1,0 +1,19 @@
+GDTEST_OK
+25.0
+v(3.0, 4.0)
+p(3.0, 4.0)
+Vec(x: 6.0, y: 8.0)
+Vec(x: -6.0, y: -8.0)
+Vec(x: 3.0, y: 3.0)
+Vec(x: 1.0, y: 0.0)
+Vec(x: -6.0, y: -8.0)
+Vec(x: 11.0, y: 22.0)
+Vec(x: 3.0, y: 6.0)
+Vec(x: -1.0, y: -2.0)
+true false
+Vec(x: 11.0, y: 22.0)
+5.0
+Vec(x: 2.0, y: 4.0)
+[Vec(x: 1.0, y: 0.0), Vec(x: 2.0, y: 0.0), Vec(x: 3.0, y: 0.0)]
+Line(start: Vec(x: 1.0, y: 1.0), end: Vec(x: 4.0, y: 4.0))
+Vec(x: 5.0, y: 5.0) Vec(x: 1.0, y: 1.0)

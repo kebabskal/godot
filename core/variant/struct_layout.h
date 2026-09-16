@@ -52,11 +52,21 @@ public:
 		Variant default_value;
 	};
 
+	// A method or operator overload: a Callable that takes the struct value as its first argument,
+	// followed by the declared parameters. Set by the script that declares the layout.
+	struct Method {
+		StringName name;
+		Callable callable;
+	};
+
 private:
 	StringName name;
 	String source_path; // Script path for script-declared layouts; empty for engine layouts.
 	Vector<Field> fields;
 	HashMap<StringName, int> field_index;
+	Vector<Method> methods;
+	HashMap<StringName, int> method_index;
+	HashMap<int, Callable> operators; // Keyed by `Variant::Operator`.
 
 protected:
 	static void _bind_methods();
@@ -87,6 +97,26 @@ public:
 	// Converts `r_value` to the field's type where that is allowed (like a typed assignment) and
 	// returns false when it cannot be accepted.
 	bool validate_field_value(int p_index, Variant &r_value) const;
+
+	// Methods, in declaration order. `add_method` returns the index, or -1 if the name is taken.
+	int add_method(const StringName &p_name, const Callable &p_callable);
+	int get_method_count() const;
+	StringName get_method_name(int p_index) const;
+	const Callable &get_method(int p_index) const;
+	int find_method(const StringName &p_name) const;
+	bool has_struct_method(const StringName &p_name) const; // Not `has_method`: that is `Object`'s, about the layout object itself.
+	// Calls a method by name with the value as the first argument. `p_self` is written back by a
+	// mutating method, so it must be the caller's own value.
+	void call_method(int p_index, Variant *p_self, const Variant **p_args, int p_argcount, Variant &r_ret, Callable::CallError &r_error) const;
+
+	// Operator overloads: `p_callable` takes the left operand and, for binary operators, the right.
+	void set_operator(Variant::Operator p_op, const Callable &p_callable);
+	bool has_operator(Variant::Operator p_op) const;
+	const Callable &get_operator(Variant::Operator p_op) const;
+
+	// Drops every method and operator, so values that keep a stale layout after a script reload
+	// report a missing method instead of calling freed code.
+	void clear_methods();
 
 	// A value with every field at its default.
 	Struct instantiate() const;

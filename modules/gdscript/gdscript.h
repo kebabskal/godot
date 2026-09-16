@@ -110,6 +110,7 @@ private:
 	LocalVector<const MemberInfo *> member_info_by_index;
 	HashMap<StringName, Ref<GDScript>> subclasses;
 	HashMap<StringName, Ref<StructLayout>> struct_layouts; // `struct` declarations of this class.
+	HashMap<StringName, GDScriptFunction *> struct_functions; // Struct methods, keyed `Struct.method`. Not reachable by name; the layout holds them as callables.
 	HashMap<StringName, MethodInfo> _signals;
 	Dictionary rpc_config;
 

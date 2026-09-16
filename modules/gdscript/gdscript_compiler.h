@@ -81,6 +81,7 @@ class GDScriptCompiler {
 		HashMap<StringName, GDScriptCodeGenerator::Address> locals;
 		List<HashMap<StringName, GDScriptCodeGenerator::Address>> locals_stack;
 		bool is_static = false;
+		GDScriptCodeGenerator::Address struct_self; // In a struct method: the implicit `self` parameter (mode `FUNCTION_PARAMETER`).
 
 		GDScriptCodeGenerator::Address add_local(const StringName &p_name, const GDScriptDataType &p_type) {
 			uint32_t addr = generator->add_local(p_name, p_type);

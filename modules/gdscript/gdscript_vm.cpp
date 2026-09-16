@@ -326,6 +326,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_CALL_METHOD_BIND_VALIDATED_RETURN, \
 		&&OPCODE_CALL_METHOD_BIND_VALIDATED_NO_RETURN, \
 		&&OPCODE_CALL_SCRIPT,                          \
+		&&OPCODE_CALL_STRUCT_METHOD,                   \
 		&&OPCODE_AWAIT, \
 		&&OPCODE_AWAIT_RESUME, \
 		&&OPCODE_CREATE_LAMBDA, \
@@ -569,6 +570,52 @@ static GDS_NOINLINE bool _struct_get_field(const Variant *p_src, Variant *p_dst,
 	}
 #endif
 	*p_dst = ret;
+	return true;
+}
+
+// Calls a method of the struct in `p_self` through its layout. The index is what the compiler saw;
+// the name guards against a layout that changed since (script reload), falling back to a lookup.
+// `p_self` is the caller's own slot: a mutating method writes its final `self` back into it.
+static GDS_NOINLINE bool _struct_call_method(Variant *p_self, const Variant **p_args, int p_argcount, int p_method_index, const StringName &p_name, Variant *r_ret, Callable::CallError &r_err, String *r_err_text) {
+	const Struct *s = p_self->get_type() == Variant::STRUCT ? VariantInternal::get_struct(p_self) : nullptr;
+	const StructLayout *layout = s != nullptr ? s->get_layout_ptr() : nullptr;
+	if (unlikely(layout == nullptr)) {
+#ifdef DEBUG_ENABLED
+		*r_err_text = "Invalid call to method '" + String(p_name) + "' on a base of type '" + _get_var_type(p_self) + "': not a struct with a layout.";
+#endif
+		return false;
+	}
+	int method = p_method_index;
+	if (unlikely(method < 0 || method >= layout->get_method_count() || layout->get_method_name(method) != p_name)) {
+		method = layout->find_method(p_name);
+	}
+	if (unlikely(method < 0)) {
+#ifdef DEBUG_ENABLED
+		*r_err_text = "Struct '" + String(layout->get_name()) + "' has no method '" + String(p_name) + "'.";
+#endif
+		return false;
+	}
+	const Variant **args = (const Variant **)alloca(sizeof(const Variant *) * (p_argcount + 1));
+	args[0] = p_self;
+	for (int i = 0; i < p_argcount; i++) {
+		args[i + 1] = p_args[i];
+	}
+	const Callable &callable = layout->get_method(method);
+	const GDScriptStructMethodCallable *script_method = GDScriptStructMethodCallable::from_callable(callable);
+	if (likely(script_method != nullptr && script_method->get_function() != nullptr)) {
+		*r_ret = script_method->get_function()->call(nullptr, args, p_argcount + 1, r_err);
+	} else {
+		callable.callp(args, p_argcount + 1, *r_ret, r_err);
+	}
+	if (unlikely(r_err.error != Callable::CallError::CALL_OK)) {
+		// Positions as the caller sees them, without `self`. The opcode formats the message.
+		if (r_err.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT) {
+			r_err.argument -= 1;
+		} else if (r_err.error == Callable::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS || r_err.error == Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS) {
+			r_err.expected -= 1;
+		}
+		return false;
+	}
 	return true;
 }
 
@@ -2751,6 +2798,59 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 			}
 			DISPATCH_OPCODE;
 
+			OPCODE(OPCODE_CALL_STRUCT_METHOD) {
+				LOAD_INSTRUCTION_ARGS
+				CHECK_SPACE(4 + instr_arg_count);
+
+				ip += instr_arg_count;
+
+				int argc = _code_ptr[ip + 1];
+				GD_ERR_BREAK(argc < 0);
+				int method_index = _code_ptr[ip + 2];
+				int methodname_idx = _code_ptr[ip + 3];
+				GD_ERR_BREAK(methodname_idx < 0 || methodname_idx >= _global_names_count);
+				const StringName *methodname = &_global_names_ptr[methodname_idx];
+
+				GodotProfileZoneScriptSystemCall(methodname, source, name, *methodname, line);
+
+				Variant **argptrs = instruction_args;
+
+				GET_INSTRUCTION_ARG(base, argc);
+				GET_INSTRUCTION_ARG(dst, argc + 1);
+
+				// Never write a discarded result to the shared `nil` slot (GH-70964).
+				Variant discarded_ret;
+				const bool has_ret = dst != &stack[ADDR_STACK_NIL];
+				Variant *ret = has_ret ? dst : &discarded_ret;
+
+#ifdef DEBUG_ENABLED
+				uint64_t call_time = 0;
+				if (GDScriptLanguage::get_singleton()->profiling) {
+					call_time = OS::get_singleton()->get_ticks_usec();
+				}
+#endif
+
+				Callable::CallError err;
+				const bool ok = _struct_call_method(base, (const Variant **)argptrs, argc, method_index, *methodname, ret, err, &err_text);
+
+#ifdef DEBUG_ENABLED
+				if (GDScriptLanguage::get_singleton()->profiling) {
+					function_call_time += OS::get_singleton()->get_ticks_usec() - call_time;
+				}
+#endif
+				if (unlikely(!ok)) {
+#ifdef DEBUG_ENABLED
+					if (err.error != Callable::CallError::CALL_OK) {
+						err_text = _get_call_error("function '" + String(*methodname) + "' in base '" + _get_var_type(base) + "'", (const Variant **)argptrs, argc, *ret, err);
+					}
+#endif
+					OPCODE_BREAK;
+				}
+
+				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
 			OPCODE(OPCODE_CALL_METHOD_BIND_VALIDATED_RETURN) {
 				LOAD_INSTRUCTION_ARGS
 				CHECK_SPACE(3 + instr_arg_count);
@@ -4505,6 +4605,12 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 	// We deliberately avoid calling the destructor for `ADDR_STACK_CLASS`, since we initialized it
 	// without incrementing any reference count that it might have. Same for `ADDR_STACK_SELF` when
 	// the caller holds the reference.
+	if (unlikely(_struct_self_writeback) && p_argcount > 0 && p_state == nullptr) {
+		// A mutating struct method: hand the final `self` back to the caller's value. Every call
+		// site passes its own slot here (the VM opcode and `Variant::callp` both do).
+		*const_cast<Variant *>(p_args[0]) = stack[FIXED_ADDRESSES_MAX];
+	}
+
 	if (!p_self_is_held) {
 		stack[ADDR_STACK_SELF].~Variant();
 	}

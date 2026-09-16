@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 7: Invalid operands "V" and "V" for "*" operator: struct "V" has no "_mul()" method.

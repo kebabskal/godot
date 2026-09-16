@@ -320,6 +320,7 @@ public:
 		OPCODE_CALL_METHOD_BIND_VALIDATED_RETURN,
 		OPCODE_CALL_METHOD_BIND_VALIDATED_NO_RETURN,
 		OPCODE_CALL_SCRIPT,
+		OPCODE_CALL_STRUCT_METHOD,
 		OPCODE_AWAIT,
 		OPCODE_AWAIT_RESUME,
 		OPCODE_CREATE_LAMBDA,
@@ -462,6 +463,7 @@ private:
 	StringName name;
 	StringName source;
 	bool _static = false;
+	bool _struct_self_writeback = false; // A mutating struct method: its final `self` (parameter 0) is copied back into the caller's argument on return.
 	Vector<GDScriptDataType> argument_types;
 	// NOTE: This is the expected return type, but coroutines can actually return a `GDScriptFunctionState` object.
 	// In VM it is currently only used to return a default value on error (as a fallback).

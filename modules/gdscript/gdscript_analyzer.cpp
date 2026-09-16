@@ -225,6 +225,255 @@ static GDScriptParser::DataType make_global_enum_type(const StringName &p_enum_n
 	return type;
 }
 
+struct StructOperatorName {
+	const char *name;
+	Variant::Operator op;
+	bool unary;
+};
+
+static const StructOperatorName struct_operator_names[] = {
+	{ "_add", Variant::OP_ADD, false },
+	{ "_sub", Variant::OP_SUBTRACT, false },
+	{ "_mul", Variant::OP_MULTIPLY, false },
+	{ "_div", Variant::OP_DIVIDE, false },
+	{ "_mod", Variant::OP_MODULE, false },
+	{ "_neg", Variant::OP_NEGATE, true },
+	{ "_lt", Variant::OP_LESS, false },
+	{ "_le", Variant::OP_LESS_EQUAL, false },
+	{ "_gt", Variant::OP_GREATER, false },
+	{ "_ge", Variant::OP_GREATER_EQUAL, false },
+};
+
+Variant::Operator GDScriptAnalyzer::struct_operator_from_method_name(const StringName &p_name) {
+	for (const StructOperatorName &E : struct_operator_names) {
+		if (p_name == E.name) {
+			return E.op;
+		}
+	}
+	return Variant::OP_MAX;
+}
+
+StringName GDScriptAnalyzer::struct_method_name_for_operator(Variant::Operator p_op) {
+	for (const StructOperatorName &E : struct_operator_names) {
+		if (p_op == E.op) {
+			return E.name;
+		}
+	}
+	return StringName();
+}
+
+bool GDScriptAnalyzer::struct_operator_is_unary(Variant::Operator p_op) {
+	for (const StructOperatorName &E : struct_operator_names) {
+		if (p_op == E.op) {
+			return E.unary;
+		}
+	}
+	return false;
+}
+
+GDScriptParser::FunctionNode *GDScriptAnalyzer::find_struct_method(const GDScriptParser::StructNode *p_struct, const StringName &p_name, int *r_index) {
+	for (int i = 0; i < p_struct->methods.size(); i++) {
+		if (p_struct->methods[i]->identifier != nullptr && p_struct->methods[i]->identifier->name == p_name) {
+			if (r_index != nullptr) {
+				*r_index = i;
+			}
+			return p_struct->methods[i];
+		}
+	}
+	return nullptr;
+}
+
+// Whether an assignment target is rooted at `self` or at a field of the struct (bare name).
+static bool _struct_assignee_is_self(const GDScriptParser::StructNode *p_struct, const GDScriptParser::ExpressionNode *p_assignee) {
+	const GDScriptParser::ExpressionNode *base = p_assignee;
+	while (base != nullptr && base->type == GDScriptParser::Node::SUBSCRIPT) {
+		base = static_cast<const GDScriptParser::SubscriptNode *>(base)->base;
+	}
+	if (base == nullptr) {
+		return false;
+	}
+	if (base->type == GDScriptParser::Node::SELF) {
+		return true;
+	}
+	if (base->type == GDScriptParser::Node::IDENTIFIER) {
+		const StringName name = static_cast<const GDScriptParser::IdentifierNode *>(base)->name;
+		for (const GDScriptParser::VariableNode *field : p_struct->fields) {
+			if (field->identifier->name == name) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// A syntactic walk, so it needs no type information and no particular resolution order: locals
+// and parameters may not shadow fields (an error), so a bare field name is always the field.
+struct StructMutationWalker {
+	const GDScriptParser::StructNode *struct_node = nullptr;
+	bool mutates = false;
+	HashSet<StringName> self_calls; // Names called on `self` (bare or `self.name()`); resolved to methods later.
+
+	void walk(const GDScriptParser::Node *p_node) {
+		if (p_node == nullptr) {
+			return;
+		}
+		switch (p_node->type) {
+			case GDScriptParser::Node::SUITE: {
+				for (const GDScriptParser::Node *stmt : static_cast<const GDScriptParser::SuiteNode *>(p_node)->statements) {
+					walk(stmt);
+				}
+			} break;
+			case GDScriptParser::Node::ASSIGNMENT: {
+				const GDScriptParser::AssignmentNode *n = static_cast<const GDScriptParser::AssignmentNode *>(p_node);
+				if (_struct_assignee_is_self(struct_node, n->assignee)) {
+					mutates = true;
+				}
+				walk(n->assignee);
+				walk(n->assigned_value);
+			} break;
+			case GDScriptParser::Node::CALL: {
+				const GDScriptParser::CallNode *n = static_cast<const GDScriptParser::CallNode *>(p_node);
+				if (n->callee != nullptr) {
+					if (n->callee->type == GDScriptParser::Node::IDENTIFIER) {
+						self_calls.insert(static_cast<const GDScriptParser::IdentifierNode *>(n->callee)->name);
+					} else if (n->callee->type == GDScriptParser::Node::SUBSCRIPT) {
+						const GDScriptParser::SubscriptNode *callee = static_cast<const GDScriptParser::SubscriptNode *>(n->callee);
+						if (callee->is_attribute && callee->base != nullptr && callee->base->type == GDScriptParser::Node::SELF && callee->attribute != nullptr) {
+							self_calls.insert(callee->attribute->name);
+						} else if (callee->base != nullptr && _struct_assignee_is_self(struct_node, callee->base)) {
+							// A call on a field (`pos.scale(2)`): whether it mutates is only known with types,
+							// so assume it does. The cost of being wrong is one write-back.
+							mutates = true;
+						}
+						walk(callee->base);
+					}
+				}
+				for (const GDScriptParser::ExpressionNode *arg : n->arguments) {
+					walk(arg);
+				}
+			} break;
+			case GDScriptParser::Node::IF: {
+				const GDScriptParser::IfNode *n = static_cast<const GDScriptParser::IfNode *>(p_node);
+				walk(n->condition);
+				walk(n->true_block);
+				walk(n->false_block);
+			} break;
+			case GDScriptParser::Node::WHILE: {
+				const GDScriptParser::WhileNode *n = static_cast<const GDScriptParser::WhileNode *>(p_node);
+				walk(n->condition);
+				walk(n->loop);
+			} break;
+			case GDScriptParser::Node::FOR: {
+				const GDScriptParser::ForNode *n = static_cast<const GDScriptParser::ForNode *>(p_node);
+				walk(n->list);
+				walk(n->loop);
+			} break;
+			case GDScriptParser::Node::MATCH: {
+				const GDScriptParser::MatchNode *n = static_cast<const GDScriptParser::MatchNode *>(p_node);
+				walk(n->test);
+				for (const GDScriptParser::MatchBranchNode *branch : n->branches) {
+					walk(branch->guard_body);
+					walk(branch->block);
+				}
+			} break;
+			case GDScriptParser::Node::VARIABLE: {
+				walk(static_cast<const GDScriptParser::VariableNode *>(p_node)->initializer);
+			} break;
+			case GDScriptParser::Node::CONSTANT: {
+				walk(static_cast<const GDScriptParser::ConstantNode *>(p_node)->initializer);
+			} break;
+			case GDScriptParser::Node::RETURN: {
+				walk(static_cast<const GDScriptParser::ReturnNode *>(p_node)->return_value);
+			} break;
+			case GDScriptParser::Node::ASSERT: {
+				const GDScriptParser::AssertNode *n = static_cast<const GDScriptParser::AssertNode *>(p_node);
+				walk(n->condition);
+				walk(n->message);
+			} break;
+			case GDScriptParser::Node::AWAIT: {
+				walk(static_cast<const GDScriptParser::AwaitNode *>(p_node)->to_await);
+			} break;
+			case GDScriptParser::Node::ARRAY: {
+				for (const GDScriptParser::ExpressionNode *e : static_cast<const GDScriptParser::ArrayNode *>(p_node)->elements) {
+					walk(e);
+				}
+			} break;
+			case GDScriptParser::Node::DICTIONARY: {
+				for (const GDScriptParser::DictionaryNode::Pair &e : static_cast<const GDScriptParser::DictionaryNode *>(p_node)->elements) {
+					walk(e.key);
+					walk(e.value);
+				}
+			} break;
+			case GDScriptParser::Node::BINARY_OPERATOR: {
+				const GDScriptParser::BinaryOpNode *n = static_cast<const GDScriptParser::BinaryOpNode *>(p_node);
+				walk(n->left_operand);
+				walk(n->right_operand);
+			} break;
+			case GDScriptParser::Node::UNARY_OPERATOR: {
+				walk(static_cast<const GDScriptParser::UnaryOpNode *>(p_node)->operand);
+			} break;
+			case GDScriptParser::Node::TERNARY_OPERATOR: {
+				const GDScriptParser::TernaryOpNode *n = static_cast<const GDScriptParser::TernaryOpNode *>(p_node);
+				walk(n->condition);
+				walk(n->true_expr);
+				walk(n->false_expr);
+			} break;
+			case GDScriptParser::Node::SUBSCRIPT: {
+				const GDScriptParser::SubscriptNode *n = static_cast<const GDScriptParser::SubscriptNode *>(p_node);
+				walk(n->base);
+				if (!n->is_attribute) {
+					walk(n->index);
+				}
+			} break;
+			case GDScriptParser::Node::CAST: {
+				walk(static_cast<const GDScriptParser::CastNode *>(p_node)->operand);
+			} break;
+			case GDScriptParser::Node::TYPE_TEST: {
+				walk(static_cast<const GDScriptParser::TypeTestNode *>(p_node)->operand);
+			} break;
+			case GDScriptParser::Node::LAMBDA: {
+				const GDScriptParser::LambdaNode *n = static_cast<const GDScriptParser::LambdaNode *>(p_node);
+				if (n->function != nullptr) {
+					walk(n->function->body);
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+};
+
+void GDScriptAnalyzer::compute_struct_mutation(GDScriptParser::StructNode *p_struct) {
+	const int count = p_struct->methods.size();
+	LocalVector<HashSet<StringName>> calls;
+	calls.resize(count);
+	for (int i = 0; i < count; i++) {
+		StructMutationWalker walker;
+		walker.struct_node = p_struct;
+		walker.walk(p_struct->methods[i]->body);
+		p_struct->methods[i]->mutates_self = walker.mutates;
+		calls[i] = walker.self_calls;
+	}
+	// Propagate through calls to other methods of the same struct until nothing changes.
+	bool changed = true;
+	while (changed) {
+		changed = false;
+		for (int i = 0; i < count; i++) {
+			if (p_struct->methods[i]->mutates_self) {
+				continue;
+			}
+			for (const StringName &name : calls[i]) {
+				const GDScriptParser::FunctionNode *callee = find_struct_method(p_struct, name);
+				if (callee != nullptr && callee->mutates_self) {
+					p_struct->methods[i]->mutates_self = true;
+					changed = true;
+					break;
+				}
+			}
+		}
+	}
+}
+
 // The meta type of an engine struct layout (a script struct's meta type is built by `resolve_struct()`).
 static GDScriptParser::DataType make_engine_struct_meta_type(const Ref<StructLayout> &p_layout) {
 	GDScriptParser::DataType type;
@@ -1235,6 +1484,7 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 				check_class_member_name_conflict(p_class, member.m_struct->identifier->name, member.m_struct);
 				member.m_struct->struct_type = resolving_datatype;
 				resolve_struct(member.m_struct, p_class);
+				resolve_struct_methods(member.m_struct);
 				for (GDScriptParser::AnnotationNode *&E : member.m_struct->annotations) {
 					resolve_annotation(E);
 					E->apply(parser, member.m_struct, p_class);
@@ -1450,6 +1700,8 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, co
 				E->apply(parser, member.function, p_class);
 			}
 			resolve_function_body(member.function);
+		} else if (member.type == GDScriptParser::ClassNode::Member::STRUCT) {
+			resolve_struct_method_bodies(member.m_struct);
 		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->property != GDScriptParser::VariableNode::PROP_NONE) {
 			if (member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 				if (member.variable->getter != nullptr) {
@@ -1876,6 +2128,62 @@ void GDScriptAnalyzer::resolve_struct(GDScriptParser::StructNode *p_struct, GDSc
 	p_struct->struct_type = meta;
 }
 
+void GDScriptAnalyzer::resolve_struct_methods(GDScriptParser::StructNode *p_struct) {
+	if (p_struct->layout.is_null()) {
+		return; // The struct itself failed to resolve.
+	}
+	HashSet<StringName> seen;
+	for (int i = 0; i < p_struct->methods.size(); i++) {
+		GDScriptParser::FunctionNode *method = p_struct->methods[i];
+		if (method->identifier == nullptr) {
+			continue;
+		}
+		const StringName name = method->identifier->name;
+		if (seen.has(name)) {
+			push_error(vformat(R"(Struct "%s" already has a method named "%s".)", p_struct->identifier->name, name), method->identifier);
+		} else if (p_struct->layout->has_field(name)) {
+			push_error(vformat(R"(Struct "%s" already has a field named "%s".)", p_struct->identifier->name, name), method->identifier);
+		}
+		seen.insert(name);
+		resolve_function_signature(method);
+
+		const Variant::Operator op = struct_operator_from_method_name(name);
+		if (op != Variant::OP_MAX) {
+			const int expected = struct_operator_is_unary(op) ? 0 : 1;
+			if ((int)method->parameters.size() != expected || method->is_vararg()) {
+				push_error(vformat(R"*(Operator method "%s()" of struct "%s" must take exactly %d parameter(s) besides "self".)*", name, p_struct->identifier->name, expected), method);
+			}
+		}
+	}
+	compute_struct_mutation(p_struct);
+	for (GDScriptParser::FunctionNode *method : p_struct->methods) {
+		if (method->identifier != nullptr && method->mutates_self && struct_operator_from_method_name(method->identifier->name) != Variant::OP_MAX) {
+			push_error(vformat(R"*(Operator method "%s()" of struct "%s" cannot modify "self"; return a new value instead.)*", method->identifier->name, p_struct->identifier->name), method);
+		}
+	}
+}
+
+void GDScriptAnalyzer::resolve_struct_method_bodies(GDScriptParser::StructNode *p_struct) {
+	for (GDScriptParser::FunctionNode *method : p_struct->methods) {
+		resolve_function_body(method);
+		if (method->is_coroutine) {
+			push_error(vformat(R"*(Struct method "%s()" cannot use "await": struct methods are not coroutines.)*", method->identifier->name), method);
+		}
+	}
+}
+
+void GDScriptAnalyzer::check_struct_field_shadowing(const GDScriptParser::IdentifierNode *p_identifier, const char *p_kind) {
+	if (current_struct == nullptr || p_identifier == nullptr) {
+		return;
+	}
+	for (const GDScriptParser::VariableNode *field : current_struct->fields) {
+		if (field->identifier->name == p_identifier->name) {
+			push_error(vformat(R"(The %s "%s" has the same name as a field of struct "%s".)", p_kind, p_identifier->name, current_struct->identifier->name), p_identifier);
+			return;
+		}
+	}
+}
+
 void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *p_function, const GDScriptParser::Node *p_source, bool p_is_lambda) {
 	if (p_source == nullptr) {
 		p_source = p_function;
@@ -1896,6 +2204,8 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	GDScriptParser::FunctionNode *previous_function = parser->current_function;
 	parser->current_function = p_function;
 	bool previous_static_context = static_context;
+	GDScriptParser::StructNode *previous_struct = current_struct;
+	current_struct = p_function->struct_owner; // A lambda inside a struct method sees no fields.
 	if (p_is_lambda) {
 		// For lambdas this is determined from the context, the `static` keyword is not allowed.
 		p_function->is_static = static_context;
@@ -1922,6 +2232,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 
 	for (GDScriptParser::ParameterNode *param : p_function->parameters) {
 		resolve_parameter(param);
+		check_struct_field_shadowing(param->identifier, "parameter");
 		method_info.arguments.push_back(param->type_constraint.to_property_info(param->identifier->name));
 #ifdef DEBUG_ENABLED
 		is_shadowing(param->identifier, "function parameter", true);
@@ -2010,7 +2321,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 		int default_par_count = 0;
 		BitField<MethodFlags> method_flags = {};
 		StringName native_base;
-		if (!p_is_lambda && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base)) {
+		if (!p_is_lambda && p_function->struct_owner == nullptr && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base)) {
 			bool valid = p_function->is_static == method_flags.has_flag(METHOD_FLAG_STATIC);
 
 			if (p_function->return_type == nullptr) {
@@ -2139,6 +2450,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 
 	parser->current_function = previous_function;
 	static_context = previous_static_context;
+	current_struct = previous_struct;
 }
 
 void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_function, bool p_is_lambda) {
@@ -2168,6 +2480,8 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 
 	bool previous_static_context = static_context;
 	static_context = p_function->is_static;
+	GDScriptParser::StructNode *previous_struct = current_struct;
+	current_struct = p_function->struct_owner;
 
 	resolve_suite(p_function->body);
 #ifdef DEBUG_ENABLED
@@ -2200,6 +2514,7 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 
 	parser->current_function = previous_function;
 	static_context = previous_static_context;
+	current_struct = previous_struct;
 }
 
 void GDScriptAnalyzer::resolve_suite(GDScriptParser::SuiteNode *p_suite, bool p_is_root) {
@@ -2427,6 +2742,9 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 void GDScriptAnalyzer::resolve_variable(GDScriptParser::VariableNode *p_variable, bool p_is_local) {
 	static constexpr const char *kind = "variable";
 	resolve_assignable(p_variable, kind);
+	if (p_is_local) {
+		check_struct_field_shadowing(p_variable->identifier, kind);
+	}
 
 #ifdef DEBUG_ENABLED
 	is_shadowing(p_variable->identifier, kind, p_is_local);
@@ -3312,6 +3630,29 @@ void GDScriptAnalyzer::reduce_binary_op(GDScriptParser::BinaryOpNode *p_binary_o
 	}
 #endif // DEBUG_ENABLED
 
+	if (left_type.is_hard_type() && left_type.kind == GDScriptParser::DataType::BUILTIN && left_type.builtin_type == Variant::STRUCT && !left_type.is_meta_type && left_type.struct_type != nullptr && p_binary_op->variant_op < Variant::OP_MAX) {
+		// An overloaded operator is a method call with the right operand as its argument.
+		const StringName method_name = struct_method_name_for_operator(p_binary_op->variant_op);
+		int method_index = -1;
+		GDScriptParser::FunctionNode *method = method_name != StringName() ? find_struct_method(left_type.struct_type, method_name, &method_index) : nullptr;
+		if (method != nullptr) {
+			if (method->parameters.size() == 1 && !is_type_compatible(method->parameters[0]->type_constraint, right_type, true, p_binary_op->right_operand)) {
+				push_error(vformat(R"*(Invalid operands "%s" and "%s" for "%s" operator: "%s()" of struct "%s" takes "%s".)*", left_type.to_string(), right_type.to_string(), Variant::get_operator_name(p_binary_op->variant_op), method_name, left_type.to_string(), method->parameters[0]->type_constraint.to_string()), p_binary_op);
+			}
+			p_binary_op->struct_method = method;
+			p_binary_op->struct_method_index = method_index;
+			p_binary_op->type_constraint = method->return_type_constraint;
+			return;
+		}
+		if (method_name != StringName()) {
+			// The runtime evaluator would only fail later; report the missing overload now.
+			push_error(vformat(R"*(Invalid operands "%s" and "%s" for "%s" operator: struct "%s" has no "%s()" method.)*", left_type.to_string(), right_type.to_string(), Variant::get_operator_name(p_binary_op->variant_op), left_type.to_string(), method_name), p_binary_op);
+			p_binary_op->type_constraint = GDScriptParser::DataType();
+			p_binary_op->type_constraint.kind = GDScriptParser::DataType::VARIANT;
+			return;
+		}
+	}
+
 	if (p_binary_op->left_operand->is_constant &&
 			p_binary_op->right_operand->is_constant &&
 			!p_binary_op->left_operand->reduced_value.is_shared() &&
@@ -3425,6 +3766,66 @@ const char *check_for_renamed_identifier(String identifier, GDScriptParser::Node
 }
 #endif // SUGGEST_GODOT4_RENAMES
 
+// `p_base` is the struct expression the method is called on, or null for a bare call inside a
+// struct method (the implicit `self`). A mutating method needs a base it can write back to.
+void GDScriptAnalyzer::reduce_struct_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, int p_method_index, GDScriptParser::ExpressionNode *p_base, bool p_is_await, bool p_is_root) {
+	const StringName struct_name = p_method->struct_owner != nullptr ? p_method->struct_owner->identifier->name : StringName();
+
+	List<GDScriptParser::DataType> par_types;
+	int default_arg_count = 0;
+	for (const GDScriptParser::ParameterNode *param : p_method->parameters) {
+		par_types.push_back(param->type_constraint);
+		if (param->initializer != nullptr) {
+			default_arg_count++;
+		}
+	}
+	validate_call_arg(par_types, default_arg_count, p_method->is_vararg(), p_call);
+
+	p_call->struct_method = p_method;
+	p_call->struct_method_index = p_method_index;
+	p_call->is_static = false;
+
+	if (p_method->mutates_self) {
+		bool writable = false;
+		if (p_base == nullptr) {
+			writable = current_lambda == nullptr;
+		} else if (p_base->type == GDScriptParser::Node::SELF) {
+			writable = current_struct != nullptr && current_lambda == nullptr;
+		} else if (p_base->type == GDScriptParser::Node::IDENTIFIER) {
+			const GDScriptParser::IdentifierNode *id = static_cast<const GDScriptParser::IdentifierNode *>(p_base);
+			switch (id->source) {
+				case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+				case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+				case GDScriptParser::IdentifierNode::LOCAL_ITERATOR:
+				case GDScriptParser::IdentifierNode::STRUCT_FIELD:
+					writable = true;
+					break;
+				case GDScriptParser::IdentifierNode::MEMBER_VARIABLE:
+				case GDScriptParser::IdentifierNode::STATIC_VARIABLE:
+					// A property with a setter or getter would be bypassed by the write-back.
+					writable = id->variable_source == nullptr || id->variable_source->property == GDScriptParser::VariableNode::PROP_NONE;
+					break;
+				default:
+					break;
+			}
+		}
+		if (!writable) {
+			push_error(vformat(R"*(Cannot call the mutating method "%s()" of struct "%s" on this expression: it would modify a temporary copy. Assign the struct to a variable first.)*", p_call->function_name, struct_name), p_call);
+		}
+	}
+
+	GDScriptParser::DataType return_type = p_method->return_type_constraint;
+	if (!p_is_root && !p_is_await && return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+		push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", p_call->function_name), p_call);
+	}
+#ifdef DEBUG_ENABLED
+	if (p_is_root && return_type.kind != GDScriptParser::DataType::UNRESOLVED && return_type.builtin_type != Variant::NIL) {
+		parser->push_warning(p_call, GDScriptWarning::RETURN_VALUE_DISCARDED, p_call->function_name);
+	}
+#endif // DEBUG_ENABLED
+	p_call->type_constraint = return_type;
+}
+
 void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_await, bool p_is_root) {
 	bool all_is_constant = true;
 	HashMap<int, GDScriptParser::ArrayNode *> arrays; // For array literal to potentially type when passing.
@@ -3450,6 +3851,16 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			push_error(R"*(Invalid constructor "Object()", use "Object.new()" instead.)*", p_call);
 			p_call->type_constraint = call_type;
 			return;
+		}
+
+		if (current_struct != nullptr) {
+			// A method of the struct whose method is being resolved, called on the implicit `self`.
+			int method_index = -1;
+			GDScriptParser::FunctionNode *method = find_struct_method(current_struct, function_name, &method_index);
+			if (method != nullptr) {
+				reduce_struct_method_call(p_call, method, method_index, nullptr, p_is_await, p_is_root);
+				return;
+			}
 		}
 
 		// Struct constructor: `Point(1.0, 2.0)` fills the leading fields, the rest keep their defaults.
@@ -3847,6 +4258,15 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 #ifdef DEBUG_ENABLED
 		warn_confusable_temporary_modification(subscript);
 #endif // DEBUG_ENABLED
+
+		if (base_type.kind == GDScriptParser::DataType::BUILTIN && base_type.builtin_type == Variant::STRUCT && !base_type.is_meta_type && base_type.struct_type != nullptr) {
+			int method_index = -1;
+			GDScriptParser::FunctionNode *method = find_struct_method(base_type.struct_type, p_call->function_name, &method_index);
+			if (method != nullptr) {
+				reduce_struct_method_call(p_call, method, method_index, subscript->base, p_is_await, p_is_root);
+				return;
+			}
+		}
 	} else {
 		// Invalid call. Error already sent in parser.
 		// TODO: Could check if Callable here too.
@@ -4733,6 +5153,21 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 	}
 #endif // DEBUG_ENABLED
 
+	if (!found_source && current_struct != nullptr && p_identifier->source == GDScriptParser::IdentifierNode::UNDEFINED_SOURCE) {
+		// A field of the struct, read through the method's implicit `self`.
+		for (int i = 0; i < current_struct->fields.size(); i++) {
+			if (current_struct->fields[i]->identifier->name == p_identifier->name) {
+				p_identifier->source = GDScriptParser::IdentifierNode::STRUCT_FIELD;
+				p_identifier->struct_field_index = i;
+				GDScriptParser::DataType field_type = current_struct->fields[i]->type_constraint;
+				field_type.is_constant = false;
+				field_type.is_meta_type = false;
+				p_identifier->type_constraint = field_type;
+				return;
+			}
+		}
+	}
+
 	// Not a local, so check members.
 
 	if (!found_source) {
@@ -5055,6 +5490,10 @@ void GDScriptAnalyzer::reduce_preload(GDScriptParser::PreloadNode *p_preload) {
 
 void GDScriptAnalyzer::reduce_self(GDScriptParser::SelfNode *p_self) {
 	p_self->is_constant = false;
+	if (current_struct != nullptr) {
+		p_self->type_constraint = type_from_metatype(current_struct->struct_type);
+		return;
+	}
 	p_self->type_constraint = type_from_metatype(parser->current_class->self_type);
 	mark_lambda_use_self();
 }
@@ -5556,6 +5995,24 @@ void GDScriptAnalyzer::reduce_unary_op(GDScriptParser::UnaryOpNode *p_unary_op) 
 	}
 
 	GDScriptParser::DataType operand_type = p_unary_op->operand->type_constraint;
+
+	if (operand_type.is_hard_type() && operand_type.kind == GDScriptParser::DataType::BUILTIN && operand_type.builtin_type == Variant::STRUCT && !operand_type.is_meta_type && operand_type.struct_type != nullptr) {
+		const StringName method_name = struct_method_name_for_operator(p_unary_op->variant_op);
+		int method_index = -1;
+		GDScriptParser::FunctionNode *method = method_name != StringName() ? find_struct_method(operand_type.struct_type, method_name, &method_index) : nullptr;
+		if (method != nullptr) {
+			p_unary_op->struct_method = method;
+			p_unary_op->struct_method_index = method_index;
+			p_unary_op->type_constraint = method->return_type_constraint;
+			return;
+		}
+		if (method_name != StringName()) {
+			push_error(vformat(R"*(Invalid operand of type "%s" for unary operator "%s": the struct has no "%s()" method.)*", operand_type.to_string(), Variant::get_operator_name(p_unary_op->variant_op), method_name), p_unary_op);
+			p_unary_op->type_constraint = GDScriptParser::DataType();
+			p_unary_op->type_constraint.kind = GDScriptParser::DataType::VARIANT;
+			return;
+		}
+	}
 
 	if (p_unary_op->operand->is_constant) {
 		p_unary_op->is_constant = true;

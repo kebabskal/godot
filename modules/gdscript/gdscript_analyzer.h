@@ -55,6 +55,7 @@ class GDScriptAnalyzer {
 	List<GDScriptParser::LambdaNode *> pending_body_resolution_lambdas;
 	HashMap<const GDScriptParser::ClassNode *, Ref<GDScriptParserRef>> external_class_parser_cache;
 	bool static_context = false;
+	GDScriptParser::StructNode *current_struct = nullptr; // Set while resolving a struct method: `self` is the struct value and bare field names are its fields.
 
 	// Tests for detecting invalid overloading of script members
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_script_class(const StringName &p_name, const GDScriptParser::ClassNode *p_current_class_node, const GDScriptParser::Node *p_member);
@@ -82,6 +83,10 @@ class GDScriptAnalyzer {
 	void resolve_assignable(GDScriptParser::AssignableNode *p_assignable, const char *p_kind);
 	void resolve_variable(GDScriptParser::VariableNode *p_variable, bool p_is_local);
 	void resolve_struct(GDScriptParser::StructNode *p_struct, GDScriptParser::ClassNode *p_class);
+	void resolve_struct_methods(GDScriptParser::StructNode *p_struct);
+	void resolve_struct_method_bodies(GDScriptParser::StructNode *p_struct);
+	void check_struct_field_shadowing(const GDScriptParser::IdentifierNode *p_identifier, const char *p_kind);
+	void reduce_struct_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, int p_method_index, GDScriptParser::ExpressionNode *p_base, bool p_is_await, bool p_is_root);
 	GDScriptParser::StructNode *find_struct_node_for_layout(const Ref<StructLayout> &p_layout);
 	GDScriptParser::DataType type_from_struct_field(const Ref<StructLayout> &p_layout, int p_field);
 	void resolve_constant(GDScriptParser::ConstantNode *p_constant, bool p_is_local);
@@ -177,6 +182,15 @@ public:
 	static bool check_type_compatibility(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, bool p_allow_implicit_conversion = false, const GDScriptParser::Node *p_source_node = nullptr);
 	static GDScriptParser::DataType type_from_metatype(const GDScriptParser::DataType &p_meta_type);
 	static bool class_exists(const StringName &p_class);
+
+	// Struct methods: index in the declaration order, which is also the index on the layout.
+	static GDScriptParser::FunctionNode *find_struct_method(const GDScriptParser::StructNode *p_struct, const StringName &p_name, int *r_index = nullptr);
+	// Operator overloads are methods with reserved names (`_add`, `_lt`, `_neg`, ...).
+	static Variant::Operator struct_operator_from_method_name(const StringName &p_name);
+	static StringName struct_method_name_for_operator(Variant::Operator p_op);
+	static bool struct_operator_is_unary(Variant::Operator p_op);
+	// Marks the methods that assign to a field of `self` (directly or through another mutating method).
+	static void compute_struct_mutation(GDScriptParser::StructNode *p_struct);
 
 	GDScriptAnalyzer(GDScriptParser *p_parser);
 };

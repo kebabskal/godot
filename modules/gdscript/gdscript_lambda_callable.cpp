@@ -302,3 +302,78 @@ GDScriptLambdaSelfCallable::GDScriptLambdaSelfCallable(Object *p_self, GDScriptF
 
 	h = (uint32_t)hash_murmur3_one_64((uint64_t)this);
 }
+
+bool GDScriptStructMethodCallable::compare_equal(const CallableCustom *p_a, const CallableCustom *p_b) {
+	return p_a == p_b;
+}
+
+bool GDScriptStructMethodCallable::compare_less(const CallableCustom *p_a, const CallableCustom *p_b) {
+	return p_a < p_b;
+}
+
+const GDScriptStructMethodCallable *GDScriptStructMethodCallable::from_callable(const Callable &p_callable) {
+	if (!p_callable.is_custom()) {
+		return nullptr;
+	}
+	const CallableCustom *custom = p_callable.get_custom();
+	if (custom->get_compare_equal_func() != compare_equal) {
+		return nullptr;
+	}
+	return static_cast<const GDScriptStructMethodCallable *>(custom);
+}
+
+bool GDScriptStructMethodCallable::is_valid() const {
+	return function != nullptr;
+}
+
+uint32_t GDScriptStructMethodCallable::hash() const {
+	return h;
+}
+
+String GDScriptStructMethodCallable::get_as_text() const {
+	return String(struct_name) + "." + String(method_name);
+}
+
+CallableCustom::CompareEqualFunc GDScriptStructMethodCallable::get_compare_equal_func() const {
+	return compare_equal;
+}
+
+CallableCustom::CompareLessFunc GDScriptStructMethodCallable::get_compare_less_func() const {
+	return compare_less;
+}
+
+ObjectID GDScriptStructMethodCallable::get_object() const {
+	return script_id;
+}
+
+StringName GDScriptStructMethodCallable::get_method() const {
+	return method_name;
+}
+
+int GDScriptStructMethodCallable::get_argument_count(bool &r_is_valid) const {
+	if (function == nullptr) {
+		r_is_valid = false;
+		return 0;
+	}
+	r_is_valid = true;
+	return function->get_argument_count(); // Includes the implicit `self`.
+}
+
+void GDScriptStructMethodCallable::call(const Variant **p_arguments, int p_argcount, Variant &r_return_value, Callable::CallError &r_call_error) const {
+	if (function == nullptr) {
+		r_return_value = Variant();
+		r_call_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
+		return;
+	}
+	r_return_value = function->call(nullptr, p_arguments, p_argcount, r_call_error);
+}
+
+GDScriptStructMethodCallable::GDScriptStructMethodCallable(GDScript *p_script, GDScriptFunction *p_function, const StringName &p_struct_name, const StringName &p_method_name) {
+	ERR_FAIL_NULL(p_script);
+	ERR_FAIL_NULL(p_function);
+	function = p_function;
+	script_id = p_script->get_instance_id();
+	struct_name = p_struct_name;
+	method_name = p_method_name;
+	h = (uint32_t)hash_murmur3_one_64((uint64_t)this);
+}

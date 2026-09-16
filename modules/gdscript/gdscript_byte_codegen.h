@@ -533,6 +533,7 @@ public:
 	virtual void write_call_method_bind_validated(const Address &p_target, const Address &p_base, const MethodBind *p_method, const Vector<Address> &p_arguments) override;
 	virtual void write_call_self(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) override;
 	virtual void write_call_script(const Address &p_target, const Address &p_base, const StringName &p_function_name, int p_slot, const Vector<Address> &p_arguments) override;
+	virtual void write_call_struct_method(const Address &p_target, const Address &p_base, const StringName &p_method_name, int p_method_index, const Vector<Address> &p_arguments) override;
 	virtual void write_call_self_async(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) override;
 	virtual void write_lambda(const Address &p_target, GDScriptFunction *p_function, const Vector<Address> &p_captures, bool p_use_self) override;
 	virtual void write_construct(const Address &p_target, Variant::Type p_type, const Vector<Address> &p_arguments) override;

@@ -503,6 +503,9 @@ public:
 		Variant::Operator variant_op = Variant::OP_MAX;
 		ExpressionNode *left_operand = nullptr;
 		ExpressionNode *right_operand = nullptr;
+		// Resolved operator overload when the left operand is a struct with a matching method.
+		FunctionNode *struct_method = nullptr;
+		int struct_method_index = -1;
 
 		BinaryOpNode() {
 			type = BINARY_OPERATOR;
@@ -527,6 +530,9 @@ public:
 		StringName function_name;
 		bool is_super = false;
 		bool is_static = false;
+		// Resolved struct method (`p.length()`, or a bare `length()` inside a struct method).
+		FunctionNode *struct_method = nullptr;
+		int struct_method_index = -1;
 
 		CallNode() {
 			type = CALL;
@@ -585,6 +591,7 @@ public:
 	struct StructNode : public Node {
 		IdentifierNode *identifier = nullptr;
 		Vector<VariableNode *> fields;
+		Vector<FunctionNode *> methods; // Declaration order is the method index on the layout.
 		DataType struct_type; // The meta type; `type_from_metatype()` of it is the type of a value.
 		Ref<StructLayout> layout;
 #ifdef TOOLS_ENABLED
@@ -927,6 +934,8 @@ public:
 		bool is_abstract = false;
 		bool is_static = false; // For lambdas it's determined in the analyzer.
 		bool is_coroutine = false;
+		StructNode *struct_owner = nullptr; // Set for a method declared in a `struct` body: `self` is the struct value, passed as the implicit first parameter.
+		bool mutates_self = false; // A struct method that assigns to a field of `self`, directly or through another mutating method. The call site writes the result back.
 		Variant rpc_config;
 		MethodInfo info;
 		LambdaNode *source_lambda = nullptr;
@@ -978,6 +987,7 @@ public:
 			INHERITED_VARIABLE,
 			STATIC_VARIABLE,
 			NATIVE_CLASS,
+			STRUCT_FIELD, // A field of the enclosing struct, read through the method's implicit `self`.
 		};
 		Source source = UNDEFINED_SOURCE;
 
@@ -990,6 +1000,7 @@ public:
 			FunctionNode *function_source;
 		};
 		bool function_source_is_static = false; // For non-GDScript scripts.
+		int struct_field_index = -1; // For `STRUCT_FIELD`.
 
 		FunctionNode *source_function = nullptr; // TODO: Rename to disambiguate `function_source`.
 
@@ -1318,6 +1329,9 @@ public:
 		OpType operation = OP_POSITIVE;
 		Variant::Operator variant_op = Variant::OP_MAX;
 		ExpressionNode *operand = nullptr;
+		// Resolved `_neg` overload when the operand is a struct.
+		FunctionNode *struct_method = nullptr;
+		int struct_method_index = -1;
 
 		UnaryOpNode() {
 			type = UNARY_OPERATOR;

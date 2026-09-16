@@ -1571,6 +1571,27 @@ void GDScriptByteCodeGenerator::write_call_script(const Address &p_target, const
 	}
 }
 
+void GDScriptByteCodeGenerator::write_call_struct_method(const Address &p_target, const Address &p_base, const StringName &p_method_name, int p_method_index, const Vector<Address> &p_arguments) {
+	append_opcode_and_argcount(GDScriptFunction::OPCODE_CALL_STRUCT_METHOD, 2 + p_arguments.size());
+	for (int i = 0; i < p_arguments.size(); i++) {
+		append(p_arguments[i]);
+	}
+	append(p_base);
+	if (p_target.mode == Address::NIL) {
+		append(Address());
+		append(p_arguments.size());
+		append(p_method_index);
+		append(p_method_name);
+	} else {
+		CallTarget ct = get_call_target(p_target);
+		append(ct.target);
+		append(p_arguments.size());
+		append(p_method_index);
+		append(p_method_name);
+		ct.cleanup();
+	}
+}
+
 void GDScriptByteCodeGenerator::write_call_self(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) {
 	if (p_target.mode == Address::NIL) {
 		append_opcode_and_argcount(GDScriptFunction::OPCODE_CALL, 2 + p_arguments.size());

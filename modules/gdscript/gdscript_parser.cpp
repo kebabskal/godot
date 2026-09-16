@@ -1740,10 +1740,22 @@ GDScriptParser::StructNode *GDScriptParser::parse_struct(bool p_is_static) {
 			if (field != nullptr) {
 				struct_node->fields.push_back(field);
 			}
+		} else if (match(GDScriptTokenizer::Token::FUNC)) {
+			// A method: compiled as a static function that takes the struct value as its first
+			// parameter, so it has no instance and `self` is the value.
+			FunctionNode *method = parse_function(false);
+			if (method != nullptr) {
+				method->struct_owner = struct_node;
+				method->is_static = true;
+				struct_node->methods.push_back(method);
+			}
+		} else if (check(GDScriptTokenizer::Token::STATIC)) {
+			push_error(R"(Struct methods cannot be static: every method takes the struct value as "self".)");
+			advance();
 		} else if (match(GDScriptTokenizer::Token::NEWLINE)) {
 			// Blank line.
 		} else {
-			push_error(vformat(R"(Unexpected "%s" in a struct body: only "var" fields are allowed.)", current.get_name()));
+			push_error(vformat(R"(Unexpected "%s" in a struct body: only "var" fields and "func" methods are allowed.)", current.get_name()));
 			advance();
 		}
 	}

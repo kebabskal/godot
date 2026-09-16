@@ -1462,7 +1462,13 @@ void GDScript::clear() {
 	member_functions.clear();
 	vtable.clear();
 	vtable_indices.clear();
+	for (const KeyValue<StringName, GDScriptFunction *> &E : struct_functions) {
+		functions_to_clear.insert(E.value);
+	}
+	struct_functions.clear();
 	for (const KeyValue<StringName, Ref<StructLayout>> &E : struct_layouts) {
+		// Values that keep this layout must not reach the functions freed below.
+		E.value->clear_methods();
 		if (StructLayout::find_layout(E.value->get_qualified_name()) == E.value) {
 			StructLayout::unregister_layout(E.value->get_qualified_name());
 		}

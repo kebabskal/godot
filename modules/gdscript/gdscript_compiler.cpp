@@ -34,6 +34,7 @@
 #include "gdscript_analyzer.h"
 #include "gdscript_byte_codegen.h"
 #include "gdscript_cache.h"
+#include "gdscript_lambda_callable.h"
 #include "gdscript_utility_functions.h"
 
 #include "core/config/engine.h"
@@ -312,6 +313,13 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					}
 				} break;
 
+				case GDScriptParser::IdentifierNode::STRUCT_FIELD: {
+					// A field of the struct method's `self`; the layout on the address picks the index opcode.
+					GDScriptCodeGenerator::Address temp = codegen.add_temporary(_gdtype_from_datatype(in->type_constraint, codegen.script));
+					gen->write_get_named(temp, identifier, codegen.struct_self);
+					return temp;
+				} break;
+
 				// MEMBERS.
 				case GDScriptParser::IdentifierNode::MEMBER_VARIABLE:
 				case GDScriptParser::IdentifierNode::MEMBER_FUNCTION:
@@ -519,6 +527,9 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 			return codegen.add_constant(cn->value);
 		} break;
 		case GDScriptParser::Node::SELF: {
+			if (codegen.struct_self.mode == GDScriptCodeGenerator::Address::FUNCTION_PARAMETER) {
+				return codegen.struct_self; // A struct method: `self` is the value it was called on.
+			}
 			//return constant
 			if (codegen.function_node && codegen.function_node->is_static) {
 				_set_error("'self' not present in static function.", p_expression);
@@ -670,6 +681,52 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				if (call->is_super) {
 					// Super call.
 					gen->write_super_call(result, call->function_name, arguments);
+				} else if (call->struct_method != nullptr && call->struct_method_index >= 0) {
+					// A struct method: the value is the implicit first argument. A mutating method writes
+					// its final `self` back into the address it was given (see `_struct_self_writeback`),
+					// so the base must be the caller's own slot, never a constant.
+					const bool mutating = call->struct_method->mutates_self;
+					GDScriptCodeGenerator::Address base;
+					const GDScriptParser::IdentifierNode *base_id = nullptr;
+					if (callee->type == GDScriptParser::Node::IDENTIFIER) {
+						base = codegen.struct_self;
+					} else {
+						const GDScriptParser::ExpressionNode *base_node = static_cast<const GDScriptParser::SubscriptNode *>(callee)->base;
+						if (base_node->type == GDScriptParser::Node::IDENTIFIER) {
+							base_id = static_cast<const GDScriptParser::IdentifierNode *>(base_node);
+						}
+						base = _parse_expression(codegen, r_error, base_node);
+						if (r_error) {
+							return GDScriptCodeGenerator::Address();
+						}
+					}
+					if (mutating && base.mode == GDScriptCodeGenerator::Address::CONSTANT) {
+						GDScriptCodeGenerator::Address temp = codegen.add_temporary(base.type);
+						gen->write_assign(temp, base);
+						base = temp;
+					}
+
+					gen->write_call_struct_method(result, base, call->function_name, call->struct_method_index, arguments);
+
+					if (mutating && base.mode == GDScriptCodeGenerator::Address::TEMPORARY && base_id != nullptr) {
+						// The base was read into a temporary: store the modified value back where it came from.
+						if (base_id->source == GDScriptParser::IdentifierNode::STRUCT_FIELD) {
+							gen->write_set_named(codegen.struct_self, base_id->name, base);
+						} else if (base_id->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE) {
+							GDScript *scr = codegen.script;
+							while (scr) {
+								if (scr->static_variables_indices.has(base_id->name)) {
+									GDScriptCodeGenerator::Address _class = codegen.add_constant(scr);
+									gen->write_set_static_variable(base, _class, scr->static_variables_indices[base_id->name].index);
+									break;
+								}
+								scr = scr->base.ptr();
+							}
+						}
+					}
+					if (base.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+						gen->pop_temporary();
+					}
 				} else {
 					if (callee->type == GDScriptParser::Node::IDENTIFIER) {
 						// Self function call.
@@ -891,7 +948,11 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				return GDScriptCodeGenerator::Address();
 			}
 
-			gen->write_unary_operator(result, unary->variant_op, operand);
+			if (unary->struct_method != nullptr && unary->struct_method_index >= 0) {
+				gen->write_call_struct_method(result, operand, unary->struct_method->identifier->name, unary->struct_method_index, Vector<GDScriptCodeGenerator::Address>());
+			} else {
+				gen->write_unary_operator(result, unary->variant_op, operand);
+			}
 
 			if (operand.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 				gen->pop_temporary();
@@ -941,7 +1002,14 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					GDScriptCodeGenerator::Address left_operand = _parse_expression(codegen, r_error, binary->left_operand);
 					GDScriptCodeGenerator::Address right_operand = _parse_expression(codegen, r_error, binary->right_operand);
 
-					gen->write_binary_operator(result, binary->variant_op, left_operand, right_operand);
+					if (binary->struct_method != nullptr && binary->struct_method_index >= 0) {
+						// Overloaded operator: a method of the left struct with the right operand as argument.
+						Vector<GDScriptCodeGenerator::Address> args;
+						args.push_back(right_operand);
+						gen->write_call_struct_method(result, left_operand, binary->struct_method->identifier->name, binary->struct_method_index, args);
+					} else {
+						gen->write_binary_operator(result, binary->variant_op, left_operand, right_operand);
+					}
 
 					if (right_operand.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 						gen->pop_temporary();
@@ -1281,6 +1349,35 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 				if (assigned.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 					gen->pop_temporary();
+				}
+			} else if (assignment->assignee->type == GDScriptParser::Node::IDENTIFIER && static_cast<GDScriptParser::IdentifierNode *>(assignment->assignee)->source == GDScriptParser::IdentifierNode::STRUCT_FIELD) {
+				// Assignment to a field of the struct method's `self`.
+				GDScriptCodeGenerator::Address assigned_value = _parse_expression(codegen, r_error, assignment->assigned_value);
+				if (r_error) {
+					return GDScriptCodeGenerator::Address();
+				}
+
+				GDScriptCodeGenerator::Address to_assign = assigned_value;
+				bool has_operation = assignment->operation != GDScriptParser::AssignmentNode::OP_NONE;
+
+				StringName name = static_cast<GDScriptParser::IdentifierNode *>(assignment->assignee)->name;
+
+				if (has_operation) {
+					GDScriptCodeGenerator::Address op_result = codegen.add_temporary(_gdtype_from_datatype(assignment->type_constraint, codegen.script));
+					GDScriptCodeGenerator::Address field = codegen.add_temporary(_gdtype_from_datatype(assignment->assignee->type_constraint, codegen.script));
+					gen->write_get_named(field, name, codegen.struct_self);
+					gen->write_binary_operator(op_result, assignment->variant_op, field, assigned_value);
+					gen->pop_temporary();
+					to_assign = op_result;
+				}
+
+				gen->write_set_named(codegen.struct_self, name, to_assign);
+
+				if (to_assign.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary(); // Pop assigned value or temp operation result.
+				}
+				if (has_operation && assigned_value.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary(); // Pop assigned value if not done before.
 				}
 			} else if (assignment->assignee->type == GDScriptParser::Node::IDENTIFIER && _is_class_member_property(codegen, static_cast<GDScriptParser::IdentifierNode *>(assignment->assignee)->name)) {
 				// Assignment to member property.
@@ -2340,7 +2437,9 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	return_type.builtin_type = Variant::NIL;
 
 	if (p_func) {
-		if (p_func->identifier) {
+		if (p_func->struct_owner != nullptr) {
+			func_name = String(p_func->struct_owner->identifier->name) + "." + String(p_func->identifier->name);
+		} else if (p_func->identifier) {
 			func_name = p_func->identifier->name;
 		} else {
 			func_name = "<anonymous lambda>";
@@ -2391,6 +2490,16 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 
 	int optional_parameters = 0;
 	GDScriptCodeGenerator::Address vararg_addr;
+	if (p_func && p_func->struct_owner != nullptr) {
+		// The struct value the method was called on, as the first parameter.
+		GDScriptParser::DataType self_type = p_func->struct_owner->struct_type;
+		self_type.is_meta_type = false;
+		self_type.is_constant = false;
+		const GDScriptDataType self_gdtype = _gdtype_from_datatype(self_type, p_script);
+		const uint32_t self_addr = codegen.generator->add_parameter(SNAME("self"), false, self_gdtype);
+		codegen.struct_self = GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::FUNCTION_PARAMETER, self_addr, self_gdtype);
+		method_info.arguments.push_back(self_type.to_property_info("self"));
+	}
 
 	if (p_func) {
 		for (const GDScriptParser::ParameterNode *parameter : p_func->parameters) {
@@ -2415,7 +2524,7 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 
 	// Parse initializer if applies.
 	bool is_implicit_initializer = !p_for_ready && !p_func && !p_for_lambda;
-	bool is_initializer = p_func && !p_for_lambda && p_func->identifier->name == GDScriptLanguage::get_singleton()->strings._init;
+	bool is_initializer = p_func && !p_for_lambda && p_func->struct_owner == nullptr && p_func->identifier->name == GDScriptLanguage::get_singleton()->strings._init;
 	bool is_implicit_ready = !p_func && p_for_ready;
 
 	if (!p_for_lambda && is_implicit_initializer) {
@@ -2573,7 +2682,10 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 
 	gd_function->method_info = method_info;
 
-	if (!is_implicit_initializer && !is_implicit_ready && !p_for_lambda) {
+	if (p_func && p_func->struct_owner != nullptr) {
+		gd_function->_struct_self_writeback = p_func->mutates_self;
+		p_script->struct_functions[func_name] = gd_function;
+	} else if (!is_implicit_initializer && !is_implicit_ready && !p_for_lambda) {
 		p_script->member_functions[func_name] = gd_function;
 	}
 
@@ -2777,6 +2889,16 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 		memdelete(E.value);
 	}
 	member_functions.clear();
+
+	// Struct methods from the previous compilation. Values may still hold the old layouts, so
+	// those must stop pointing at the functions before they go.
+	for (const KeyValue<StringName, Ref<StructLayout>> &E : p_script->struct_layouts) {
+		E.value->clear_methods();
+	}
+	for (const KeyValue<StringName, GDScriptFunction *> &E : p_script->struct_functions) {
+		memdelete(E.value);
+	}
+	p_script->struct_functions.clear();
 
 	p_script->static_variables.clear();
 
@@ -3098,6 +3220,27 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 			_parse_function(err, p_script, p_class, function);
 			if (err) {
 				return err;
+			}
+		} else if (member.type == member.STRUCT) {
+			const GDScriptParser::StructNode *struct_n = member.m_struct;
+			if (struct_n->layout.is_null()) {
+				continue;
+			}
+			// Methods go on the layout in declaration order, so the index the analyzer saw matches.
+			struct_n->layout->clear_methods();
+			for (const GDScriptParser::FunctionNode *method : struct_n->methods) {
+				Error err = OK;
+				GDScriptFunction *function = _parse_function(err, p_script, p_class, method);
+				if (err) {
+					return err;
+				}
+				const StringName method_name = method->identifier->name;
+				Callable callable(memnew(GDScriptStructMethodCallable(p_script, function, struct_n->identifier->name, method_name)));
+				struct_n->layout->add_method(method_name, callable);
+				const Variant::Operator op = GDScriptAnalyzer::struct_operator_from_method_name(method_name);
+				if (op != Variant::OP_MAX) {
+					struct_n->layout->set_operator(op, callable);
+				}
 			}
 		} else if (member.type == member.VARIABLE) {
 			const GDScriptParser::VariableNode *variable = member.variable;

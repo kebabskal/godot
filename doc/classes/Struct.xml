@@ -17,6 +17,22 @@
 		    print(p) # Prints "Point(x: 1.0, y: 3.0)"
 		[/codeblock]
 		In GDScript a layout name is a type: [code]var p: Point[/code], [code]Array[Point][/code], parameters and return types all work, and field access on a typed struct is checked at compile time. Calling the layout name like a function constructs a value: positional arguments fill the leading fields and the rest keep their defaults.
+		A script struct can declare methods. Inside a method, [code]self[/code] is the value the method was called on and its fields can be used by name. A method that assigns to a field modifies the caller's variable, so [code]p.normalize()[/code] behaves as expected; such a method can only be called on something that can be written back to (a variable, parameter, member or field), not on a temporary. Methods with reserved names overload operators: [code]_add[/code], [code]_sub[/code], [code]_mul[/code], [code]_div[/code], [code]_mod[/code] for [code]+ - * / %[/code] with the struct on the left, [code]_neg[/code] for unary minus, and [code]_lt[/code], [code]_le[/code], [code]_gt[/code], [code]_ge[/code] for comparisons (which [method Array.sort] also uses). Operator methods take one parameter, none for [code]_neg[/code], and must not modify [code]self[/code].
+		[codeblock]
+		struct Vec:
+		    var x: float = 0.0
+		    var y: float = 0.0
+
+		    func length() -&gt; float:
+		        return sqrt(x * x + y * y)
+
+		    func scale(f: float) -&gt; void:
+		        x *= f
+		        y *= f
+
+		    func _add(other: Vec) -&gt; Vec:
+		        return Vec(x + other.x, y + other.y)
+		[/codeblock]
 		Structs have value semantics. Assigning one to another variable or passing it to a function copies the value, and assigning to a field of a copy never changes the original. The copy is lazy, so passing a struct around is as cheap as passing an [Array].
 		A struct can be saved in a scene or resource file and sent over the network; the layout is looked up by name when it is loaded.
 		[b]Note:[/b] Unlike a [Dictionary], a struct cannot gain or lose fields, and assigning a value of the wrong type to a field is an error.

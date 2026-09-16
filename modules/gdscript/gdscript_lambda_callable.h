@@ -99,3 +99,37 @@ public:
 	GDScriptLambdaSelfCallable(Object *p_self, GDScriptFunction *p_function, const Vector<Variant> &p_captures);
 	virtual ~GDScriptLambdaSelfCallable() = default;
 };
+
+// A method of a script struct: calls the compiled function with the struct value as its first
+// argument. The compiler registers one per method on the `StructLayout`, which is how untyped
+// calls and operator overloads reach the code. It holds no reference to the script (the script
+// owns the layout, so that would be a cycle); `GDScript::clear()` drops the layout's methods
+// before the functions are freed.
+class GDScriptStructMethodCallable : public CallableCustom {
+	GDScriptFunction *function = nullptr;
+	ObjectID script_id;
+	StringName struct_name;
+	StringName method_name;
+	uint32_t h;
+
+	static bool compare_equal(const CallableCustom *p_a, const CallableCustom *p_b);
+	static bool compare_less(const CallableCustom *p_a, const CallableCustom *p_b);
+
+public:
+	GDScriptFunction *get_function() const { return function; }
+	// The wrapped method if `p_callable` is one, so the VM can call the function directly.
+	static const GDScriptStructMethodCallable *from_callable(const Callable &p_callable);
+
+	bool is_valid() const override;
+	uint32_t hash() const override;
+	String get_as_text() const override;
+	CompareEqualFunc get_compare_equal_func() const override;
+	CompareLessFunc get_compare_less_func() const override;
+	ObjectID get_object() const override;
+	StringName get_method() const override;
+	int get_argument_count(bool &r_is_valid) const override;
+	void call(const Variant **p_arguments, int p_argcount, Variant &r_return_value, Callable::CallError &r_call_error) const override;
+
+	GDScriptStructMethodCallable(GDScript *p_script, GDScriptFunction *p_function, const StringName &p_struct_name, const StringName &p_method_name);
+	virtual ~GDScriptStructMethodCallable() = default;
+};

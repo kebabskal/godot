@@ -30,6 +30,8 @@
 
 #include "variant_op.h"
 
+#include "core/variant/struct_layout.h"
+
 typedef void (*VariantEvaluatorFunction)(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid);
 
 static Variant::Type operator_return_type_table[Variant::OP_MAX][Variant::VARIANT_MAX][Variant::VARIANT_MAX];
@@ -208,6 +210,54 @@ public:
 		register_op<OperatorEvaluatorStringFormat<StringName, m_class>>(Variant::OP_MODULE, Variant::STRING_NAME, m_type); \
 	} else \
 		((void)0)
+
+// A struct on the left of an operator dispatches to the overload its layout declares. Only the
+// generic evaluator is registered: the validated and pointer tables stay empty, so typed code
+// that cannot see an overload gets a compile-time error instead of a silent Variant fallback.
+static void _struct_operator_evaluate(Variant::Operator p_op, const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
+	const StructLayout *layout = VariantInternal::get_struct(&p_left)->get_layout_ptr();
+	if (layout == nullptr || !layout->has_operator(p_op)) {
+		r_valid = false;
+		*r_ret = Variant();
+		return;
+	}
+	const Variant *args[2] = { &p_left, &p_right };
+	const bool unary = p_op == Variant::OP_NEGATE || p_op == Variant::OP_POSITIVE;
+	Callable::CallError err;
+	layout->get_operator(p_op).callp(args, unary ? 1 : 2, *r_ret, err);
+	r_valid = err.error == Callable::CallError::CALL_OK;
+	if (!r_valid) {
+		*r_ret = Variant();
+	}
+}
+
+template <Variant::Operator OP>
+static void _struct_op_evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
+	_struct_operator_evaluate(OP, p_left, p_right, r_ret, r_valid);
+}
+
+// The validated form has no way to report failure, so a missing overload is an error print and a
+// null result. Typed GDScript never gets here (the analyzer rejects it); untyped code does.
+template <Variant::Operator OP>
+static void _struct_op_validated_evaluate(const Variant *p_left, const Variant *p_right, Variant *r_ret) {
+	bool valid = false;
+	_struct_operator_evaluate(OP, *p_left, *p_right, r_ret, valid);
+	if (!valid) {
+		const StructLayout *layout = VariantInternal::get_struct(p_left)->get_layout_ptr();
+		ERR_PRINT(vformat("Struct \"%s\" has no overload for operator \"%s\" with a right operand of type \"%s\".", layout != nullptr ? String(layout->get_name()) : String("<null>"), Variant::get_operator_name(OP), Variant::get_type_name(p_right->get_type())));
+	}
+}
+
+template <Variant::Operator OP>
+static void _register_struct_op() {
+	for (int right = 0; right < Variant::VARIANT_MAX; right++) {
+		if (operator_evaluator_table[OP][Variant::STRUCT][right] == nullptr) {
+			operator_evaluator_table[OP][Variant::STRUCT][right] = _struct_op_evaluate<OP>;
+			validated_operator_evaluator_table[OP][Variant::STRUCT][right] = _struct_op_validated_evaluate<OP>;
+			operator_return_type_table[OP][Variant::STRUCT][right] = Variant::NIL;
+		}
+	}
+}
 
 void Variant::_register_variant_operators() {
 	memset(operator_return_type_table, 0, sizeof(operator_return_type_table));
@@ -1039,6 +1089,20 @@ void Variant::_register_variant_operators() {
 
 	register_op<OperatorEvaluatorObjectHasPropertyString>(Variant::OP_IN, Variant::STRING, Variant::OBJECT);
 	register_op<OperatorEvaluatorObjectHasPropertyStringName>(Variant::OP_IN, Variant::STRING_NAME, Variant::OBJECT);
+
+	// Struct operator overloads (see `_struct_operator_evaluate`). Equality stays fieldwise.
+	_register_struct_op<Variant::OP_ADD>();
+	_register_struct_op<Variant::OP_SUBTRACT>();
+	_register_struct_op<Variant::OP_MULTIPLY>();
+	_register_struct_op<Variant::OP_DIVIDE>();
+	_register_struct_op<Variant::OP_MODULE>();
+	_register_struct_op<Variant::OP_LESS>();
+	_register_struct_op<Variant::OP_LESS_EQUAL>();
+	_register_struct_op<Variant::OP_GREATER>();
+	_register_struct_op<Variant::OP_GREATER_EQUAL>();
+	operator_evaluator_table[Variant::OP_NEGATE][Variant::STRUCT][Variant::NIL] = _struct_op_evaluate<Variant::OP_NEGATE>;
+	validated_operator_evaluator_table[Variant::OP_NEGATE][Variant::STRUCT][Variant::NIL] = _struct_op_validated_evaluate<Variant::OP_NEGATE>;
+	operator_return_type_table[Variant::OP_NEGATE][Variant::STRUCT][Variant::NIL] = Variant::NIL;
 }
 
 #undef register_string_op

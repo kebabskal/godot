@@ -36,6 +36,8 @@
 #include "core/templates/local_vector.h"
 #include "core/variant/binder_common.h"
 #include "core/variant/method_ptrcall.h"
+#include "core/variant/struct.h"
+#include "core/variant/struct_layout.h"
 #include "core/variant/variant.h"
 #include "core/variant/variant_internal.h"
 
@@ -1404,6 +1406,16 @@ void Variant::callp(const StringName &p_method, const Variant **p_args, int p_ar
 #endif // DEBUG_ENABLED
 		r_ret = _get_obj().obj->callp(p_method, p_args, p_argcount, r_error);
 
+	} else if (type == Variant::STRUCT) {
+		// Methods declared on the struct's layout; a mutating one writes back into this value.
+		r_error.error = Callable::CallError::CALL_OK;
+		const StructLayout *layout = VariantInternal::get_struct(this)->get_layout_ptr();
+		const int method = layout != nullptr ? layout->find_method(p_method) : -1;
+		if (method < 0) {
+			r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
+			return;
+		}
+		layout->call_method(method, this, p_args, p_argcount, r_ret, r_error);
 	} else {
 		r_error.error = Callable::CallError::CALL_OK;
 
@@ -1481,6 +1493,11 @@ bool Variant::has_method(const StringName &p_method) const {
 		}
 
 		return obj->has_method(p_method);
+	}
+
+	if (type == STRUCT) {
+		const StructLayout *layout = VariantInternal::get_struct(this)->get_layout_ptr();
+		return layout != nullptr && layout->has_struct_method(p_method);
 	}
 
 	return builtin_method_info[type].has(p_method);
