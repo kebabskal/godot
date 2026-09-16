@@ -173,10 +173,15 @@ group are independent and can proceed in any order.
   `:=` from a typed value stays allowed. With it on, all code is on the
   4b/4d fast paths. Not done: a per-directory variant (the warning
   directory rules could carry it if addons need to stay lax).
-- 1 (structs): design draft in `STRUCTS_DESIGN.md`, with a touch-point
-  survey (~160 sites, 13 hard) and a four-increment plan: core type,
-  GDScript declaration and typing, engine registration plus the first
-  physics result and the C# side, then methods and operator overloads.
+- 1 (structs): design in `STRUCTS_DESIGN.md`, with a touch-point survey
+  (~160 sites, 13 hard) and a four-increment plan. Increment 1 landed:
+  `Variant::STRUCT` (`Struct` copy-on-write value, `StructLayout`
+  ref-counted type with a name registry), all Variant behavior, text,
+  binary and JSON serialization, unit tests; the engine builds and all
+  suites pass. Not yet in it: the editor property editor, C# marshaling
+  (the mono module is not built here), the debugger visualizer. Next:
+  increment 2, the GDScript `struct` declaration, type, constructor,
+  index-based field opcodes and typed arrays.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
