@@ -422,6 +422,16 @@ Ref<StructLayout> StructLayout::find_layout(const StringName &p_qualified_name) 
 	return layout != nullptr ? *layout : Ref<StructLayout>();
 }
 
+void StructLayout::get_registered_layouts(List<Ref<StructLayout>> *r_list) {
+	MutexLock lock(struct_layout_registry_mutex);
+	if (struct_layout_registry == nullptr) {
+		return;
+	}
+	for (const KeyValue<StringName, Ref<StructLayout>> &E : *struct_layout_registry) {
+		r_list->push_back(E.value);
+	}
+}
+
 void StructLayout::cleanup() {
 	MutexLock lock(struct_layout_registry_mutex);
 	if (struct_layout_registry != nullptr) {

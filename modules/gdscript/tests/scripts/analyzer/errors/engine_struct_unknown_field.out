@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 3: Struct "PhysicsRayResult3D" has no field "distance".

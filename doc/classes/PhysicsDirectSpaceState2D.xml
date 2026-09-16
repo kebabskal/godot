@@ -72,6 +72,20 @@
 				If the ray did not intersect anything, then an empty dictionary is returned instead.
 			</description>
 		</method>
+		<method name="intersect_ray_struct">
+			<return type="Struct" />
+			<param index="0" name="parameters" type="PhysicsRayQueryParameters2D" />
+			<description>
+				Intersects a ray in a given space, like [method intersect_ray], but returns a [Struct] with the engine layout [code]PhysicsRayResult2D[/code] instead of a [Dictionary]. In GDScript the layout name is a type, so the result can be declared as [code]var hit: PhysicsRayResult2D = state.intersect_ray_struct(query)[/code] and its fields accessed without lookups. The fields are:
+				[code]hit[/code]: [code]true[/code] if the ray intersected something. When [code]false[/code], every other field keeps its default value.
+				[code]position[/code]: The intersection point.
+				[code]normal[/code]: The object's surface normal at the intersection point, or [code]Vector2(0, 0)[/code] if the ray starts inside the shape and [member PhysicsRayQueryParameters2D.hit_from_inside] is [code]true[/code].
+				[code]collider_id[/code]: The colliding object's ID.
+				[code]collider[/code]: The colliding object.
+				[code]shape[/code]: The shape index of the colliding shape.
+				[code]rid[/code]: The intersecting object's [RID].
+			</description>
+		</method>
 		<method name="intersect_shape">
 			<return type="Dictionary[]" />
 			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />

@@ -98,6 +98,8 @@ public:
 	static void register_layout(const Ref<StructLayout> &p_layout);
 	static void unregister_layout(const StringName &p_qualified_name);
 	static Ref<StructLayout> find_layout(const StringName &p_qualified_name);
+	// Every registered layout, engine and script, in no particular order.
+	static void get_registered_layouts(List<Ref<StructLayout>> *r_list);
 	// Drops the registry. Called at shutdown.
 	static void cleanup();
 

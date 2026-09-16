@@ -83,6 +83,7 @@ enum PropertyHint {
 	PROPERTY_HINT_INPUT_NAME,
 	PROPERTY_HINT_FILE_PATH,
 	PROPERTY_HINT_AUDIO_BUS,
+	PROPERTY_HINT_STRUCT_TYPE, ///< hint_string is the name of the struct layout (engine layouts only).
 	PROPERTY_HINT_MAX,
 };
 

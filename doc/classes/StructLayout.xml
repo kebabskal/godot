@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="StructLayout" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		The field declaration shared by every [Struct] value of one type.
+	</brief_description>
+	<description>
+		A layout lists the fields of a [Struct] type in order: each has a name, a [enum Variant.Type] and a default value. Struct values keep a reference to their layout, so a layout stays alive as long as any value uses it.
+		Layouts are created by the engine for its own result types and by GDScript for [code]struct[/code] declarations, and they are looked up by name when a struct is loaded from a file. Scripts can inspect a layout through this class but cannot create or modify one.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="find_field" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns the index of the field called [param name], or [code]-1[/code] if there is no such field.
+			</description>
+		</method>
+		<method name="get_field_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of fields in the layout.
+			</description>
+		</method>
+		<method name="get_field_default_value" qualifiers="const">
+			<return type="Variant" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the value the field at [param index] starts with when a struct is constructed without an argument for it.
+			</description>
+		</method>
+		<method name="get_field_name" qualifiers="const">
+			<return type="StringName" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the name of the field at [param index].
+			</description>
+		</method>
+		<method name="get_field_type" qualifiers="const">
+			<return type="int" enum="Variant.Type" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the type of the field at [param index]. A field declared as [Variant] returns [constant TYPE_NIL].
+			</description>
+		</method>
+		<method name="get_name" qualifiers="const">
+			<return type="StringName" />
+			<description>
+				Returns the name of the struct type, such as [code]PhysicsRayResult3D[/code] or the name given in a GDScript [code]struct[/code] declaration.
+			</description>
+		</method>
+		<method name="has_field" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns [code]true[/code] if the layout has a field called [param name].
+			</description>
+		</method>
+	</methods>
+</class>

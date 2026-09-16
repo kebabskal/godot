@@ -30,16 +30,20 @@
 
 #pragma once
 
+#include "core/variant/typed_struct.h"
 #include "core/variant/type_info.h"
 #include "servers/physics_2d/physics_server_2d_types.h"
 #include "servers/physics_2d/queries/physics_point_query_parameters_2d.h"
 #include "servers/physics_2d/queries/physics_ray_query_parameters_2d.h"
 #include "servers/physics_2d/queries/physics_shape_query_parameters_2d.h"
 
+inline constexpr char PhysicsRayResult2DName[] = "PhysicsRayResult2D";
+
 class PhysicsDirectSpaceState2D : public Object {
 	GDCLASS(PhysicsDirectSpaceState2D, Object);
 
 	Dictionary _intersect_ray(RequiredParam<PhysicsRayQueryParameters2D> p_ray_query);
+	TypedStruct<PhysicsRayResult2DName> _intersect_ray_struct(RequiredParam<PhysicsRayQueryParameters2D> p_ray_query);
 	TypedArray<Dictionary> _intersect_point(RequiredParam<PhysicsPointQueryParameters2D> p_point_query, int p_max_results = 32);
 	TypedArray<Dictionary> _intersect_shape(RequiredParam<PhysicsShapeQueryParameters2D> p_shape_query, int p_max_results = 32);
 	Vector<real_t> _cast_motion(RequiredParam<PhysicsShapeQueryParameters2D> p_shape_query);
@@ -50,6 +54,10 @@ protected:
 	static void _bind_methods();
 
 public:
+	// The `PhysicsRayResult2D` layout returned by `intersect_ray_struct`; registered with the server types.
+	static void register_struct_layouts();
+	static void unregister_struct_layouts();
+
 	virtual bool intersect_ray(const PS2DT::RayParameters &p_parameters, PS2DT::RayResult &r_result) = 0;
 
 	virtual int intersect_point(const PS2DT::PointParameters &p_parameters, PS2DT::ShapeResult *r_results, int p_result_max) = 0;

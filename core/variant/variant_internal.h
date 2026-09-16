@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/variant/type_info.h"
+#include "core/variant/typed_struct.h"
 #include "core/variant/variant.h"
 #include "core/variant/variant_pools.h"
 
@@ -657,6 +658,12 @@ template <typename K, typename V>
 struct VariantInternalAccessor<TypedDictionary<K, V>> {
 	static _FORCE_INLINE_ TypedDictionary<K, V> get(const Variant *p_variant) { return TypedDictionary<K, V>(*VariantInternal::get_dictionary(p_variant)); }
 	static _FORCE_INLINE_ void set(Variant *r_variant, const TypedDictionary<K, V> &p_dictionary) { *VariantInternal::get_dictionary(r_variant) = Dictionary(p_dictionary); }
+};
+
+template <const char *LAYOUT_NAME>
+struct VariantInternalAccessor<TypedStruct<LAYOUT_NAME>> {
+	static _FORCE_INLINE_ TypedStruct<LAYOUT_NAME> get(const Variant *p_variant) { return TypedStruct<LAYOUT_NAME>(*VariantInternal::get_struct(p_variant)); }
+	static _FORCE_INLINE_ void set(Variant *r_variant, const TypedStruct<LAYOUT_NAME> &p_struct) { *VariantInternal::get_struct(r_variant) = Struct(p_struct); }
 };
 
 template <>

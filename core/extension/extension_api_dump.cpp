@@ -37,6 +37,7 @@
 #include "core/io/json.h"
 #include "core/object/class_db.h"
 #include "core/templates/pair.h"
+#include "core/variant/struct_db.h"
 #include "core/version.h"
 
 #ifdef TOOLS_ENABLED
@@ -63,6 +64,9 @@ static String get_property_info_type_name(const PropertyInfo &p_info) {
 	}
 	if (p_info.type == Variant::DICTIONARY && (p_info.hint == PROPERTY_HINT_DICTIONARY_TYPE)) {
 		return String("typeddictionary::") + p_info.hint_string;
+	}
+	if (p_info.type == Variant::STRUCT && (p_info.hint == PROPERTY_HINT_STRUCT_TYPE)) {
+		return String("struct::") + p_info.hint_string;
 	}
 	if (p_info.type == Variant::INT && (p_info.usage & (PROPERTY_USAGE_CLASS_IS_ENUM))) {
 		return String("enum::") + String(p_info.class_name);
@@ -1328,6 +1332,39 @@ Dictionary GDExtensionAPIDump::generate_extension_api(bool p_include_docs) {
 		api_dump["native_structures"] = native_structures;
 	}
 
+	{
+		// Engine struct layouts, so bindings can emit a matching value type for each.
+		Array structs;
+
+		List<StringName> layout_names;
+		StructDB::get_layout_list(&layout_names);
+
+		for (const StringName &E : layout_names) {
+			const Ref<StructLayout> layout = StructDB::get_layout(E);
+			Dictionary d;
+			d["name"] = String(E);
+
+			Array fields;
+			for (int i = 0; i < layout->get_field_count(); i++) {
+				const StructLayout::Field &field = layout->get_field(i);
+				Dictionary f;
+				f["name"] = String(field.name);
+				if (field.type.variant_type == Variant::OBJECT && field.type.class_name != StringName()) {
+					f["type"] = String(field.type.class_name);
+				} else {
+					f["type"] = get_builtin_or_variant_type_name(field.type.variant_type);
+				}
+				f["default_value"] = field.default_value.get_construct_string();
+				fields.push_back(f);
+			}
+			d["fields"] = fields;
+
+			structs.push_back(d);
+		}
+
+		api_dump["structs"] = structs;
+	}
+
 	return api_dump;
 }
 
@@ -1682,6 +1719,13 @@ Error GDExtensionAPIDump::validate_extension_json_file(const String &p_path) {
 	}
 
 	if (!compare_dict_array(old_api, new_api, "native_structures", "name", Vector<String>({ "format" }), false)) {
+		failed = true;
+	}
+
+	if (!compare_dict_array(old_api, new_api, "structs", "name", Vector<String>(), false)) {
+		failed = true;
+	}
+	if (!compare_sub_dict_array(removed_classes_registered, "structs", "name", old_api, new_api, "fields", "name", { "type" }, false)) {
 		failed = true;
 	}
 

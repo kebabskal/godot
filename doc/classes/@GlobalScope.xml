@@ -3013,7 +3013,10 @@
 		<constant name="PROPERTY_HINT_AUDIO_BUS" value="45" enum="PropertyHint">
 			Hints that a [String] or [StringName] property is the name of an audio bus. This allows the selection of predefined bus names registered with the audio server.
 		</constant>
-		<constant name="PROPERTY_HINT_MAX" value="46" enum="PropertyHint">
+		<constant name="PROPERTY_HINT_STRUCT_TYPE" value="46" enum="PropertyHint">
+			Hints that a [Struct] property, argument or return value uses the engine struct layout named by the hint string, such as [code]"PhysicsRayResult3D"[/code]. Typed languages use it to know the fields; the value itself is not checked.
+		</constant>
+		<constant name="PROPERTY_HINT_MAX" value="47" enum="PropertyHint">
 			Represents the size of the [enum PropertyHint] enum.
 		</constant>
 		<constant name="PROPERTY_USAGE_NONE" value="0" enum="PropertyUsageFlags" is_bitfield="true">
@@ -3295,7 +3298,10 @@
 		<constant name="TYPE_PACKED_VECTOR4_ARRAY" value="38" enum="Variant.Type">
 			Variable is of type [PackedVector4Array].
 		</constant>
-		<constant name="TYPE_MAX" value="39" enum="Variant.Type">
+		<constant name="TYPE_STRUCT" value="39" enum="Variant.Type">
+			Variable is of type [Struct].
+		</constant>
+		<constant name="TYPE_MAX" value="40" enum="Variant.Type">
 			Represents the size of the [enum Variant.Type] enum.
 		</constant>
 		<constant name="OP_EQUAL" value="0" enum="Variant.Operator">

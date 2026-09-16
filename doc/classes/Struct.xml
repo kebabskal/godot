@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Struct" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A value with a fixed set of named, typed fields.
+	</brief_description>
+	<description>
+		A struct is a value type whose fields are declared once by a [StructLayout]: each field has a name, a static type and a default value. Every struct value carries a reference to its layout, so two values are equal only if they share the same layout and all of their fields are equal.
+		Layouts come from two places. The engine registers its own at startup, such as [code]PhysicsRayResult3D[/code] returned by [method PhysicsDirectSpaceState3D.intersect_ray_struct]. GDScript declares its own with the [code]struct[/code] keyword:
+		[codeblock]
+		struct Point:
+		    var x: float = 0.0
+		    var y: float = 0.0
+
+		func _ready():
+		    var p := Point(1.0, 2.0)
+		    p.y += 1.0
+		    print(p) # Prints "Point(x: 1.0, y: 3.0)"
+		[/codeblock]
+		In GDScript a layout name is a type: [code]var p: Point[/code], [code]Array[Point][/code], parameters and return types all work, and field access on a typed struct is checked at compile time. Calling the layout name like a function constructs a value: positional arguments fill the leading fields and the rest keep their defaults.
+		Structs have value semantics. Assigning one to another variable or passing it to a function copies the value, and assigning to a field of a copy never changes the original. The copy is lazy, so passing a struct around is as cheap as passing an [Array].
+		A struct can be saved in a scene or resource file and sent over the network; the layout is looked up by name when it is loaded.
+		[b]Note:[/b] Unlike a [Dictionary], a struct cannot gain or lose fields, and assigning a value of the wrong type to a field is an error.
+	</description>
+	<tutorials>
+	</tutorials>
+	<constructors>
+		<constructor name="Struct">
+			<return type="Struct" />
+			<description>
+				Constructs an empty struct with no layout. It has no fields and compares equal only to another empty struct. Use a layout name in GDScript, or [method PhysicsDirectSpaceState3D.intersect_ray_struct] and similar engine methods, to obtain a struct with fields.
+			</description>
+		</constructor>
+		<constructor name="Struct">
+			<return type="Struct" />
+			<param index="0" name="from" type="Struct" />
+			<description>
+				Returns the same struct as [param from]. Since structs are values, the copy is independent of the original.
+			</description>
+		</constructor>
+	</constructors>
+	<operators>
+		<operator name="operator !=">
+			<return type="bool" />
+			<param index="0" name="right" type="Struct" />
+			<description>
+				Returns [code]true[/code] if the structs have different layouts or any field differs. See [method @GlobalScope.is_same] for comparing by identity instead.
+			</description>
+		</operator>
+		<operator name="operator ==">
+			<return type="bool" />
+			<param index="0" name="right" type="Struct" />
+			<description>
+				Returns [code]true[/code] if both structs share the same layout and every field compares equal with [code]==[/code].
+			</description>
+		</operator>
+	</operators>
+</class>

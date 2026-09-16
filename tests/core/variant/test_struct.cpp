@@ -36,6 +36,7 @@ TEST_FORCE_LINK(test_struct)
 #include "core/io/json.h"
 #include "core/io/marshalls.h"
 #include "core/variant/struct.h"
+#include "core/variant/struct_db.h"
 #include "core/variant/struct_layout.h"
 #include "core/variant/variant.h"
 #include "core/variant/variant_parser.h"
@@ -252,6 +253,45 @@ TEST_CASE("[Struct] Registry") {
 	ERR_PRINT_OFF;
 	StructLayout::register_layout(Ref<StructLayout>()); // Refused, no crash.
 	ERR_PRINT_ON;
+}
+
+TEST_CASE("[Struct] StructDB") {
+	CHECK_FALSE(StructDB::has_layout("TestEngineStruct"));
+	Ref<StructLayout> layout = StructDB::add_layout("TestEngineStruct", {
+			{ "hit", Variant::BOOL, false },
+			{ "position", Variant::VECTOR3, Vector3(1, 2, 3) },
+			{ "collider", Variant::OBJECT, Variant(), "Object" },
+	});
+	REQUIRE(layout.is_valid());
+	CHECK(layout->get_source_path().is_empty());
+	CHECK(layout->get_field_count() == 3);
+	CHECK(StructDB::get_layout("TestEngineStruct") == layout);
+	CHECK(StructLayout::find_layout("TestEngineStruct") == layout);
+
+	List<StringName> names;
+	StructDB::get_layout_list(&names);
+	CHECK(names.find("TestEngineStruct") != nullptr);
+
+	Struct value = layout->instantiate();
+	CHECK(value.get_field_by_name("position") == Variant(Vector3(1, 2, 3)));
+	CHECK(value.get_field_by_name("collider") == Variant());
+
+	ERR_PRINT_OFF;
+	CHECK(StructDB::add_layout("TestEngineStruct", {}).is_null()); // Name taken.
+	CHECK(StructDB::add_layout("TestBadStruct", { { "x", Variant::INT, "not an int" } }).is_null()); // Bad default.
+	ERR_PRINT_ON;
+	CHECK_FALSE(StructDB::has_layout("TestBadStruct"));
+
+	StructDB::remove_layout("TestEngineStruct");
+	CHECK_FALSE(StructDB::has_layout("TestEngineStruct"));
+
+	// The physics servers register their result layouts with the server types.
+	Ref<StructLayout> ray = StructDB::get_layout("PhysicsRayResult3D");
+	REQUIRE(ray.is_valid());
+	CHECK(ray->get_field_name(0) == "hit");
+	CHECK(ray->get_field_type(0) == Variant::BOOL);
+	CHECK(ray->find_field("face_index") >= 0);
+	CHECK(StructDB::get_layout("PhysicsRayResult2D").is_valid());
 }
 
 // Serialization resolves layouts by name, so these register the layout for the duration of the test.

@@ -30,6 +30,8 @@
 
 #include "gdscript_analyzer.h"
 
+#include "core/variant/struct_db.h"
+
 #include "gdscript.h"
 #include "gdscript_utility_callable.h"
 #include "gdscript_utility_functions.h"
@@ -220,6 +222,18 @@ static GDScriptParser::DataType make_global_enum_type(const StringName &p_enum_n
 		type.enum_values[element.key] = element.value;
 	}
 
+	return type;
+}
+
+// The meta type of an engine struct layout (a script struct's meta type is built by `resolve_struct()`).
+static GDScriptParser::DataType make_engine_struct_meta_type(const Ref<StructLayout> &p_layout) {
+	GDScriptParser::DataType type;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	type.kind = GDScriptParser::DataType::BUILTIN;
+	type.builtin_type = Variant::STRUCT;
+	type.struct_layout = p_layout;
+	type.is_constant = true;
+	type.is_meta_type = true;
 	return type;
 }
 
@@ -795,6 +809,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 					result.set_container_element_type(1, value_type);
 				}
 			}
+		} else if (StructDB::has_layout(first)) {
+			// Engine structs.
+			result = make_engine_struct_meta_type(StructDB::get_layout(first));
 		} else if (class_exists(first)) {
 			// Native engine classes.
 			result.kind = GDScriptParser::DataType::NATIVE;
@@ -3436,42 +3453,50 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 
 		// Struct constructor: `Point(1.0, 2.0)` fills the leading fields, the rest keep their defaults.
+		// A script struct in scope wins over an engine layout of the same name.
 		{
 			GDScriptParser::StructNode *struct_node = nullptr;
+			Ref<StructLayout> layout;
 			List<GDScriptParser::ClassNode *> scope_classes;
 			get_class_node_current_scope_classes(parser->current_class, &scope_classes, p_call);
 			for (GDScriptParser::ClassNode *scope_class : scope_classes) {
 				if (scope_class->has_member(function_name) && scope_class->get_member(function_name).type == GDScriptParser::ClassNode::Member::STRUCT) {
 					resolve_class_member(scope_class, function_name, p_call);
 					struct_node = scope_class->get_member(function_name).m_struct;
+					layout = struct_node->layout;
 					break;
 				}
 			}
-			if (struct_node != nullptr && struct_node->layout.is_valid()) {
-				if (p_call->arguments.size() > (uint32_t)struct_node->fields.size()) {
-					push_error(vformat(R"*(Too many arguments for struct "%s" constructor: expected at most %d but received %d.)*", function_name, struct_node->fields.size(), p_call->arguments.size()), p_call);
+			if (struct_node == nullptr) {
+				layout = StructDB::get_layout(function_name);
+			}
+			if (layout.is_valid()) {
+				const int field_count = layout->get_field_count();
+				if (p_call->arguments.size() > (uint32_t)field_count) {
+					push_error(vformat(R"*(Too many arguments for struct "%s" constructor: expected at most %d but received %d.)*", function_name, field_count, p_call->arguments.size()), p_call);
 				}
 				bool all_args_valid = true;
-				for (uint32_t i = 0; i < p_call->arguments.size() && i < (uint32_t)struct_node->fields.size(); i++) {
-					const GDScriptParser::DataType field_type = struct_node->fields[i]->type_constraint;
+				for (uint32_t i = 0; i < p_call->arguments.size() && i < (uint32_t)field_count; i++) {
+					const GDScriptParser::DataType field_type = struct_node != nullptr ? struct_node->fields[i]->type_constraint : type_from_struct_field(layout, i);
 					const GDScriptParser::DataType arg_type = p_call->arguments[i]->type_constraint;
 					if (!is_type_compatible(field_type, arg_type, true, p_call->arguments[i])) {
-						push_error(vformat(R"*(Cannot pass a value of type "%s" as field "%s" of struct "%s".)*", arg_type.to_string(), struct_node->fields[i]->identifier->name, function_name), p_call->arguments[i]);
+						push_error(vformat(R"*(Cannot pass a value of type "%s" as field "%s" of struct "%s".)*", arg_type.to_string(), layout->get_field_name(i), function_name), p_call->arguments[i]);
 						all_args_valid = false;
 					} else if (p_call->arguments[i]->is_constant) {
 						update_const_expression_builtin_type(p_call->arguments[i], field_type, "pass");
 					}
 				}
-				p_call->callee->type_constraint = struct_node->struct_type;
-				call_type = type_from_metatype(struct_node->struct_type);
-				if (all_is_constant && all_args_valid && p_call->arguments.size() <= (uint32_t)struct_node->fields.size()) {
+				const GDScriptParser::DataType meta_type = struct_node != nullptr ? struct_node->struct_type : make_engine_struct_meta_type(layout);
+				p_call->callee->type_constraint = meta_type;
+				call_type = type_from_metatype(meta_type);
+				if (all_is_constant && all_args_valid && p_call->arguments.size() <= (uint32_t)field_count) {
 					// Construct here, like built-in constructors with constant arguments.
 					Vector<const Variant *> args;
 					for (const GDScriptParser::ExpressionNode *arg : p_call->arguments) {
 						args.push_back(&(arg->reduced_value));
 					}
 					Callable::CallError err;
-					const Struct value = struct_node->layout->instantiate((const Variant **)args.ptr(), args.size(), err);
+					const Struct value = layout->instantiate((const Variant **)args.ptr(), args.size(), err);
 					if (err.error == Callable::CallError::CALL_OK) {
 						p_call->is_constant = true;
 						p_call->reduced_value = value;
@@ -4799,6 +4824,15 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 		} else {
 			push_error(R"(Builtin type cannot be used as a name on its own.)", p_identifier);
 		}
+	}
+
+	if (StructDB::has_layout(name)) {
+		// The name of an engine struct is its meta type; as a value it is the layout object.
+		const Ref<StructLayout> engine_layout = StructDB::get_layout(name);
+		p_identifier->type_constraint = make_engine_struct_meta_type(engine_layout);
+		p_identifier->is_constant = true;
+		p_identifier->reduced_value = engine_layout;
+		return;
 	}
 
 	if (class_exists(name)) {
@@ -6136,6 +6170,9 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 		} else if (p_property.type == Variant::DICTIONARY && p_property.hint == PROPERTY_HINT_DICTIONARY_TYPE) {
 			result.set_container_element_type(0, type_from_property_hint_string(p_property.hint_string.get_slicec(';', 0)));
 			result.set_container_element_type(1, type_from_property_hint_string(p_property.hint_string.get_slicec(';', 1)));
+		} else if (p_property.type == Variant::STRUCT && p_property.hint == PROPERTY_HINT_STRUCT_TYPE) {
+			// An unknown layout name leaves a plain struct type: access still works through the generic path.
+			result.struct_layout = StructDB::get_layout(p_property.hint_string);
 		} else if (p_property.type == Variant::INT) {
 			// Check if it's enum.
 			if ((p_property.usage & PROPERTY_USAGE_CLASS_IS_ENUM) && p_property.class_name != StringName()) {

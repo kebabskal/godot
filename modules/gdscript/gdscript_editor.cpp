@@ -769,6 +769,8 @@ static String _get_visual_datatype(const PropertyInfo &p_info, bool p_is_arg, co
 		return _trim_parent_class(class_name, p_base_class);
 	} else if (p_info.type == Variant::ARRAY && p_info.hint == PROPERTY_HINT_ARRAY_TYPE && !p_info.hint_string.is_empty()) {
 		return "Array[" + _trim_parent_class(p_info.hint_string, p_base_class) + "]";
+	} else if (p_info.type == Variant::STRUCT && p_info.hint == PROPERTY_HINT_STRUCT_TYPE && !p_info.hint_string.is_empty()) {
+		return p_info.hint_string;
 	} else if (p_info.type == Variant::DICTIONARY && p_info.hint == PROPERTY_HINT_DICTIONARY_TYPE && !p_info.hint_string.is_empty()) {
 		const String key = p_info.hint_string.get_slicec(';', 0);
 		const String value = p_info.hint_string.get_slicec(';', 1);

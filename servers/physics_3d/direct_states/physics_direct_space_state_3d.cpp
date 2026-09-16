@@ -31,7 +31,40 @@
 #include "physics_direct_space_state_3d.h"
 
 #include "core/object/class_db.h"
+#include "core/variant/struct_db.h"
 #include "core/variant/typed_array.h"
+
+// `PhysicsRayResult3D`: field order, matching `register_struct_layouts()`.
+enum {
+	RAY_RESULT_HIT,
+	RAY_RESULT_POSITION,
+	RAY_RESULT_NORMAL,
+	RAY_RESULT_FACE_INDEX,
+	RAY_RESULT_COLLIDER_ID,
+	RAY_RESULT_COLLIDER,
+	RAY_RESULT_SHAPE,
+	RAY_RESULT_RID,
+};
+
+static Ref<StructLayout> ray_result_layout;
+
+void PhysicsDirectSpaceState3D::register_struct_layouts() {
+	ray_result_layout = StructDB::add_layout(PhysicsRayResult3DName, {
+			{ "hit", Variant::BOOL, false },
+			{ "position", Variant::VECTOR3, Vector3() },
+			{ "normal", Variant::VECTOR3, Vector3() },
+			{ "face_index", Variant::INT, -1 },
+			{ "collider_id", Variant::INT, 0 },
+			{ "collider", Variant::OBJECT, Variant(), "Object" },
+			{ "shape", Variant::INT, 0 },
+			{ "rid", Variant::RID, RID() },
+	});
+}
+
+void PhysicsDirectSpaceState3D::unregister_struct_layouts() {
+	StructDB::remove_layout(PhysicsRayResult3DName);
+	ray_result_layout.unref();
+}
 
 Dictionary PhysicsDirectSpaceState3D::_intersect_ray(RequiredParam<PhysicsRayQueryParameters3D> p_ray_query) {
 	EXTRACT_PARAM_OR_FAIL_V(ray_query, p_ray_query, Dictionary());
@@ -53,6 +86,29 @@ Dictionary PhysicsDirectSpaceState3D::_intersect_ray(RequiredParam<PhysicsRayQue
 	d["rid"] = result.rid;
 
 	return d;
+}
+
+TypedStruct<PhysicsRayResult3DName> PhysicsDirectSpaceState3D::_intersect_ray_struct(RequiredParam<PhysicsRayQueryParameters3D> p_ray_query) {
+	ERR_FAIL_COND_V(ray_result_layout.is_null(), Struct());
+	Struct s = ray_result_layout->instantiate();
+	EXTRACT_PARAM_OR_FAIL_V(ray_query, p_ray_query, s);
+
+	PS3DT::RayResult result;
+	if (!intersect_ray(ray_query->get_parameters(), result)) {
+		return s; // `hit` stays false.
+	}
+
+	// Written directly: the values match the field types by construction.
+	Variant *fields = s.get_fields_ptrw();
+	fields[RAY_RESULT_HIT] = true;
+	fields[RAY_RESULT_POSITION] = result.position;
+	fields[RAY_RESULT_NORMAL] = result.normal;
+	fields[RAY_RESULT_FACE_INDEX] = result.face_index;
+	fields[RAY_RESULT_COLLIDER_ID] = result.collider_id;
+	fields[RAY_RESULT_COLLIDER] = result.get_collider();
+	fields[RAY_RESULT_SHAPE] = result.shape;
+	fields[RAY_RESULT_RID] = result.rid;
+	return s;
 }
 
 TypedArray<Dictionary> PhysicsDirectSpaceState3D::_intersect_point(RequiredParam<PhysicsPointQueryParameters3D> p_point_query, int p_max_results) {
@@ -160,6 +216,7 @@ PhysicsDirectSpaceState3D::PhysicsDirectSpaceState3D() {
 void PhysicsDirectSpaceState3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("intersect_point", "parameters", "max_results"), &PhysicsDirectSpaceState3D::_intersect_point, DEFVAL(32));
 	ClassDB::bind_method(D_METHOD("intersect_ray", "parameters"), &PhysicsDirectSpaceState3D::_intersect_ray);
+	ClassDB::bind_method(D_METHOD("intersect_ray_struct", "parameters"), &PhysicsDirectSpaceState3D::_intersect_ray_struct);
 	ClassDB::bind_method(D_METHOD("intersect_shape", "parameters", "max_results"), &PhysicsDirectSpaceState3D::_intersect_shape, DEFVAL(32));
 	ClassDB::bind_method(D_METHOD("cast_motion", "parameters"), &PhysicsDirectSpaceState3D::_cast_motion);
 	ClassDB::bind_method(D_METHOD("collide_shape", "parameters", "max_results"), &PhysicsDirectSpaceState3D::_collide_shape, DEFVAL(32));

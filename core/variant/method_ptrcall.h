@@ -33,6 +33,7 @@
 #include "core/object/object.h"
 #include "core/object/object_id.h"
 #include "core/typedefs.h"
+#include "core/variant/typed_struct.h"
 #include "core/variant/variant.h"
 
 namespace Internal {
@@ -397,6 +398,17 @@ struct PtrToArg<Vector<Face3>> {
 				w[i * 3 + 2] = r[i].vertex[2];
 			}
 		}
+	}
+};
+
+template <const char *LAYOUT_NAME>
+struct PtrToArg<TypedStruct<LAYOUT_NAME>> {
+	_FORCE_INLINE_ static TypedStruct<LAYOUT_NAME> convert(const void *p_ptr) {
+		return TypedStruct<LAYOUT_NAME>(*reinterpret_cast<const Struct *>(p_ptr));
+	}
+	typedef Struct EncodeT;
+	_FORCE_INLINE_ static void encode(TypedStruct<LAYOUT_NAME> p_val, void *p_ptr) {
+		*(Struct *)p_ptr = p_val;
 	}
 };
 

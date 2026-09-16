@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Cannot pass a value of type "String" as field "position" of struct "PhysicsRayResult3D".

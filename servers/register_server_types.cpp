@@ -300,6 +300,7 @@ void register_server_types() {
 	GDREGISTER_ABSTRACT_CLASS(PhysicsDirectBodyState2D);
 	GDREGISTER_VIRTUAL_CLASS(PhysicsDirectBodyState2DExtension);
 	GDREGISTER_ABSTRACT_CLASS(PhysicsDirectSpaceState2D);
+	PhysicsDirectSpaceState2D::register_struct_layouts();
 	GDREGISTER_VIRTUAL_CLASS(PhysicsDirectSpaceState2DExtension);
 
 	GDREGISTER_NATIVE_STRUCT(PhysicsServer2DExtensionRayResult, "Vector2 position;Vector2 normal;RID rid;ObjectID collider_id;Object *collider;int shape");
@@ -341,6 +342,7 @@ void register_server_types() {
 	GDREGISTER_ABSTRACT_CLASS(PhysicsDirectBodyState3D);
 	GDREGISTER_VIRTUAL_CLASS(PhysicsDirectBodyState3DExtension);
 	GDREGISTER_ABSTRACT_CLASS(PhysicsDirectSpaceState3D);
+	PhysicsDirectSpaceState3D::register_struct_layouts();
 	GDREGISTER_VIRTUAL_CLASS(PhysicsDirectSpaceState3DExtension)
 	GDREGISTER_VIRTUAL_CLASS(PhysicsServer3DRenderingServerHandler)
 
@@ -385,6 +387,9 @@ void register_server_types() {
 
 void unregister_server_types() {
 	OS::get_singleton()->benchmark_begin_measure("Servers", "Unregister Extensions");
+
+	PhysicsDirectSpaceState3D::unregister_struct_layouts();
+	PhysicsDirectSpaceState2D::unregister_struct_layouts();
 
 	ServersDebugger::deinitialize();
 	memdelete(shader_types);

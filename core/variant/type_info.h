@@ -32,6 +32,7 @@
 
 #include "core/object/object.h"
 #include "core/typedefs.h"
+#include "core/variant/typed_struct.h"
 #include "core/variant/variant.h"
 
 #include <type_traits>
@@ -342,6 +343,15 @@ const String get_variant_type_identifier() {
 
 } //namespace Internal
 } //namespace GodotTypeInfo
+
+template <const char *LAYOUT_NAME>
+struct GetTypeInfo<TypedStruct<LAYOUT_NAME>> {
+	static const Variant::Type VARIANT_TYPE = Variant::STRUCT;
+	static const GodotTypeInfo::Metadata METADATA = GodotTypeInfo::METADATA_NONE;
+	static inline PropertyInfo get_class_info() {
+		return PropertyInfo(Variant::STRUCT, String(), PROPERTY_HINT_STRUCT_TYPE, LAYOUT_NAME);
+	}
+};
 
 template <typename T>
 struct GetTypeInfo<TypedArray<T>> {

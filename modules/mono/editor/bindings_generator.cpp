@@ -3806,6 +3806,7 @@ bool BindingsGenerator::_arg_default_value_is_assignable_to_type(const Variant &
 		case Variant::PACKED_COLOR_ARRAY:
 		case Variant::CALLABLE:
 		case Variant::SIGNAL:
+		case Variant::STRUCT:
 			return p_arg_type.name == Variant::get_type_name(p_val.get_type());
 		case Variant::ARRAY:
 			return p_arg_type.name == Variant::get_type_name(p_val.get_type()) || p_arg_type.cname == name_cache.type_Array_generic;
@@ -4187,6 +4188,19 @@ bool BindingsGenerator::_populate_object_type_interfaces() {
 
 			ERR_FAIL_COND_V_MSG(itype.find_property_by_name(imethod.cname), false,
 					"Method name conflicts with property: '" + itype.name + "." + imethod.name + "'.");
+
+			// The `Struct` variant type is not marshaled to C# yet: skip the methods that use it rather
+			// than failing the whole glue generation on an unknown type.
+			{
+				bool uses_struct = imethod.return_type.cname == StringName("Struct") || method_info.return_val.type == Variant::STRUCT;
+				for (const PropertyInfo &arginfo : method_info.arguments) {
+					uses_struct = uses_struct || arginfo.type == Variant::STRUCT;
+				}
+				if (uses_struct) {
+					WARN_PRINT("Skipping method '" + itype.name + "." + imethod.name + "': the Struct type has no C# marshaling yet.");
+					continue;
+				}
+			}
 
 			// Compat methods aren't added to the type yet, they need to be checked for conflicts
 			// after all the non-compat methods have been added. The compat methods are added in

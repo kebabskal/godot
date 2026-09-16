@@ -30,8 +30,62 @@
 
 #include "physics_direct_space_state_2d.h"
 
+#include "core/variant/struct_db.h"
+
 #include "core/object/class_db.h"
 #include "core/variant/typed_array.h"
+
+// `PhysicsRayResult2D`: field order, matching `register_struct_layouts()`.
+enum {
+	RAY_RESULT_HIT,
+	RAY_RESULT_POSITION,
+	RAY_RESULT_NORMAL,
+	RAY_RESULT_COLLIDER_ID,
+	RAY_RESULT_COLLIDER,
+	RAY_RESULT_SHAPE,
+	RAY_RESULT_RID,
+};
+
+static Ref<StructLayout> ray_result_layout;
+
+void PhysicsDirectSpaceState2D::register_struct_layouts() {
+	ray_result_layout = StructDB::add_layout(PhysicsRayResult2DName, {
+			{ "hit", Variant::BOOL, false },
+			{ "position", Variant::VECTOR2, Vector2() },
+			{ "normal", Variant::VECTOR2, Vector2() },
+			{ "collider_id", Variant::INT, 0 },
+			{ "collider", Variant::OBJECT, Variant(), "Object" },
+			{ "shape", Variant::INT, 0 },
+			{ "rid", Variant::RID, RID() },
+	});
+}
+
+void PhysicsDirectSpaceState2D::unregister_struct_layouts() {
+	StructDB::remove_layout(PhysicsRayResult2DName);
+	ray_result_layout.unref();
+}
+
+TypedStruct<PhysicsRayResult2DName> PhysicsDirectSpaceState2D::_intersect_ray_struct(RequiredParam<PhysicsRayQueryParameters2D> p_ray_query) {
+	ERR_FAIL_COND_V(ray_result_layout.is_null(), Struct());
+	Struct s = ray_result_layout->instantiate();
+	EXTRACT_PARAM_OR_FAIL_V(ray_query, p_ray_query, s);
+
+	PS2DT::RayResult result;
+	if (!intersect_ray(ray_query->get_parameters(), result)) {
+		return s; // `hit` stays false.
+	}
+
+	// Written directly: the values match the field types by construction.
+	Variant *fields = s.get_fields_ptrw();
+	fields[RAY_RESULT_HIT] = true;
+	fields[RAY_RESULT_POSITION] = result.position;
+	fields[RAY_RESULT_NORMAL] = result.normal;
+	fields[RAY_RESULT_COLLIDER_ID] = result.collider_id;
+	fields[RAY_RESULT_COLLIDER] = result.get_collider();
+	fields[RAY_RESULT_SHAPE] = result.shape;
+	fields[RAY_RESULT_RID] = result.rid;
+	return s;
+}
 
 Dictionary PhysicsDirectSpaceState2D::_intersect_ray(RequiredParam<PhysicsRayQueryParameters2D> p_ray_query) {
 	EXTRACT_PARAM_OR_FAIL_V(ray_query, p_ray_query, Dictionary());
@@ -160,6 +214,7 @@ PhysicsDirectSpaceState2D::PhysicsDirectSpaceState2D() {
 void PhysicsDirectSpaceState2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("intersect_point", "parameters", "max_results"), &PhysicsDirectSpaceState2D::_intersect_point, DEFVAL(32));
 	ClassDB::bind_method(D_METHOD("intersect_ray", "parameters"), &PhysicsDirectSpaceState2D::_intersect_ray);
+	ClassDB::bind_method(D_METHOD("intersect_ray_struct", "parameters"), &PhysicsDirectSpaceState2D::_intersect_ray_struct);
 	ClassDB::bind_method(D_METHOD("intersect_shape", "parameters", "max_results"), &PhysicsDirectSpaceState2D::_intersect_shape, DEFVAL(32));
 	ClassDB::bind_method(D_METHOD("cast_motion", "parameters"), &PhysicsDirectSpaceState2D::_cast_motion);
 	ClassDB::bind_method(D_METHOD("collide_shape", "parameters", "max_results"), &PhysicsDirectSpaceState2D::_collide_shape, DEFVAL(32));
