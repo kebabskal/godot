@@ -304,6 +304,34 @@ group are independent and can proceed in any order.
   dictionary (platform `get_memory_info` overrides). Next in (a):
   `Image.compute_image_metrics`, `Geometry2D.make_atlas`, the
   `GraphEdit` connection records, `ProjectSettings.get_global_class_list`.
+- Tooling parity is part of "done" for every language feature from
+  here on. Checklist: parser/analyzer/compiler; class reference docs;
+  editor completion (`gdscript_editor.cpp`: type names, class members,
+  members of a value, identifiers in scope); editor lookup
+  (`_lookup_symbol_from_base`, for hover and go-to-definition, which the
+  language server also uses); language server document symbols
+  (`ExtendGDScriptParser::parse_class_symbol`) and the script API dump;
+  debugger variable display (the debug adapter's `parse_variant` and the
+  inspector's `parse_property`); the syntax highlighter (free: keywords
+  come from the tokenizer); the godot-tools VS Code grammar (external, a
+  keyword PR). Struct pass landed: struct symbols with field and method
+  children in the outline (kind `Struct`, fields `Field`), a `structs`
+  section in the script API, completion of struct names as types, of
+  fields and methods on a struct-typed value (script or engine layout),
+  and of fields and sibling methods inside a struct method; hover and
+  go-to-definition for struct names, fields and methods (struct types
+  now carry `script_path`); struct values expand field by field in the
+  debug adapter; the inspector shows a read-only `EditorPropertyStruct`
+  (type name, fields in the tooltip). Lesson: completion cannot lean on
+  analyzer results, since the cursor usually leaves a parse error and a
+  constant-folded `Point(1.0, 2.0)` reaches the guesser as a bare
+  `Struct` value; `gdscript_editor.cpp` rebuilds struct types from the
+  parse tree (`_struct_node_type`, `_find_struct_in_scope`) and maps a
+  struct value back to its declaration by layout. Also: the completion
+  test harness cannot complete after a bare space (`var p: ➡` yields
+  nothing, a pre-existing limit), so tests use a partial identifier. Not
+  done: an editable struct property editor, and `struct`/`trait` in the
+  VS Code grammar.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
