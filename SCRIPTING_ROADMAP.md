@@ -179,9 +179,24 @@ group are independent and can proceed in any order.
   ref-counted type with a name registry), all Variant behavior, text,
   binary and JSON serialization, unit tests; the engine builds and all
   suites pass. Not yet in it: the editor property editor, C# marshaling
-  (the mono module is not built here), the debugger visualizer. Next:
-  increment 2, the GDScript `struct` declaration, type, constructor,
-  index-based field opcodes and typed arrays.
+  (the mono module is not built here), the debugger visualizer.
+  Increment 2 landed: the GDScript `struct Name:` class member (fields
+  are `var` lines with a required static type and constant defaults),
+  the name as a type (`var p: Point`, `Array[Point]`, parameters and
+  returns, nested structs), the positional constructor `Point(1.0, 2.0)`
+  (constant-folded when the arguments are), typed field access compiled
+  to `GET/SET_STRUCT_FIELD` (index-based, guarded by the layout's field
+  name so a stale script falls back to the generic path), and analyzer
+  errors for unknown fields, untyped fields, too many constructor
+  arguments and layout mismatches. Layouts are registered under
+  `source_path::name`. Two traps for anyone extending this: both
+  `GDScriptParser::DataType` and `GDScriptDataType` have hand-written
+  copy assignment, so every new field must be added there (a missed
+  one silently drops the layout from every copy); and the three struct
+  opcodes had to go through `GDS_NOINLINE` helpers, since their inline
+  locals grew the `call()` frame enough to fail `deep_recursion`. Next:
+  increment 3 (engine-declared layouts, physics result struct,
+  extension_api, C#), then methods and operator overloads.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

@@ -67,6 +67,9 @@ public:
 
 	void set_source_path(const String &p_path);
 	String get_source_path() const;
+	// `name` for engine layouts, `source_path::name` for script layouts: the registry key and the
+	// name written by the serializers.
+	StringName get_qualified_name() const;
 
 	// Appends a field. Returns its index, or -1 if the name is taken. `p_default_value` must be
 	// acceptable for the field type (it is validated and converted like any assignment).
@@ -93,8 +96,8 @@ public:
 	// Registry of layouts by name. Engine layouts register at startup; script layouts register under a
 	// qualified name when their script compiles. Serialized values are resolved through it.
 	static void register_layout(const Ref<StructLayout> &p_layout);
-	static void unregister_layout(const StringName &p_name);
-	static Ref<StructLayout> find_layout(const StringName &p_name);
+	static void unregister_layout(const StringName &p_qualified_name);
+	static Ref<StructLayout> find_layout(const StringName &p_qualified_name);
 	// Drops the registry. Called at shutdown.
 	static void cleanup();
 

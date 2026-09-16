@@ -49,6 +49,7 @@
 
 #ifdef DEBUG_ENABLED
 #include "core/string/string_builder.h"
+#include "core/variant/struct_layout.h"
 #endif
 
 class GDScriptParser {
@@ -72,6 +73,7 @@ public:
 	struct ContinueNode;
 	struct DictionaryNode;
 	struct EnumNode;
+	struct StructNode;
 	struct ExpressionNode;
 	struct ForNode;
 	struct FunctionNode;
@@ -134,6 +136,8 @@ public:
 		Ref<Script> script_type;
 		String script_path;
 		ClassNode *class_type = nullptr;
+		StructNode *struct_type = nullptr; // For `BUILTIN` with `builtin_type == Variant::STRUCT`.
+		Ref<StructLayout> struct_layout; // Same; the runtime identity of the struct type.
 
 		MethodInfo method_info; // For callable/signals.
 		HashMap<StringName, int64_t> enum_values; // For enums.
@@ -222,7 +226,7 @@ public:
 				case VARIANT:
 					return true; // All variants are the same.
 				case BUILTIN:
-					return builtin_type == p_other.builtin_type;
+					return builtin_type == p_other.builtin_type && struct_layout == p_other.struct_layout;
 				case NATIVE:
 				case ENUM: // Enums use native_type to identify the enum and its base class.
 					return native_type == p_other.native_type;
@@ -256,6 +260,8 @@ public:
 			script_type = p_other.script_type;
 			script_path = p_other.script_path;
 			class_type = p_other.class_type;
+			struct_type = p_other.struct_type;
+			struct_layout = p_other.struct_layout;
 			method_info = p_other.method_info;
 			enum_values = p_other.enum_values;
 			container_element_types = p_other.container_element_types;
@@ -342,6 +348,7 @@ public:
 			SELF,
 			SIGNAL,
 			SUBSCRIPT,
+			STRUCT,
 			SUITE,
 			TERNARY_OPERATOR,
 			TYPE,
@@ -573,6 +580,22 @@ public:
 		}
 	};
 
+	// `struct Name:` with an indented block of typed `var` fields. Resolved by the analyzer into a
+	// `StructLayout`; a value of the struct is `Variant::STRUCT` with that layout.
+	struct StructNode : public Node {
+		IdentifierNode *identifier = nullptr;
+		Vector<VariableNode *> fields;
+		DataType struct_type; // The meta type; `type_from_metatype()` of it is the type of a value.
+		Ref<StructLayout> layout;
+#ifdef TOOLS_ENABLED
+		MemberDocData doc_data;
+#endif // TOOLS_ENABLED
+
+		StructNode() {
+			type = STRUCT;
+		}
+	};
+
 	struct ClassNode : public Node {
 		struct Member {
 			enum Type {
@@ -584,6 +607,7 @@ public:
 				VARIABLE,
 				ENUM,
 				ENUM_VALUE, // For unnamed enums.
+				STRUCT,
 				GROUP, // For member grouping.
 			};
 
@@ -596,6 +620,7 @@ public:
 				SignalNode *signal;
 				VariableNode *variable;
 				EnumNode *m_enum;
+				StructNode *m_struct;
 				AnnotationNode *annotation;
 			};
 			EnumNode::Value enum_value;
@@ -618,6 +643,8 @@ public:
 					case ENUM:
 						// All enum-type members have an id.
 						return m_enum->identifier->name;
+					case STRUCT:
+						return m_struct->identifier->name;
 					case ENUM_VALUE:
 						return enum_value.identifier->name;
 					case GROUP:
@@ -642,6 +669,8 @@ public:
 						return "variable";
 					case ENUM:
 						return "enum";
+					case STRUCT:
+						return "struct";
 					case ENUM_VALUE:
 						return "enum value";
 					case GROUP:
@@ -664,6 +693,8 @@ public:
 						return enum_value.line;
 					case ENUM:
 						return m_enum->start_line;
+					case STRUCT:
+						return m_struct->start_line;
 					case SIGNAL:
 						return signal->start_line;
 					case GROUP:
@@ -686,6 +717,8 @@ public:
 						return variable->type_constraint;
 					case ENUM:
 						return m_enum->enum_type;
+					case STRUCT:
+						return m_struct->struct_type;
 					case ENUM_VALUE:
 						return enum_value.identifier->type_constraint;
 					case SIGNAL:
@@ -710,6 +743,8 @@ public:
 						return variable;
 					case ENUM:
 						return m_enum;
+					case STRUCT:
+						return m_struct;
 					case ENUM_VALUE:
 						return enum_value.identifier;
 					case SIGNAL:
@@ -735,6 +770,10 @@ public:
 			Member(VariableNode *p_variable) {
 				type = VARIABLE;
 				variable = p_variable;
+			}
+			Member(StructNode *p_struct) {
+				type = STRUCT;
+				m_struct = p_struct;
 			}
 			Member(SignalNode *p_signal) {
 				type = SIGNAL;
@@ -1600,6 +1639,7 @@ private:
 	void parse_class_member(T *(GDScriptParser::*p_parse_function)(bool), AnnotationInfo::TargetKind p_target, const String &p_member_kind, bool p_is_static = false);
 	SignalNode *parse_signal(bool p_is_static);
 	EnumNode *parse_enum(bool p_is_static);
+	StructNode *parse_struct(bool p_is_static);
 	ParameterNode *parse_parameter();
 	FunctionNode *parse_function(bool p_is_static);
 	bool parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start);
@@ -1743,6 +1783,7 @@ public:
 		void print_dictionary(const DictionaryNode *p_dictionary);
 		void print_expression(const ExpressionNode *p_expression);
 		void print_enum(const EnumNode *p_enum);
+		void print_struct(const StructNode *p_struct);
 		void print_for(const ForNode *p_for);
 		void print_function(const FunctionNode *p_function, const String &p_context = "Function");
 		void print_get_node(const GetNodeNode *p_get_node);

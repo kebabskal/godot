@@ -686,7 +686,7 @@ Variant JSON::_from_native(const Variant &p_variant, bool p_full_objects, int p_
 			const Struct s = p_variant;
 			Dictionary ret;
 			ret[TYPE] = Variant::get_type_name(p_variant.get_type());
-			ret["name"] = String(s.get_struct_name());
+			ret["name"] = String(s.get_layout_ptr()->get_qualified_name());
 			Array args;
 			ret[ARGS] = args;
 			ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ret, "Variant is too deep. Bailing.");

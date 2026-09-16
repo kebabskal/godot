@@ -1858,7 +1858,7 @@ void ResourceFormatSaverBinaryInstance::write_variant(Ref<FileAccess> r_file, co
 		case Variant::STRUCT: {
 			r_file->store_32(VARIANT_STRUCT);
 			const Struct s = p_property;
-			save_unicode_string(r_file, s.get_struct_name());
+			save_unicode_string(r_file, s.get_layout_ptr()->get_qualified_name());
 			r_file->store_32(uint32_t(s.get_field_count()));
 			for (int i = 0; i < s.get_field_count(); i++) {
 				write_variant(r_file, s.get_field(i), r_resource_map, r_external_resources, r_string_map);

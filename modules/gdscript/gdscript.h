@@ -109,6 +109,7 @@ private:
 	// `OPCODE_SET_SCRIPT_MEMBER` to reach a member without a name lookup. Points into `member_indices`.
 	LocalVector<const MemberInfo *> member_info_by_index;
 	HashMap<StringName, Ref<GDScript>> subclasses;
+	HashMap<StringName, Ref<StructLayout>> struct_layouts; // `struct` declarations of this class.
 	HashMap<StringName, MethodInfo> _signals;
 	Dictionary rpc_config;
 

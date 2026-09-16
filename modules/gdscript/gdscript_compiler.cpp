@@ -103,6 +103,7 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 		case GDScriptParser::DataType::BUILTIN: {
 			result.kind = GDScriptDataType::BUILTIN;
 			result.builtin_type = p_datatype.builtin_type;
+			result.struct_layout = p_datatype.struct_layout;
 		} break;
 		case GDScriptParser::DataType::NATIVE: {
 			if (p_handle_metatype && p_datatype.is_meta_type) {
@@ -651,7 +652,10 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				arguments.push_back(arg);
 			}
 
-			if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(call->function_name) < Variant::VARIANT_MAX) {
+			if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && call->callee->type_constraint.is_meta_type && call->callee->type_constraint.kind == GDScriptParser::DataType::BUILTIN && call->callee->type_constraint.builtin_type == Variant::STRUCT && call->callee->type_constraint.struct_layout.is_valid()) {
+				// Struct constructor.
+				gen->write_construct_struct(result, codegen.add_constant(call->callee->type_constraint.struct_layout), arguments);
+			} else if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && GDScriptParser::get_builtin_type(call->function_name) < Variant::VARIANT_MAX) {
 				gen->write_construct(result, GDScriptParser::get_builtin_type(call->function_name), arguments);
 			} else if (!call->is_super && call->callee->type == GDScriptParser::Node::IDENTIFIER && Variant::has_utility_function(call->function_name)) {
 				// Variant utility function.
@@ -2259,6 +2263,10 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 						codegen.generator->pop_temporary();
 					}
 					initialized = true;
+				} else if (local_type.kind == GDScriptDataType::BUILTIN && local_type.builtin_type == Variant::STRUCT && local_type.struct_layout.is_valid()) {
+					// A struct local starts as a copy of the layout's default value (shared until written).
+					gen->write_assign(local, codegen.add_constant(local_type.struct_layout->instantiate()));
+					initialized = true;
 				} else if (local_type.kind == GDScriptDataType::BUILTIN || codegen.generator->is_local_dirty(local)) {
 					// Initialize with default for the type. Built-in types must always be cleared (they cannot be `null`).
 					// Objects and untyped variables are assigned to `null` only if the stack address has been reused and not cleared.
@@ -2435,6 +2443,8 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 				} else if (field_type.builtin_type == Variant::DICTIONARY && field_type.has_container_element_types()) {
 					codegen.generator->write_construct_typed_dictionary(dst_address, field_type.get_container_element_type_or_variant(0),
 							field_type.get_container_element_type_or_variant(1), Vector<GDScriptCodeGenerator::Address>());
+				} else if (field_type.kind == GDScriptDataType::BUILTIN && field_type.builtin_type == Variant::STRUCT && field_type.struct_layout.is_valid()) {
+					codegen.generator->write_assign(dst_address, codegen.add_constant(field_type.struct_layout->instantiate()));
 				} else if (field_type.kind == GDScriptDataType::BUILTIN) {
 					codegen.generator->write_construct(dst_address, field_type.builtin_type, Vector<GDScriptCodeGenerator::Address>());
 				}
@@ -3012,6 +3022,15 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 				p_script->constants.insert(name, enum_n->dictionary);
 			} break;
 
+			case GDScriptParser::ClassNode::Member::STRUCT: {
+				const GDScriptParser::StructNode *struct_n = member.m_struct;
+				if (struct_n->layout.is_valid()) {
+					const StringName name = struct_n->identifier->name;
+					p_script->struct_layouts[name] = struct_n->layout;
+					p_script->constants.insert(name, struct_n->layout);
+					StructLayout::register_layout(struct_n->layout);
+				}
+			} break;
 			case GDScriptParser::ClassNode::Member::GROUP: {
 				const GDScriptParser::AnnotationNode *annotation = member.annotation;
 				// Avoid name conflict. See GH-78252.

@@ -1165,6 +1165,9 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 			case GDScriptTokenizer::Token::ENUM:
 				parse_class_member(&GDScriptParser::parse_enum, AnnotationInfo::NONE, "enum");
 				break;
+			case GDScriptTokenizer::Token::STRUCT:
+				parse_class_member(&GDScriptParser::parse_struct, AnnotationInfo::NONE, "struct");
+				break;
 			case GDScriptTokenizer::Token::STATIC: {
 				advance();
 				next_is_static = true;
@@ -1712,6 +1715,42 @@ GDScriptParser::EnumNode *GDScriptParser::parse_enum(bool p_is_static) {
 	end_statement("enum");
 
 	return enum_node;
+}
+
+GDScriptParser::StructNode *GDScriptParser::parse_struct(bool p_is_static) {
+	StructNode *struct_node = alloc_node<StructNode>();
+	make_completion_context(COMPLETION_DECLARATION, struct_node);
+
+	if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected struct name after "struct".)")) {
+		complete_extents(struct_node);
+		return nullptr;
+	}
+	struct_node->identifier = parse_identifier();
+
+	consume(GDScriptTokenizer::Token::COLON, R"(Expected ":" after struct name.)");
+	consume(GDScriptTokenizer::Token::NEWLINE, R"(Expected a newline after the struct declaration.)");
+	if (!consume(GDScriptTokenizer::Token::INDENT, R"(Expected an indented block with the struct fields.)")) {
+		complete_extents(struct_node);
+		return struct_node;
+	}
+
+	while (!check(GDScriptTokenizer::Token::DEDENT) && !is_at_end()) {
+		if (match(GDScriptTokenizer::Token::VAR)) {
+			VariableNode *field = parse_variable(false, false);
+			if (field != nullptr) {
+				struct_node->fields.push_back(field);
+			}
+		} else if (match(GDScriptTokenizer::Token::NEWLINE)) {
+			// Blank line.
+		} else {
+			push_error(vformat(R"(Unexpected "%s" in a struct body: only "var" fields are allowed.)", current.get_name()));
+			advance();
+		}
+	}
+	consume(GDScriptTokenizer::Token::DEDENT, R"(Missing unindent at the end of the struct body.)");
+
+	complete_extents(struct_node);
+	return struct_node;
 }
 
 bool GDScriptParser::parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start) {
@@ -4329,6 +4368,7 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ &GDScriptParser::parse_self,                   	nullptr,                                        PREC_NONE }, // SELF,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // SIGNAL,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // STATIC,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // STRUCT,
 		{ &GDScriptParser::parse_call,						nullptr,                                        PREC_NONE }, // SUPER,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TRAIT,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // VAR,
@@ -5346,6 +5386,9 @@ String GDScriptParser::DataType::to_string() const {
 		case VARIANT:
 			return "Variant";
 		case BUILTIN:
+			if (builtin_type == Variant::STRUCT && struct_layout.is_valid()) {
+				return struct_layout->get_name();
+			}
 			if (builtin_type == Variant::NIL) {
 				return "null";
 			}
@@ -5896,6 +5939,9 @@ void GDScriptParser::TreePrinter::print_class(const ClassNode *p_class) {
 			case ClassNode::Member::ENUM:
 				print_enum(m.m_enum);
 				break;
+			case ClassNode::Member::STRUCT:
+				print_struct(m.m_struct);
+				break;
 			case ClassNode::Member::ENUM_VALUE:
 				break; // Nothing. Will be printed by enum.
 			case ClassNode::Member::GROUP:
@@ -6024,6 +6070,17 @@ void GDScriptParser::TreePrinter::print_enum(const EnumNode *p_enum) {
 	}
 	decrease_indent();
 	push_line("}");
+}
+
+void GDScriptParser::TreePrinter::print_struct(const StructNode *p_struct) {
+	push_text("Struct ");
+	print_identifier(p_struct->identifier);
+	push_line(" :");
+	increase_indent();
+	for (const VariableNode *field : p_struct->fields) {
+		print_variable(field);
+	}
+	decrease_indent();
 }
 
 void GDScriptParser::TreePrinter::print_for(const ForNode *p_for) {

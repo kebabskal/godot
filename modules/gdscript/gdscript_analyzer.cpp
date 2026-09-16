@@ -876,6 +876,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 
 					GDScriptParser::ClassNode::Member member = script_class->get_member(first);
 					switch (member.type) {
+						case GDScriptParser::ClassNode::Member::STRUCT:
 						case GDScriptParser::ClassNode::Member::CLASS:
 							result = member.get_datatype();
 							found = true;
@@ -1211,6 +1212,15 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 				for (GDScriptParser::AnnotationNode *&E : member.m_enum->annotations) {
 					resolve_annotation(E);
 					E->apply(parser, member.m_enum, p_class);
+				}
+			} break;
+			case GDScriptParser::ClassNode::Member::STRUCT: {
+				check_class_member_name_conflict(p_class, member.m_struct->identifier->name, member.m_struct);
+				member.m_struct->struct_type = resolving_datatype;
+				resolve_struct(member.m_struct, p_class);
+				for (GDScriptParser::AnnotationNode *&E : member.m_struct->annotations) {
+					resolve_annotation(E);
+					E->apply(parser, member.m_struct, p_class);
 				}
 			} break;
 			case GDScriptParser::ClassNode::Member::FUNCTION:
@@ -1670,6 +1680,7 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 		case GDScriptParser::Node::BREAKPOINT:
 		case GDScriptParser::Node::CONTINUE:
 		case GDScriptParser::Node::ENUM:
+		case GDScriptParser::Node::STRUCT:
 		case GDScriptParser::Node::FUNCTION:
 		case GDScriptParser::Node::PASS:
 		case GDScriptParser::Node::SIGNAL:
@@ -1732,6 +1743,120 @@ void GDScriptAnalyzer::resolve_annotation(GDScriptParser::AnnotationNode *p_anno
 
 		p_annotation->resolved_arguments.push_back(value);
 	}
+}
+
+GDScriptParser::StructNode *GDScriptAnalyzer::find_struct_node_for_layout(const Ref<StructLayout> &p_layout) {
+	if (p_layout.is_null() || parser->current_class == nullptr) {
+		return nullptr;
+	}
+	List<GDScriptParser::ClassNode *> scope_classes;
+	get_class_node_current_scope_classes(parser->current_class, &scope_classes, nullptr);
+	for (GDScriptParser::ClassNode *scope_class : scope_classes) {
+		for (const GDScriptParser::ClassNode::Member &member : scope_class->members) {
+			if (member.type == GDScriptParser::ClassNode::Member::STRUCT && member.m_struct->layout == p_layout) {
+				return member.m_struct;
+			}
+		}
+	}
+	return nullptr;
+}
+
+GDScriptParser::DataType GDScriptAnalyzer::type_from_struct_field(const Ref<StructLayout> &p_layout, int p_field) {
+	// The layout only knows the Variant type, class and script of a field; that is enough for a
+	// struct declared in another script.
+	const StructLayout::Field &field = p_layout->get_field(p_field);
+	GDScriptParser::DataType result;
+	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	if (field.type.variant_type == Variant::NIL) {
+		result.kind = GDScriptParser::DataType::VARIANT;
+	} else if (field.type.variant_type == Variant::OBJECT) {
+		if (field.type.script.is_valid()) {
+			result = type_from_metatype(make_script_meta_type(field.type.script));
+		} else {
+			result.kind = GDScriptParser::DataType::NATIVE;
+			result.builtin_type = Variant::OBJECT;
+			result.native_type = field.type.class_name != StringName() ? field.type.class_name : SNAME("Object");
+		}
+	} else {
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = field.type.variant_type;
+		if (field.type.variant_type == Variant::STRUCT && field.default_value.get_type() == Variant::STRUCT) {
+			result.struct_layout = field.default_value.operator Struct().get_layout();
+			result.struct_type = find_struct_node_for_layout(result.struct_layout);
+		}
+	}
+	return result;
+}
+
+void GDScriptAnalyzer::resolve_struct(GDScriptParser::StructNode *p_struct, GDScriptParser::ClassNode *p_class) {
+	if (p_struct->layout.is_valid()) {
+		return;
+	}
+	Ref<StructLayout> layout;
+	layout.instantiate();
+	layout->set_name(p_struct->identifier->name);
+	layout->set_source_path(parser->script_path);
+
+	for (GDScriptParser::VariableNode *field : p_struct->fields) {
+		resolve_variable(field, false);
+		if (field->property != GDScriptParser::VariableNode::PROP_NONE) {
+			push_error(R"(Struct fields cannot have setters or getters.)", field);
+		}
+		if (field->is_static) {
+			push_error(R"(Struct fields cannot be static.)", field);
+		}
+		const GDScriptParser::DataType field_type = field->type_constraint;
+		if (!field_type.is_hard_type()) {
+			push_error(R"(Struct fields must have a static type.)", field);
+			continue;
+		}
+		if (field->initializer != nullptr && !field->initializer->is_constant) {
+			push_error(R"(Struct field default values must be constant.)", field->initializer);
+			continue;
+		}
+		Variant default_value = field->initializer != nullptr ? field->initializer->reduced_value : Variant();
+		Variant::Type variant_type = Variant::NIL;
+		StringName class_name;
+		Ref<Script> script;
+		switch (field_type.kind) {
+			case GDScriptParser::DataType::BUILTIN:
+				variant_type = field_type.builtin_type;
+				if (variant_type == Variant::STRUCT && field->initializer == nullptr && field_type.struct_layout.is_valid()) {
+					default_value = field_type.struct_layout->instantiate();
+				}
+				break;
+			case GDScriptParser::DataType::NATIVE:
+				variant_type = Variant::OBJECT;
+				class_name = field_type.native_type;
+				break;
+			case GDScriptParser::DataType::SCRIPT:
+			case GDScriptParser::DataType::CLASS:
+				variant_type = Variant::OBJECT;
+				class_name = field_type.native_type;
+				script = field_type.script_type;
+				break;
+			case GDScriptParser::DataType::ENUM:
+				variant_type = Variant::INT;
+				break;
+			default:
+				variant_type = Variant::NIL; // Explicit `Variant`.
+				break;
+		}
+		if (layout->add_field(field->identifier->name, variant_type, default_value, class_name, script) < 0) {
+			push_error(vformat(R"(Cannot add field "%s" to struct "%s": duplicated name or invalid default value.)", field->identifier->name, p_struct->identifier->name), field);
+		}
+	}
+
+	p_struct->layout = layout;
+	GDScriptParser::DataType meta;
+	meta.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	meta.kind = GDScriptParser::DataType::BUILTIN;
+	meta.builtin_type = Variant::STRUCT;
+	meta.struct_type = p_struct;
+	meta.struct_layout = layout;
+	meta.is_meta_type = true;
+	meta.is_constant = true;
+	p_struct->struct_type = meta;
 }
 
 void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *p_function, const GDScriptParser::Node *p_source, bool p_is_lambda) {
@@ -2717,6 +2842,7 @@ void GDScriptAnalyzer::reduce_expression(GDScriptParser::ExpressionNode *p_expre
 		case GDScriptParser::Node::CONSTANT:
 		case GDScriptParser::Node::CONTINUE:
 		case GDScriptParser::Node::ENUM:
+		case GDScriptParser::Node::STRUCT:
 		case GDScriptParser::Node::FOR:
 		case GDScriptParser::Node::FUNCTION:
 		case GDScriptParser::Node::IF:
@@ -3307,6 +3433,53 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			push_error(R"*(Invalid constructor "Object()", use "Object.new()" instead.)*", p_call);
 			p_call->type_constraint = call_type;
 			return;
+		}
+
+		// Struct constructor: `Point(1.0, 2.0)` fills the leading fields, the rest keep their defaults.
+		{
+			GDScriptParser::StructNode *struct_node = nullptr;
+			List<GDScriptParser::ClassNode *> scope_classes;
+			get_class_node_current_scope_classes(parser->current_class, &scope_classes, p_call);
+			for (GDScriptParser::ClassNode *scope_class : scope_classes) {
+				if (scope_class->has_member(function_name) && scope_class->get_member(function_name).type == GDScriptParser::ClassNode::Member::STRUCT) {
+					resolve_class_member(scope_class, function_name, p_call);
+					struct_node = scope_class->get_member(function_name).m_struct;
+					break;
+				}
+			}
+			if (struct_node != nullptr && struct_node->layout.is_valid()) {
+				if (p_call->arguments.size() > (uint32_t)struct_node->fields.size()) {
+					push_error(vformat(R"*(Too many arguments for struct "%s" constructor: expected at most %d but received %d.)*", function_name, struct_node->fields.size(), p_call->arguments.size()), p_call);
+				}
+				bool all_args_valid = true;
+				for (uint32_t i = 0; i < p_call->arguments.size() && i < (uint32_t)struct_node->fields.size(); i++) {
+					const GDScriptParser::DataType field_type = struct_node->fields[i]->type_constraint;
+					const GDScriptParser::DataType arg_type = p_call->arguments[i]->type_constraint;
+					if (!is_type_compatible(field_type, arg_type, true, p_call->arguments[i])) {
+						push_error(vformat(R"*(Cannot pass a value of type "%s" as field "%s" of struct "%s".)*", arg_type.to_string(), struct_node->fields[i]->identifier->name, function_name), p_call->arguments[i]);
+						all_args_valid = false;
+					} else if (p_call->arguments[i]->is_constant) {
+						update_const_expression_builtin_type(p_call->arguments[i], field_type, "pass");
+					}
+				}
+				p_call->callee->type_constraint = struct_node->struct_type;
+				call_type = type_from_metatype(struct_node->struct_type);
+				if (all_is_constant && all_args_valid && p_call->arguments.size() <= (uint32_t)struct_node->fields.size()) {
+					// Construct here, like built-in constructors with constant arguments.
+					Vector<const Variant *> args;
+					for (const GDScriptParser::ExpressionNode *arg : p_call->arguments) {
+						args.push_back(&(arg->reduced_value));
+					}
+					Callable::CallError err;
+					const Struct value = struct_node->layout->instantiate((const Variant **)args.ptr(), args.size(), err);
+					if (err.error == Callable::CallError::CALL_OK) {
+						p_call->is_constant = true;
+						p_call->reduced_value = value;
+					}
+				}
+				p_call->type_constraint = call_type;
+				return;
+			}
 		}
 
 		Variant::Type builtin_type = GDScriptParser::get_builtin_type(function_name);
@@ -4274,6 +4447,14 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 					p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_CONSTANT;
 					return;
 				}
+				case GDScriptParser::ClassNode::Member::STRUCT: {
+					// The name of a struct is its meta type; as a value it is the layout object.
+					p_identifier->type_constraint = member.get_datatype();
+					p_identifier->is_constant = true;
+					p_identifier->reduced_value = member.m_struct->layout;
+					p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_CONSTANT;
+					return;
+				}
 
 				case GDScriptParser::ClassNode::Member::VARIABLE: {
 					if (is_base && (!base.is_meta_type || member.variable->is_static)) {
@@ -4921,6 +5102,33 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				}
 			} else {
 				mark_node_unsafe(p_subscript);
+			}
+		} else if (base_type.kind == GDScriptParser::DataType::BUILTIN && base_type.builtin_type == Variant::STRUCT && base_type.struct_layout.is_valid() && !base_type.is_meta_type) {
+			// Field of a struct of known type.
+			if (base_type.struct_type != nullptr) {
+				for (GDScriptParser::VariableNode *field : base_type.struct_type->fields) {
+					if (field->identifier->name == p_subscript->attribute->name) {
+						result_type = field->type_constraint;
+						result_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+						result_type.is_constant = false;
+						result_type.is_meta_type = false;
+						p_subscript->attribute->type_constraint = result_type;
+						valid = true;
+						break;
+					}
+				}
+			} else {
+				const int field = base_type.struct_layout->find_field(p_subscript->attribute->name);
+				if (field >= 0) {
+					result_type = type_from_struct_field(base_type.struct_layout, field);
+					p_subscript->attribute->type_constraint = result_type;
+					valid = true;
+				}
+			}
+			if (!valid) {
+				push_error(vformat(R"(Struct "%s" has no field "%s".)", base_type.to_string(), p_subscript->attribute->name), p_subscript->attribute);
+				result_type.kind = GDScriptParser::DataType::VARIANT;
+				valid = true; // Already reported.
 			}
 		} else {
 			reduce_identifier_from_base(p_subscript->attribute, &base_type);
@@ -5791,6 +5999,14 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_variant(const Variant &p_va
 	result.builtin_type = p_value.get_type();
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT; // Constant has explicit type.
 
+	if (p_value.get_type() == Variant::STRUCT) {
+		// Keep the struct type: the layout always, and the declaring `struct` when it is in scope
+		// (so field types come from the declaration rather than from the layout).
+		result.struct_layout = p_value.operator Struct().get_layout();
+		result.struct_type = find_struct_node_for_layout(result.struct_layout);
+		return result;
+	}
+
 	if (p_value.get_type() == Variant::ARRAY) {
 		const Array &array = p_value;
 		if (array.get_typed_script()) {
@@ -6374,6 +6590,10 @@ GDScriptParser::DataType GDScriptAnalyzer::get_operation_type(Variant::Operator 
 }
 
 bool GDScriptAnalyzer::is_type_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, bool p_allow_implicit_conversion, const GDScriptParser::Node *p_source_node) {
+	// Two struct types are the same only if they are the same layout.
+	if (p_target.kind == GDScriptParser::DataType::BUILTIN && p_target.builtin_type == Variant::STRUCT && p_source.kind == GDScriptParser::DataType::BUILTIN && p_source.builtin_type == Variant::STRUCT && p_target.struct_layout.is_valid() && p_source.struct_layout.is_valid() && p_target.struct_layout != p_source.struct_layout) {
+		return false;
+	}
 #ifdef DEBUG_ENABLED
 	if (p_source_node) {
 		if (p_target.kind == GDScriptParser::DataType::ENUM) {

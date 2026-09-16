@@ -356,6 +356,46 @@ void GDScriptFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 4;
 			} break;
+			case OPCODE_CONSTRUCT_STRUCT: {
+				int instr_var_args = _code_ptr[++ip];
+				int argc = _code_ptr[ip + 1 + instr_var_args];
+
+				text += "construct struct ";
+				text += DADDR(2 + argc);
+				text += " = ";
+				text += DADDR(1 + argc);
+				text += "(";
+				for (int i = 0; i < argc; i++) {
+					if (i > 0) {
+						text += ", ";
+					}
+					text += DADDR(1 + i);
+				}
+				text += ")";
+
+				incr = 4 + argc;
+			} break;
+			case OPCODE_SET_STRUCT_FIELD: {
+				text += "set struct field ";
+				text += DADDR(1);
+				text += "[\"";
+				text += _global_names_ptr[_code_ptr[ip + 4]];
+				text += "\" @" + itos(_code_ptr[ip + 3]) + "] = ";
+				text += DADDR(2);
+
+				incr += 5;
+			} break;
+			case OPCODE_GET_STRUCT_FIELD: {
+				text += "get struct field ";
+				text += DADDR(2);
+				text += " = ";
+				text += DADDR(1);
+				text += "[\"";
+				text += _global_names_ptr[_code_ptr[ip + 4]];
+				text += "\" @" + itos(_code_ptr[ip + 3]) + "]";
+
+				incr += 5;
+			} break;
 			case OPCODE_SET_SCRIPT_MEMBER: {
 				text += "set script member ";
 				text += DADDR(1);

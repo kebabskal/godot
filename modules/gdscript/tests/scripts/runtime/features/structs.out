@@ -1,0 +1,16 @@
+GDTEST_OK
+Point(x: 1.0, y: 2.0, label: p)
+3.0
+1.0 10.0
+1.0 6.0
+p(0.0, 0.0)
+true false
+p
+5.0
+6.0
+1.0
+3.0
+Line(a: Point(x: 3.0, y: 0.0, label: p), b: Point(x: 1.0, y: 1.0, label: p))
+Point(x: 2.0, y: 4.0, label: r)
+u p
+true

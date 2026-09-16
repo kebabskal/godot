@@ -970,6 +970,17 @@ static bool _resolve_direct_script_member(const GDScriptCodeGenerator::Address &
 }
 
 void GDScriptByteCodeGenerator::write_set_named(const Address &p_target, const StringName &p_name, const Address &p_source) {
+	if (p_target.type.kind == GDScriptDataType::BUILTIN && p_target.type.builtin_type == Variant::STRUCT && p_target.type.struct_layout.is_valid()) {
+		const int field = p_target.type.struct_layout->find_field(p_name);
+		if (field >= 0) {
+			append_opcode(GDScriptFunction::OPCODE_SET_STRUCT_FIELD);
+			append(p_target);
+			append(p_source);
+			append(field);
+			append(p_name);
+			return;
+		}
+	}
 	int member_index;
 	StringName accessor;
 	int accessor_slot;
@@ -1006,6 +1017,17 @@ void GDScriptByteCodeGenerator::write_set_named(const Address &p_target, const S
 }
 
 void GDScriptByteCodeGenerator::write_get_named(const Address &p_target, const StringName &p_name, const Address &p_source) {
+	if (p_source.type.kind == GDScriptDataType::BUILTIN && p_source.type.builtin_type == Variant::STRUCT && p_source.type.struct_layout.is_valid()) {
+		const int field = p_source.type.struct_layout->find_field(p_name);
+		if (field >= 0) {
+			append_opcode(GDScriptFunction::OPCODE_GET_STRUCT_FIELD);
+			append(p_source);
+			append(p_target);
+			append(field);
+			append(p_name);
+			return;
+		}
+	}
 	int member_index;
 	StringName accessor;
 	int accessor_slot;
@@ -1596,6 +1618,18 @@ void GDScriptByteCodeGenerator::write_lambda(const Address &p_target, GDScriptFu
 	append(ct.target);
 	append(p_captures.size());
 	append(p_function);
+	ct.cleanup();
+}
+
+void GDScriptByteCodeGenerator::write_construct_struct(const Address &p_target, const Address &p_layout, const Vector<Address> &p_arguments) {
+	append_opcode_and_argcount(GDScriptFunction::OPCODE_CONSTRUCT_STRUCT, 2 + p_arguments.size());
+	for (int i = 0; i < p_arguments.size(); i++) {
+		append(p_arguments[i]);
+	}
+	append(p_layout);
+	CallTarget ct = get_call_target(p_target);
+	append(ct.target);
+	append(p_arguments.size());
 	ct.cleanup();
 }
 

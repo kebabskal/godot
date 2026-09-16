@@ -1812,7 +1812,7 @@ Error encode_variant(const Variant &p_variant, uint8_t *p_buffer, int &r_len, bo
 		} break;
 		case Variant::STRUCT: {
 			const Struct s = p_variant;
-			_encode_string(s.get_struct_name(), buf, r_len);
+			_encode_string(s.get_layout_ptr()->get_qualified_name(), buf, r_len);
 			if (buf) {
 				encode_uint32(uint32_t(s.get_field_count()), buf);
 				buf += 4;

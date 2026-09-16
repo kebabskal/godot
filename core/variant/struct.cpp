@@ -125,6 +125,10 @@ Ref<StructLayout> Struct::get_layout() const {
 	return _p != nullptr ? _p->layout : Ref<StructLayout>();
 }
 
+const StructLayout *Struct::get_layout_ptr() const {
+	return _p != nullptr ? _p->layout.ptr() : nullptr;
+}
+
 StringName Struct::get_struct_name() const {
 	return _p != nullptr ? _p->layout->get_name() : StringName();
 }
@@ -300,6 +304,10 @@ String StructLayout::get_source_path() const {
 	return source_path;
 }
 
+StringName StructLayout::get_qualified_name() const {
+	return source_path.is_empty() ? name : StringName(source_path + "::" + String(name));
+}
+
 int StructLayout::add_field(const StringName &p_name, Variant::Type p_type, const Variant &p_default_value, const StringName &p_class_name, const Ref<Script> &p_script) {
 	ERR_FAIL_COND_V_MSG(p_name == StringName(), -1, "A struct field needs a name.");
 	if (field_index.has(p_name)) {
@@ -395,22 +403,22 @@ void StructLayout::register_layout(const Ref<StructLayout> &p_layout) {
 	if (struct_layout_registry == nullptr) {
 		struct_layout_registry = memnew((HashMap<StringName, Ref<StructLayout>>));
 	}
-	(*struct_layout_registry)[p_layout->name] = p_layout;
+	(*struct_layout_registry)[p_layout->get_qualified_name()] = p_layout;
 }
 
-void StructLayout::unregister_layout(const StringName &p_name) {
+void StructLayout::unregister_layout(const StringName &p_qualified_name) {
 	MutexLock lock(struct_layout_registry_mutex);
 	if (struct_layout_registry != nullptr) {
-		struct_layout_registry->erase(p_name);
+		struct_layout_registry->erase(p_qualified_name);
 	}
 }
 
-Ref<StructLayout> StructLayout::find_layout(const StringName &p_name) {
+Ref<StructLayout> StructLayout::find_layout(const StringName &p_qualified_name) {
 	MutexLock lock(struct_layout_registry_mutex);
 	if (struct_layout_registry == nullptr) {
 		return Ref<StructLayout>();
 	}
-	const Ref<StructLayout> *layout = struct_layout_registry->getptr(p_name);
+	const Ref<StructLayout> *layout = struct_layout_registry->getptr(p_qualified_name);
 	return layout != nullptr ? *layout : Ref<StructLayout>();
 }
 

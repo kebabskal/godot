@@ -119,6 +119,9 @@ void GDScriptFunction::_profile_native_call(uint64_t p_t_taken, const String &p_
 
 Variant GDScriptFunction::_get_default_variant_for_data_type(const GDScriptDataType &p_data_type) {
 	if (p_data_type.kind == GDScriptDataType::BUILTIN) {
+		if (p_data_type.builtin_type == Variant::STRUCT && p_data_type.struct_layout.is_valid()) {
+			return p_data_type.struct_layout->instantiate();
+		}
 		if (p_data_type.builtin_type == Variant::ARRAY) {
 			Array array;
 			// Typed array.
@@ -283,6 +286,8 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_GET_MEMBER, \
 		&&OPCODE_SET_SCRIPT_MEMBER, \
 		&&OPCODE_GET_SCRIPT_MEMBER, \
+		&&OPCODE_SET_STRUCT_FIELD, \
+		&&OPCODE_GET_STRUCT_FIELD, \
 		&&OPCODE_SET_STATIC_VARIABLE, \
 		&&OPCODE_GET_STATIC_VARIABLE, \
 		&&OPCODE_ASSIGN, \
@@ -299,6 +304,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_CAST_TO_SCRIPT, \
 		&&OPCODE_CONSTRUCT, \
 		&&OPCODE_CONSTRUCT_VALIDATED, \
+		&&OPCODE_CONSTRUCT_STRUCT, \
 		&&OPCODE_CONSTRUCT_ARRAY, \
 		&&OPCODE_CONSTRUCT_TYPED_ARRAY, \
 		&&OPCODE_CONSTRUCT_DICTIONARY, \
@@ -522,6 +528,75 @@ static GDS_NOINLINE String _typed_op_error(const char *p_message, const char *p_
 	return String(p_message) + " in operator '" + p_operator + "'.";
 }
 #endif
+
+// Struct opcodes, kept out of line for the same reason: the fast path is a few pointer checks on the
+// layout, and the generic fallback (a struct-typed slot that holds something else) plus error
+// formatting would otherwise add locals to `call()`'s frame. Each returns false with `r_err` set.
+static GDS_NOINLINE bool _struct_set_field(Variant *p_dst, const Variant *p_value, int p_field_index, const StringName &p_name, String *r_err) {
+	Struct *s = p_dst->get_type() == Variant::STRUCT ? VariantInternal::get_struct(p_dst) : nullptr;
+	if (likely(s != nullptr && !s->is_null() && p_field_index < s->get_field_count() && s->get_layout_ptr()->get_field_name(p_field_index) == p_name)) {
+		if (likely(s->set_field(p_field_index, *p_value))) {
+			return true;
+		}
+#ifdef DEBUG_ENABLED
+		*r_err = "Invalid assignment of field '" + String(p_name) + "' with value of type '" + _get_var_type(p_value) + "' on a struct of type '" + String(s->get_struct_name()) + "'.";
+#endif
+		return false;
+	}
+	bool valid;
+	p_dst->set_named(p_name, *p_value, valid);
+#ifdef DEBUG_ENABLED
+	if (!valid) {
+		*r_err = "Invalid assignment of property or key '" + String(p_name) + "' with value of type '" + _get_var_type(p_value) + "' on a base object of type '" + _get_var_type(p_dst) + "'.";
+		return false;
+	}
+#endif
+	return true;
+}
+
+static GDS_NOINLINE bool _struct_get_field(const Variant *p_src, Variant *p_dst, int p_field_index, const StringName &p_name, String *r_err) {
+	const Struct *s = p_src->get_type() == Variant::STRUCT ? VariantInternal::get_struct(p_src) : nullptr;
+	if (likely(s != nullptr && !s->is_null() && p_field_index < s->get_field_count() && s->get_layout_ptr()->get_field_name(p_field_index) == p_name)) {
+		*p_dst = s->get_fields_ptr()[p_field_index];
+		return true;
+	}
+	bool valid;
+	Variant ret = p_src->get_named(p_name, valid);
+#ifdef DEBUG_ENABLED
+	if (!valid) {
+		*r_err = "Invalid access to property or key '" + p_name.string() + "' on a base object of type '" + _get_var_type(p_src) + "'.";
+		return false;
+	}
+#endif
+	*p_dst = ret;
+	return true;
+}
+
+static GDS_NOINLINE bool _struct_construct(Variant *p_dst, const Variant *p_layout, const Variant **p_args, int p_argcount, String *r_err) {
+	StructLayout *layout = Object::cast_to<StructLayout>(p_layout->operator Object *());
+	if (unlikely(layout == nullptr)) {
+#ifdef DEBUG_ENABLED
+		*r_err = "Invalid struct layout in constructor.";
+#endif
+		return false;
+	}
+	Callable::CallError err;
+	*p_dst = layout->instantiate(p_args, p_argcount, err);
+#ifdef DEBUG_ENABLED
+	if (err.error != Callable::CallError::CALL_OK) {
+		const String where = "'" + String(layout->get_name()) + "' constructor";
+		if (err.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT && err.argument >= 0 && err.argument < p_argcount) {
+			*r_err = "Invalid type in " + where + ". Cannot convert argument " + itos(err.argument + 1) + " from " + Variant::get_type_name(p_args[err.argument]->get_type()) + " to " + Variant::get_type_name(Variant::Type(err.expected)) + ".";
+		} else if (err.error == Callable::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS) {
+			*r_err = "Invalid call to " + where + ". Expected at most " + itos(err.expected) + " arguments.";
+		} else {
+			*r_err = "Invalid call to " + where + ".";
+		}
+		return false;
+	}
+#endif
+	return true;
+}
 
 // The GDScript instance behind an object Variant, or `nullptr` if the Variant is not a live object with a
 // real (non-placeholder) GDScript instance. Used by the opcodes that reach into script instances directly.
@@ -1568,6 +1643,38 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 			}
 			DISPATCH_OPCODE;
 
+			OPCODE(OPCODE_SET_STRUCT_FIELD) {
+				CHECK_SPACE(5);
+
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(value, 1);
+
+				int indexname = _code_ptr[ip + 4];
+				GD_ERR_BREAK(indexname < 0 || indexname >= _global_names_count);
+
+				if (unlikely(!_struct_set_field(dst, value, _code_ptr[ip + 3], _global_names_ptr[indexname], &err_text))) {
+					OPCODE_BREAK;
+				}
+				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_GET_STRUCT_FIELD) {
+				CHECK_SPACE(5);
+
+				GET_VARIANT_PTR(src, 0);
+				GET_VARIANT_PTR(dst, 1);
+
+				int indexname = _code_ptr[ip + 4];
+				GD_ERR_BREAK(indexname < 0 || indexname >= _global_names_count);
+
+				if (unlikely(!_struct_get_field(src, dst, _code_ptr[ip + 3], _global_names_ptr[indexname], &err_text))) {
+					OPCODE_BREAK;
+				}
+				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
 			OPCODE(OPCODE_GET_SCRIPT_MEMBER) {
 				CHECK_SPACE(5);
 
@@ -2017,6 +2124,24 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 #endif
 
 				ip += 3;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_CONSTRUCT_STRUCT) {
+				LOAD_INSTRUCTION_ARGS
+				CHECK_SPACE(2 + instr_arg_count);
+				ip += instr_arg_count;
+
+				int argc = _code_ptr[ip + 1];
+				Variant **argptrs = instruction_args;
+
+				GET_INSTRUCTION_ARG(layout_variant, argc);
+				GET_INSTRUCTION_ARG(dst, argc + 1);
+
+				if (unlikely(!_struct_construct(dst, layout_variant, (const Variant **)argptrs, argc, &err_text))) {
+					OPCODE_BREAK;
+				}
+				ip += 2;
 			}
 			DISPATCH_OPCODE;
 

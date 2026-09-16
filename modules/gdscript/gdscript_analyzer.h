@@ -81,6 +81,9 @@ class GDScriptAnalyzer {
 	void resolve_suite(GDScriptParser::SuiteNode *p_suite, bool p_is_root = true);
 	void resolve_assignable(GDScriptParser::AssignableNode *p_assignable, const char *p_kind);
 	void resolve_variable(GDScriptParser::VariableNode *p_variable, bool p_is_local);
+	void resolve_struct(GDScriptParser::StructNode *p_struct, GDScriptParser::ClassNode *p_class);
+	GDScriptParser::StructNode *find_struct_node_for_layout(const Ref<StructLayout> &p_layout);
+	GDScriptParser::DataType type_from_struct_field(const Ref<StructLayout> &p_layout, int p_field);
 	void resolve_constant(GDScriptParser::ConstantNode *p_constant, bool p_is_local);
 	void resolve_parameter(GDScriptParser::ParameterNode *p_parameter);
 	void resolve_if(GDScriptParser::IfNode *p_if);

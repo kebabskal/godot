@@ -38,6 +38,7 @@
 #include "core/templates/pair.h"
 #include "core/templates/self_list.h"
 #include "core/variant/variant.h"
+#include "core/variant/struct_layout.h"
 
 class GDScriptInstance;
 class GDScript;
@@ -60,6 +61,7 @@ public:
 	StringName native_type;
 	Script *script_type = nullptr;
 	Ref<Script> script_type_ref;
+	Ref<StructLayout> struct_layout; // For `BUILTIN` with `builtin_type == Variant::STRUCT`; null accepts any struct.
 
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
@@ -136,6 +138,7 @@ public:
 		native_type = p_other.native_type;
 		script_type = p_other.script_type;
 		script_type_ref = p_other.script_type_ref;
+		struct_layout = p_other.struct_layout;
 		container_element_types = p_other.container_element_types;
 	}
 
@@ -277,6 +280,8 @@ public:
 		OPCODE_GET_MEMBER,
 		OPCODE_SET_SCRIPT_MEMBER,
 		OPCODE_GET_SCRIPT_MEMBER,
+		OPCODE_SET_STRUCT_FIELD,
+		OPCODE_GET_STRUCT_FIELD,
 		OPCODE_SET_STATIC_VARIABLE, // Only for GDScript.
 		OPCODE_GET_STATIC_VARIABLE, // Only for GDScript.
 		OPCODE_ASSIGN,
@@ -293,6 +298,7 @@ public:
 		OPCODE_CAST_TO_SCRIPT,
 		OPCODE_CONSTRUCT, // Only for basic types!
 		OPCODE_CONSTRUCT_VALIDATED, // Only for basic types!
+		OPCODE_CONSTRUCT_STRUCT,
 		OPCODE_CONSTRUCT_ARRAY,
 		OPCODE_CONSTRUCT_TYPED_ARRAY,
 		OPCODE_CONSTRUCT_DICTIONARY,

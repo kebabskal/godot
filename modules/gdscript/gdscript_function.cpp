@@ -42,6 +42,9 @@ bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_c
 		case BUILTIN: {
 			Variant::Type var_type = p_variant.get_type();
 			bool valid = builtin_type == var_type;
+			if (valid && builtin_type == Variant::STRUCT && struct_layout.is_valid()) {
+				valid = VariantInternal::get_struct(&p_variant)->get_layout_ptr() == struct_layout.ptr();
+			}
 			if (valid && builtin_type == Variant::ARRAY && has_container_element_type(0)) {
 				Array array = p_variant;
 				if (array.is_typed()) {

@@ -2106,7 +2106,7 @@ Error VariantWriter::write(const Variant &p_variant, StoreStringFunc p_store_str
 				p_store_string_func(p_store_string_ud, "Struct()");
 				return OK;
 			}
-			p_store_string_func(p_store_string_ud, "Struct(\"" + String(s.get_struct_name()).c_escape() + "\", ");
+			p_store_string_func(p_store_string_ud, "Struct(\"" + String(s.get_layout_ptr()->get_qualified_name()).c_escape() + "\", ");
 			const Error err = write(s.to_dictionary(), p_store_string_func, p_store_string_ud, p_encode_res_func, p_encode_res_ud, p_pretty_print, p_recursion_count + 1, p_compat);
 			if (err) {
 				return err;

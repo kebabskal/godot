@@ -1462,6 +1462,12 @@ void GDScript::clear() {
 	member_functions.clear();
 	vtable.clear();
 	vtable_indices.clear();
+	for (const KeyValue<StringName, Ref<StructLayout>> &E : struct_layouts) {
+		if (StructLayout::find_layout(E.value->get_qualified_name()) == E.value) {
+			StructLayout::unregister_layout(E.value->get_qualified_name());
+		}
+	}
+	struct_layouts.clear();
 
 	member_info_by_index.clear();
 	for (KeyValue<StringName, MemberInfo> &E : member_indices) {

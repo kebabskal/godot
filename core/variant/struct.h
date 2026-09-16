@@ -65,6 +65,8 @@ public:
 	// True when this value has no layout (the default-constructed struct).
 	bool is_null() const;
 	Ref<StructLayout> get_layout() const;
+	// The layout without touching its reference count; null for a null struct.
+	const StructLayout *get_layout_ptr() const;
 	// The layout's name, or an empty name for a null struct.
 	StringName get_struct_name() const;
 	// Identity of the shared storage; equal for copies that still share it. Used for identity
