@@ -194,9 +194,27 @@ group are independent and can proceed in any order.
   copy assignment, so every new field must be added there (a missed
   one silently drops the layout from every copy); and the three struct
   opcodes had to go through `GDS_NOINLINE` helpers, since their inline
-  locals grew the `call()` frame enough to fail `deep_recursion`. Next:
-  increment 3 (engine-declared layouts, physics result struct,
-  extension_api, C#), then methods and operator overloads.
+  locals grew the `call()` frame enough to fail `deep_recursion`.
+  Increment 3 landed: `StructDB` (engine layouts registered at startup
+  by plain name, next to `ClassDB`; script layouts keep their
+  `path::name` key in the same registry), `TypedStruct<Name>` so a bound
+  method's return type carries the layout through
+  `PROPERTY_HINT_STRUCT_TYPE`, the first engine structs
+  `PhysicsRayResult2D/3D` returned by `intersect_ray_struct` (the
+  dictionary `intersect_ray` stays; `hit` is a field instead of an empty
+  result), GDScript treating an engine layout name as a type and
+  constructor like a script struct (a script struct in scope shadows an
+  engine one), a `structs` section in `extension_api.json` with fields,
+  types and defaults, plus `struct::Name` return types, and class
+  reference pages for `Struct` and `StructLayout`. C#: the source
+  generator enums mirror `TYPE_STRUCT`, and the bindings generator skips
+  struct-using methods with a warning instead of failing, since the
+  mono module is not built here; real marshaling is still open. Traps:
+  a new typed wrapper needs `PtrToArg`, `GetTypeInfo` and
+  `VariantInternalAccessor` specializations, and a new `PropertyHint`
+  must go at the end of the enum or every later value shifts in the
+  GDExtension API. Next: methods and operator overloads on script
+  structs (increment 4), more engine result structs.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
