@@ -1181,6 +1181,12 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 							r_result.insert(option.display, option);
 						}
 					} break;
+					case GDScriptParser::ClassNode::Member::STRUCT: {
+						if (!p_inherit_only) {
+							EditorLanguage::CompletionOption option(member.m_struct->identifier->name, EditorLanguage::CompletionKind::CLASS, EditorLanguage::CompletionLocation::LOCAL + location_offset);
+							r_result.insert(option.display, option);
+						}
+					} break;
 					case GDScriptParser::ClassNode::Member::CONSTANT: {
 						if (member.constant->type_constraint.is_meta_type) {
 							EditorLanguage::CompletionOption option(member.constant->identifier->name, EditorLanguage::CompletionKind::CLASS, EditorLanguage::CompletionLocation::LOCAL + location_offset);
@@ -1239,6 +1245,30 @@ static void _find_identifiers_in_suite(const GDScriptParser::SuiteNode *p_suite,
 
 static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base, bool p_only_functions, bool p_types_only, bool p_add_braces, HashMap<String, EditorLanguage::CompletionOption> &r_result, int p_recursion_depth);
 
+// A `struct` declared in `p_class` or one of its outer classes, by name.
+static const GDScriptParser::StructNode *_find_struct_in_scope(const GDScriptParser::ClassNode *p_class, const StringName &p_name) {
+	for (const GDScriptParser::ClassNode *c = p_class; c != nullptr; c = c->outer) {
+		if (c->has_member(p_name) && c->get_member(p_name).type == GDScriptParser::ClassNode::Member::STRUCT) {
+			return c->get_member(p_name).m_struct;
+		}
+	}
+	return nullptr;
+}
+
+// The type of a struct value (or the struct's meta type). Built from the node so completion works
+// even when the analyzer could not resolve the script (the cursor usually leaves a parse error).
+static GDScriptParser::DataType _struct_node_type(const GDScriptParser::StructNode *p_struct, bool p_meta_type) {
+	GDScriptParser::DataType type;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	type.kind = GDScriptParser::DataType::BUILTIN;
+	type.builtin_type = Variant::STRUCT;
+	type.struct_type = const_cast<GDScriptParser::StructNode *>(p_struct);
+	type.struct_layout = p_struct->layout;
+	type.is_meta_type = p_meta_type;
+	type.is_constant = p_meta_type;
+	return type;
+}
+
 static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class, bool p_only_functions, bool p_types_only, bool p_static, bool p_parent_only, bool p_add_braces, HashMap<String, EditorLanguage::CompletionOption> &r_result, int p_recursion_depth) {
 	ERR_FAIL_COND(p_recursion_depth > COMPLETION_RECURSION_LIMIT);
 
@@ -1286,6 +1316,12 @@ static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class,
 							continue;
 						}
 						option = EditorLanguage::CompletionOption(member.m_enum->identifier->name, EditorLanguage::CompletionKind::ENUM, location);
+						break;
+					case GDScriptParser::ClassNode::Member::STRUCT:
+						if (p_only_functions) {
+							continue;
+						}
+						option = EditorLanguage::CompletionOption(member.m_struct->identifier->name, EditorLanguage::CompletionKind::CLASS, location);
 						break;
 					case GDScriptParser::ClassNode::Member::FUNCTION:
 						if (p_types_only || outer || (p_static && !member.function->is_static) || member.function->identifier->name.string().begins_with("@")) {
@@ -1571,6 +1607,52 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 					return;
 				}
 
+				if (base_type.builtin_type == Variant::STRUCT && (base_type.struct_type != nullptr || base_type.struct_layout.is_valid())) {
+					// A struct of known type offers its fields and methods; the generic `Struct` type has nothing else.
+					if (base_type.is_meta_type) {
+						return;
+					}
+					const int struct_location = EditorLanguage::CompletionLocation::LOCAL;
+					if (!p_only_functions) {
+						if (base_type.struct_type != nullptr) {
+							for (const GDScriptParser::VariableNode *field : base_type.struct_type->fields) {
+								EditorLanguage::CompletionOption option(field->identifier->name, EditorLanguage::CompletionKind::MEMBER_VARIABLE, struct_location);
+								r_result.insert(option.display, option);
+							}
+						} else {
+							for (int i = 0; i < base_type.struct_layout->get_field_count(); i++) {
+								EditorLanguage::CompletionOption option(base_type.struct_layout->get_field_name(i), EditorLanguage::CompletionKind::MEMBER_VARIABLE, struct_location);
+								r_result.insert(option.display, option);
+							}
+						}
+					}
+					if (base_type.struct_type != nullptr) {
+						for (const GDScriptParser::FunctionNode *method : base_type.struct_type->methods) {
+							EditorLanguage::CompletionOption option(method->identifier->name, EditorLanguage::CompletionKind::FUNCTION, struct_location);
+							if (p_add_braces) {
+								if (method->parameters.size() > 0 || method->is_vararg()) {
+									option.insert_text += "(";
+									option.display += U"(\u2026)";
+								} else {
+									option.insert_text += "()";
+									option.display += "()";
+								}
+							}
+							r_result.insert(option.display, option);
+						}
+					} else {
+						for (int i = 0; i < base_type.struct_layout->get_method_count(); i++) {
+							EditorLanguage::CompletionOption option(base_type.struct_layout->get_method_name(i), EditorLanguage::CompletionKind::FUNCTION, struct_location);
+							if (p_add_braces) {
+								option.insert_text += "(";
+								option.display += U"(\u2026)";
+							}
+							r_result.insert(option.display, option);
+						}
+					}
+					return;
+				}
+
 				Callable::CallError err;
 				Variant tmp;
 				Variant::construct(base_type.builtin_type, tmp, nullptr, 0, err);
@@ -1639,6 +1721,30 @@ static void _find_identifiers(const GDScriptParser::CompletionContext &p_context
 	if (!p_only_functions && p_context.current_suite) {
 		// This includes function parameters, since they are also locals.
 		_find_identifiers_in_suite(p_context.current_suite, r_result);
+	}
+
+	if (p_context.current_function != nullptr && p_context.current_function->struct_owner != nullptr) {
+		// Inside a struct method: the fields and the other methods, reached through the implicit `self`.
+		const GDScriptParser::StructNode *struct_node = p_context.current_function->struct_owner;
+		if (!p_only_functions) {
+			for (const GDScriptParser::VariableNode *field : struct_node->fields) {
+				EditorLanguage::CompletionOption option(field->identifier->name, EditorLanguage::CompletionKind::MEMBER_VARIABLE, EditorLanguage::CompletionLocation::LOCAL);
+				r_result.insert(option.display, option);
+			}
+		}
+		for (const GDScriptParser::FunctionNode *method : struct_node->methods) {
+			EditorLanguage::CompletionOption option(method->identifier->name, EditorLanguage::CompletionKind::FUNCTION, EditorLanguage::CompletionLocation::LOCAL);
+			if (p_add_braces) {
+				if (method->parameters.size() > 0 || method->is_vararg()) {
+					option.insert_text += "(";
+					option.display += U"(\u2026)";
+				} else {
+					option.insert_text += "()";
+					option.display += "()";
+				}
+			}
+			r_result.insert(option.display, option);
+		}
 	}
 
 	if (p_context.current_class) {
@@ -1763,6 +1869,22 @@ static GDScriptCompletionIdentifier _type_from_variant(const Variant &p_value, G
 	ci.type.kind = GDScriptParser::DataType::BUILTIN;
 	ci.type.builtin_type = p_value.get_type();
 
+	if (ci.type.builtin_type == Variant::STRUCT) {
+		// A constant-folded struct (`Point(1.0, 2.0)`): its layout, and the declaration if it is in scope.
+		const Struct s = p_value;
+		ci.type.struct_layout = s.get_layout();
+		if (ci.type.struct_layout.is_valid()) {
+			for (const GDScriptParser::ClassNode *c = p_context.current_class; c != nullptr && ci.type.struct_type == nullptr; c = c->outer) {
+				for (const GDScriptParser::ClassNode::Member &member : c->members) {
+					if (member.type == GDScriptParser::ClassNode::Member::STRUCT && member.m_struct->layout == ci.type.struct_layout) {
+						ci.type.struct_type = member.m_struct;
+						break;
+					}
+				}
+			}
+		}
+		return ci;
+	}
 	if (ci.type.builtin_type == Variant::OBJECT) {
 		Object *obj = p_value.operator Object *();
 		if (!obj) {
@@ -2106,6 +2228,15 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 				GDScriptParser::Node::Type callee_type = call->get_callee_type();
 
 				GDScriptCompletionIdentifier base;
+				if (callee_type == GDScriptParser::Node::IDENTIFIER && !call->is_super) {
+					// A struct constructor: `Point(1.0, 2.0)`.
+					const GDScriptParser::StructNode *struct_node = _find_struct_in_scope(p_context.current_class, call->function_name);
+					if (struct_node != nullptr) {
+						r_type.type = _struct_node_type(struct_node, false);
+						found = true;
+						break;
+					}
+				}
 				if (callee_type == GDScriptParser::Node::IDENTIFIER || call->is_super) {
 					// Simple call, so base is 'self'.
 					if (p_context.current_class) {
@@ -2689,6 +2820,9 @@ static bool _guess_identifier_type_from_base(GDScriptParser::CompletionContext &
 							}
 							// TODO: Check assignments in constructor.
 							return false;
+						case GDScriptParser::ClassNode::Member::STRUCT:
+							r_type.type = _struct_node_type(member.m_struct, true);
+							return true;
 						case GDScriptParser::ClassNode::Member::ENUM:
 							r_type.type = member.m_enum->enum_type;
 							r_type.enumeration = member.m_enum->identifier->name;
@@ -4014,6 +4148,9 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 					case GDScriptParser::ClassNode::Member::ENUM_VALUE:
 						r_result.type = EditorLanguage::LookupResult::Type::CLASS_CONSTANT;
 						break;
+					case GDScriptParser::ClassNode::Member::STRUCT:
+						r_result.type = EditorLanguage::LookupResult::Type::SCRIPT_LOCATION; // No class reference page: go to the declaration.
+						break;
 				}
 
 				if (member.type != GDScriptParser::ClassNode::Member::CLASS) {
@@ -4201,6 +4338,27 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 				}
 			} break;
 			case GDScriptParser::DataType::BUILTIN: {
+				if (base_type.builtin_type == Variant::STRUCT && base_type.struct_type != nullptr && !base_type.is_meta_type) {
+					// A field or method of a script struct: its declaration.
+					for (const GDScriptParser::VariableNode *field : base_type.struct_type->fields) {
+						if (field->identifier->name == p_symbol) {
+							r_result.type = EditorLanguage::LookupResult::Type::SCRIPT_LOCATION;
+							r_result.script_path = base_type.script_path;
+							r_result.location = field->start_line;
+							return OK;
+						}
+					}
+					for (const GDScriptParser::FunctionNode *method : base_type.struct_type->methods) {
+						if (method->identifier->name == p_symbol) {
+							r_result.type = EditorLanguage::LookupResult::Type::SCRIPT_LOCATION;
+							r_result.script_path = base_type.script_path;
+							r_result.location = method->start_line;
+							return OK;
+						}
+					}
+					return ERR_CANT_RESOLVE;
+				}
+
 				if (base_type.is_meta_type) {
 					if (Variant::has_enum(base_type.builtin_type, p_symbol)) {
 						r_result.type = EditorLanguage::LookupResult::Type::CLASS_ENUM;
@@ -4487,6 +4645,14 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 						return OK;
 					}
 					suite = suite->parent_block;
+				}
+			}
+
+			if (context.current_function != nullptr && context.current_function->struct_owner != nullptr) {
+				// Inside a struct method: the fields and the other methods of the struct come first.
+				const GDScriptParser::DataType struct_type = _struct_node_type(context.current_function->struct_owner, false);
+				if (_lookup_symbol_from_base(struct_type, p_symbol, r_result) == OK) {
+					return OK;
 				}
 			}
 

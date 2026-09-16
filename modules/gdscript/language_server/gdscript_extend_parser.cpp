@@ -385,11 +385,57 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 				parse_class_symbol(m.m_class, symbol);
 				r_symbol.children.push_back(symbol);
 			} break;
+			case ClassNode::Member::STRUCT: {
+				LSP::DocumentSymbol symbol;
+				parse_struct_symbol(m.m_struct, symbol);
+				r_symbol.children.push_back(symbol);
+			} break;
 			case ClassNode::Member::GROUP:
 				break; // No-op, but silences warnings.
 			case ClassNode::Member::UNDEFINED:
 				break; // Unreachable.
 		}
+	}
+}
+
+void ExtendGDScriptParser::parse_struct_symbol(const GDScriptParser::StructNode *p_struct, LSP::DocumentSymbol &r_symbol) {
+	const String uri = get_uri();
+
+	r_symbol.name = p_struct->identifier->name;
+	r_symbol.kind = LSP::SymbolKind::Struct;
+	r_symbol.deprecated = false;
+	r_symbol.range = range_of_node(p_struct);
+	r_symbol.selectionRange = range_of_node(p_struct->identifier);
+	r_symbol.detail = "struct " + String(p_struct->identifier->name);
+	r_symbol.documentation = p_struct->doc_data.description;
+	r_symbol.uri = uri;
+	r_symbol.script_path = path;
+
+	for (const GDScriptParser::VariableNode *field : p_struct->fields) {
+		LSP::DocumentSymbol symbol;
+		symbol.name = field->identifier->name;
+		symbol.kind = LSP::SymbolKind::Field;
+		symbol.deprecated = false;
+		symbol.range = range_of_node(field);
+		symbol.selectionRange = range_of_node(field->identifier);
+		symbol.detail = "var " + String(field->identifier->name);
+		if (field->type_constraint.is_hard_type()) {
+			symbol.detail += ": " + field->type_constraint.to_string();
+		}
+		if (field->initializer != nullptr && field->initializer->is_constant) {
+			symbol.detail += " = " + field->initializer->reduced_value.to_json_string();
+		}
+		symbol.documentation = field->doc_data.description;
+		symbol.uri = uri;
+		symbol.script_path = path;
+		r_symbol.children.push_back(symbol);
+	}
+
+	for (const GDScriptParser::FunctionNode *method : p_struct->methods) {
+		LSP::DocumentSymbol symbol;
+		parse_function_symbol(method, symbol);
+		symbol.kind = LSP::SymbolKind::Method; // Static in the compiler, a method to the user.
+		r_symbol.children.push_back(symbol);
 	}
 }
 
@@ -857,6 +903,7 @@ Dictionary ExtendGDScriptParser::dump_class_api(const GDScriptParser::ClassNode 
 	Array signals;
 	Array methods;
 	Array static_functions;
+	Array structs;
 
 	for (const ClassNode::Member &m : p_class->members) {
 		switch (m.type) {
@@ -936,6 +983,29 @@ Dictionary ExtendGDScriptParser::dump_class_api(const GDScriptParser::ClassNode 
 					methods.append(dump_function_api(m.function));
 				}
 			} break;
+			case ClassNode::Member::STRUCT: {
+				Dictionary api;
+				api["name"] = m.m_struct->identifier->name;
+				Array fields;
+				for (const GDScriptParser::VariableNode *field : m.m_struct->fields) {
+					Dictionary f;
+					f["name"] = field->identifier->name;
+					f["data_type"] = field->type_constraint.to_string();
+					f["default_value"] = field->initializer != nullptr && field->initializer->is_constant ? field->initializer->reduced_value : Variant();
+					fields.push_back(f);
+				}
+				api["fields"] = fields;
+				Array struct_methods;
+				for (const GDScriptParser::FunctionNode *method : m.m_struct->methods) {
+					struct_methods.push_back(dump_function_api(method));
+				}
+				api["methods"] = struct_methods;
+				if (const LSP::DocumentSymbol *symbol = get_symbol_defined_at_line(LINE_NUMBER_TO_INDEX(m.m_struct->start_line))) {
+					api["signature"] = symbol->detail;
+					api["description"] = symbol->documentation;
+				}
+				structs.push_back(api);
+			} break;
 			case ClassNode::Member::GROUP:
 				break; // No-op, but silences warnings.
 			case ClassNode::Member::UNDEFINED:
@@ -944,6 +1014,7 @@ Dictionary ExtendGDScriptParser::dump_class_api(const GDScriptParser::ClassNode 
 	}
 
 	class_api["sub_classes"] = nested_classes;
+	class_api["structs"] = structs;
 	class_api["constants"] = constants;
 	class_api["members"] = class_members;
 	class_api["signals"] = signals;

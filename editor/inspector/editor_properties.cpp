@@ -1747,6 +1747,25 @@ EditorPropertyCallable::EditorPropertyCallable() {
 	add_focusable(edit);
 }
 
+///////////////////// STRUCT /////////////////////////
+
+void EditorPropertyStruct::update_property() {
+	Variant value = get_edited_property_value();
+	Struct s = value;
+
+	edit->set_text(s.is_null() ? String("Struct") : String(s.get_struct_name()));
+	edit->set_tooltip_text(value.stringify());
+	edit->set_disabled(true);
+}
+
+EditorPropertyStruct::EditorPropertyStruct() {
+	edit = memnew(Button);
+	edit->set_theme_type_variation(SNAME("EditorInspectorButton"));
+	edit->set_accessibility_name(TTRC("Edit"));
+	add_child(edit);
+	add_focusable(edit);
+}
+
 ///////////////////// FLOAT /////////////////////////
 
 void EditorPropertyFloat::_set_read_only(bool p_read_only) {
@@ -4353,6 +4372,10 @@ EditorProperty *EditorInspectorDefaultPlugin::get_editor_for_property(Object *p_
 		} break;
 		case Variant::SIGNAL: {
 			EditorPropertySignal *editor = memnew(EditorPropertySignal);
+			return editor;
+		} break;
+		case Variant::STRUCT: {
+			EditorPropertyStruct *editor = memnew(EditorPropertyStruct);
 			return editor;
 		} break;
 		case Variant::DICTIONARY: {

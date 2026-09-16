@@ -36,6 +36,7 @@
 #include "core/io/marshalls.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
+#include "core/variant/struct.h"
 #include "editor/debugger/debug_adapter/debug_adapter_parser.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/editor_log.h"
@@ -419,6 +420,23 @@ int DebugAdapterProtocol::parse_variant(const Variant &p_var) {
 				DAP::Variable var;
 				var.name = kv.key;
 				Variant value = kv.value;
+				var.type = Variant::get_type_name(value.get_type());
+				var.value = value;
+				var.variablesReference = parse_variant(value);
+				arr.push_back(var.to_json());
+			}
+			variable_list.insert(id, arr);
+			return id;
+		}
+		case Variant::STRUCT: {
+			int id = variable_id++;
+			Struct s = p_var;
+			Array arr;
+
+			for (int i = 0; i < s.get_field_count(); i++) {
+				DAP::Variable var;
+				var.name = s.get_field_name(i);
+				Variant value = s.get_field(i);
 				var.type = Variant::get_type_name(value.get_type());
 				var.value = value;
 				var.variablesReference = parse_variant(value);

@@ -2125,6 +2125,7 @@ void GDScriptAnalyzer::resolve_struct(GDScriptParser::StructNode *p_struct, GDSc
 	meta.struct_layout = layout;
 	meta.is_meta_type = true;
 	meta.is_constant = true;
+	meta.script_path = parser->script_path;
 	p_struct->struct_type = meta;
 }
 

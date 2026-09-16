@@ -449,6 +449,17 @@ public:
 	EditorPropertyCallable();
 };
 
+// Read-only: shows the struct's type and, in the tooltip, its fields. Editing comes with a
+// proper struct property editor later.
+class EditorPropertyStruct : public EditorProperty {
+	GDCLASS(EditorPropertyStruct, EditorProperty);
+	Button *edit = nullptr;
+
+public:
+	virtual void update_property() override;
+	EditorPropertyStruct();
+};
+
 class EditorPropertyFloat : public EditorProperty {
 	GDCLASS(EditorPropertyFloat, EditorProperty);
 	EditorSpinSlider *spin = nullptr;
