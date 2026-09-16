@@ -213,8 +213,37 @@ group are independent and can proceed in any order.
   a new typed wrapper needs `PtrToArg`, `GetTypeInfo` and
   `VariantInternalAccessor` specializations, and a new `PropertyHint`
   must go at the end of the enum or every later value shifts in the
-  GDExtension API. Next: methods and operator overloads on script
-  structs (increment 4), more engine result structs.
+  GDExtension API.
+  Increment 4 landed: `func` inside a `struct` body declares a method.
+  Methods compile as static functions of the owning script with the
+  struct value as an implicit first parameter, so `self` is the value
+  and bare field names are its fields (locals and parameters may not
+  shadow them). The layout holds each method as a Callable
+  (`GDScriptStructMethodCallable`), which is how untyped calls
+  (`Variant::callp`) and operator overloads reach the code; typed calls
+  compile to `OPCODE_CALL_STRUCT_METHOD` (method index plus a name
+  guard, dispatched through the value's layout, so a reloaded script
+  cannot call freed code: `GDScript::clear()` drops the layout's
+  methods first). Mutation: a method that assigns to a field is
+  "mutating" (a syntactic pre-pass in `resolve_struct_methods`, with a
+  fixpoint over self-calls; calls on a field count as mutating since
+  the callee is unknown without types); the VM copies its final `self`
+  back into the caller's slot on return (`_struct_self_writeback`), and
+  the compiler stores a temporary base back into a static variable or a
+  field of `self`. The analyzer rejects a mutating call on anything
+  else (temporaries, constants, properties with setters). Operator
+  overloads are methods named `_add _sub _mul _div _mod _neg _lt _le
+  _gt _ge`; `==` stays fieldwise. Typed operands compile to the method
+  call directly; untyped ones go through `Variant::evaluate`, where
+  `variant_op.cpp` registers a struct-left evaluator for those operators
+  that looks the overload up on the layout (`Array.sort()` on structs
+  uses `_lt`). Not done: mutating calls on array elements
+  (`pts[i].scale(2)` is an error; copy to a local first), `await` in
+  struct methods (error), lambdas seeing fields (error), engine struct
+  methods, a `_to_string` override, and the move-in/move-out
+  optimization that would make a mutating call clone-free. Next: the
+  array-element write-back through the assignment chain, then engine
+  result structs for the remaining physics queries.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
