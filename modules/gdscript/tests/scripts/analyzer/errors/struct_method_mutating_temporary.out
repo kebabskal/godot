@@ -1,2 +1,2 @@
 GDTEST_ANALYZER_ERROR
->> ERROR at line 8: Cannot call the mutating method "inc()" of struct "V" on this expression: it would modify a temporary copy. Assign the struct to a variable first.
+>> ERROR at line 8: Cannot call the mutating method "inc()" of struct "V" here: only a copy would change. Assign the fields directly, or have the method return the new value and assign it (like "Vector2.normalized()").

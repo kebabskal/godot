@@ -3810,7 +3810,7 @@ void GDScriptAnalyzer::reduce_struct_method_call(GDScriptParser::CallNode *p_cal
 			}
 		}
 		if (!writable) {
-			push_error(vformat(R"*(Cannot call the mutating method "%s()" of struct "%s" on this expression: it would modify a temporary copy. Assign the struct to a variable first.)*", p_call->function_name, struct_name), p_call);
+			push_error(vformat(R"*(Cannot call the mutating method "%s()" of struct "%s" here: only a copy would change. Assign the fields directly, or have the method return the new value and assign it (like "Vector2.normalized()").)*", p_call->function_name, struct_name), p_call);
 		}
 	}
 
