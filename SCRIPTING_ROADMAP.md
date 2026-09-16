@@ -162,6 +162,12 @@ group are independent and can proceed in any order.
   base commit, so it is not caused by this work. Numbers above are from
   the editor build, which adds line tracking and call stack bookkeeping
   to every call.
+- 5 landed as the project setting `debug/gdscript/strict_mode`: the
+  untyped/unsafe warnings become errors that `@warning_ignore` cannot
+  silence; an explicit `Variant` type is the opt-in for dynamic code and
+  `:=` from a typed value stays allowed. With it on, all code is on the
+  4b/4d fast paths. Not done: a per-directory variant (the warning
+  directory rules could carry it if addons need to stay lax).
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
