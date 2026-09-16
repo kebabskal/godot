@@ -192,6 +192,9 @@ String Variant::get_type_name(Variant::Type p_type) {
 		case PACKED_VECTOR4_ARRAY: {
 			return "PackedVector4Array";
 		}
+		case STRUCT: {
+			return "Struct";
+		}
 		default: {
 		}
 	}
@@ -528,6 +531,13 @@ bool Variant::can_convert(Variant::Type p_type_from, Variant::Type p_type_to) {
 			};
 			valid_types = valid;
 
+		} break;
+		case STRUCT: {
+			static const Type valid[] = {
+				NIL,
+			};
+
+			valid_types = valid;
 		} break;
 		default: {
 		}
@@ -872,6 +882,13 @@ bool Variant::can_convert_strict(Variant::Type p_type_from, Variant::Type p_type
 			valid_types = valid;
 
 		} break;
+		case STRUCT: {
+			static const Type valid[] = {
+				NIL,
+			};
+
+			valid_types = valid;
+		} break;
 		default: {
 		}
 	}
@@ -1029,6 +1046,9 @@ bool Variant::is_zero() const {
 		}
 		case PACKED_VECTOR4_ARRAY: {
 			return PackedArrayRef<Vector4>::get_array(_data.packed_array).is_empty();
+		}
+		case STRUCT: {
+			return reinterpret_cast<const Struct *>(_data._mem)->is_null();
 		}
 		default: {
 		}
@@ -1326,6 +1346,9 @@ void Variant::reference(const Variant &p_variant) {
 				_data.packed_array = PackedArrayRef<Vector4>::create();
 			}
 		} break;
+		case STRUCT: {
+			memnew_placement(_data._mem, Struct(*reinterpret_cast<const Struct *>(p_variant._data._mem)));
+		} break;
 		default: {
 		}
 	}
@@ -1498,6 +1521,9 @@ void Variant::_clear_internal() {
 		} break;
 		case PACKED_VECTOR4_ARRAY: {
 			PackedArrayRefBase::destroy(_data.packed_array);
+		} break;
+		case STRUCT: {
+			reinterpret_cast<Struct *>(_data._mem)->~Struct();
 		} break;
 		default: {
 			// Not needed, there is no point. The following do not allocate memory:
@@ -1716,6 +1742,9 @@ String Variant::stringify(int p_recursion_count) const {
 		}
 		case PACKED_VECTOR4_ARRAY: {
 			return stringify_vector(operator PackedVector4Array(), p_recursion_count);
+		}
+		case STRUCT: {
+			return reinterpret_cast<const Struct *>(_data._mem)->to_string();
 		}
 		case PACKED_STRING_ARRAY: {
 			return stringify_vector(operator PackedStringArray(), p_recursion_count);
@@ -2246,6 +2275,14 @@ Variant::operator PackedVector4Array() const {
 	}
 }
 
+Variant::operator Struct() const {
+	if (type == STRUCT) {
+		return *reinterpret_cast<const Struct *>(_data._mem);
+	} else {
+		return Struct();
+	}
+}
+
 /* helpers */
 
 Variant::operator Vector<::RID>() const {
@@ -2625,6 +2662,12 @@ Variant::Variant(const PackedVector4Array &p_vector4_array) :
 	_data.packed_array = PackedArrayRef<Vector4>::create(p_vector4_array);
 }
 
+Variant::Variant(const Struct &p_struct) :
+		type(STRUCT) {
+	memnew_placement(_data._mem, Struct(p_struct));
+	static_assert(sizeof(Struct) <= sizeof(_data._mem));
+}
+
 /* helpers */
 Variant::Variant(const Vector<::RID> &p_array) :
 		type(ARRAY) {
@@ -2823,6 +2866,9 @@ void Variant::operator=(const Variant &p_variant) {
 		} break;
 		case PACKED_VECTOR4_ARRAY: {
 			_data.packed_array = PackedArrayRef<Vector4>::reference_from(_data.packed_array, p_variant._data.packed_array);
+		} break;
+		case STRUCT: {
+			*reinterpret_cast<Struct *>(_data._mem) = *reinterpret_cast<const Struct *>(p_variant._data._mem);
 		} break;
 		default: {
 		}
@@ -3164,6 +3210,9 @@ uint32_t Variant::recursive_hash(int p_recursion_count) const {
 
 			return hash;
 		} break;
+		case STRUCT: {
+			return reinterpret_cast<const Struct *>(_data._mem)->recursive_hash(p_recursion_count);
+		} break;
 		default: {
 		}
 	}
@@ -3383,6 +3432,11 @@ bool Variant::hash_compare(const Variant &p_variant, int p_recursion_count, bool
 		case PACKED_VECTOR4_ARRAY: {
 			hash_compare_packed_array(_data.packed_array, p_variant._data.packed_array, Vector4, hash_compare_vector4);
 		} break;
+		case STRUCT: {
+			const Struct &l = *(reinterpret_cast<const Struct *>(_data._mem));
+			const Struct &r = *(reinterpret_cast<const Struct *>(p_variant._data._mem));
+			return l.recursive_equal(r, p_recursion_count + 1);
+		} break;
 
 		default:
 			bool v;
@@ -3425,6 +3479,11 @@ bool Variant::identity_compare(const Variant &p_variant) const {
 		case PACKED_COLOR_ARRAY:
 		case PACKED_VECTOR4_ARRAY: {
 			return _data.packed_array == p_variant._data.packed_array;
+		} break;
+		case STRUCT: {
+			const Struct &l = *(reinterpret_cast<const Struct *>(_data._mem));
+			const Struct &r = *(reinterpret_cast<const Struct *>(p_variant._data._mem));
+			return l.id() == r.id();
 		} break;
 
 		default: {

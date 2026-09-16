@@ -80,6 +80,7 @@ struct PtrConstruct<Object *> {
 MAKE_PTRCONSTRUCT(Callable);
 MAKE_PTRCONSTRUCT(Signal);
 MAKE_PTRCONSTRUCT(Dictionary);
+MAKE_PTRCONSTRUCT(Struct);
 MAKE_PTRCONSTRUCT(Array);
 MAKE_PTRCONSTRUCT(PackedByteArray);
 MAKE_PTRCONSTRUCT(PackedInt32Array);

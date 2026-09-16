@@ -79,6 +79,7 @@
 #include "core/object/class_db.h"
 #include "core/object/script_backtrace.h"
 #include "core/object/script_language_extension.h"
+#include "core/variant/struct_layout.h"
 #include "core/object/undo_redo.h"
 #include "core/object/worker_thread_pool.h"
 #include "core/os/main_loop.h"
@@ -181,6 +182,7 @@ void register_core_types() {
 	}
 
 	GDREGISTER_ABSTRACT_CLASS(Script);
+	GDREGISTER_CLASS(StructLayout);
 	GDREGISTER_ABSTRACT_CLASS(ScriptLanguage);
 	GDREGISTER_CLASS(ScriptBacktrace);
 	GDREGISTER_VIRTUAL_CLASS(ScriptExtension);

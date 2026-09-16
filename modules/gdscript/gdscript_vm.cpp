@@ -249,6 +249,7 @@ void (*type_init_function_table[])(Variant *) = {
 	&VariantInitializer<PackedVector3Array>::init, // PACKED_VECTOR3_ARRAY.
 	&VariantInitializer<PackedColorArray>::init, // PACKED_COLOR_ARRAY.
 	&VariantInitializer<PackedVector4Array>::init, // PACKED_VECTOR4_ARRAY.
+	&VariantInitializer<Struct>::init, // STRUCT.
 };
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -418,6 +419,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_TYPE_ADJUST_PACKED_VECTOR3_ARRAY, \
 		&&OPCODE_TYPE_ADJUST_PACKED_COLOR_ARRAY, \
 		&&OPCODE_TYPE_ADJUST_PACKED_VECTOR4_ARRAY, \
+		&&OPCODE_TYPE_ADJUST_STRUCT, \
 		&&OPCODE_ASSERT, \
 		&&OPCODE_BREAKPOINT, \
 		&&OPCODE_LINE, \
@@ -495,6 +497,7 @@ void (*type_init_function_table[])(Variant *) = {
 #define OP_GET_PACKED_VECTOR3_ARRAY get_vector3_array
 #define OP_GET_PACKED_COLOR_ARRAY get_color_array
 #define OP_GET_PACKED_VECTOR4_ARRAY get_vector4_array
+#define OP_GET_STRUCT get_struct
 #define OP_GET_TRANSFORM3D get_transform
 #define OP_GET_TRANSFORM2D get_transform2d
 #define OP_GET_PROJECTION get_projection
@@ -4229,6 +4232,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 			OPCODE_TYPE_ADJUST(PACKED_VECTOR3_ARRAY, PackedVector3Array);
 			OPCODE_TYPE_ADJUST(PACKED_COLOR_ARRAY, PackedColorArray);
 			OPCODE_TYPE_ADJUST(PACKED_VECTOR4_ARRAY, PackedVector4Array);
+			OPCODE_TYPE_ADJUST(STRUCT, Struct);
 
 			OPCODE(OPCODE_ASSERT) {
 				CHECK_SPACE(3);

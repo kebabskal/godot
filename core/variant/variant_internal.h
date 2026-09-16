@@ -128,6 +128,9 @@ public:
 			case Variant::PACKED_VECTOR4_ARRAY:
 				init_vector4_array(r_variant);
 				break;
+			case Variant::STRUCT:
+				init_struct(r_variant);
+				break;
 			case Variant::OBJECT:
 				init_object(r_variant);
 				break;
@@ -193,6 +196,8 @@ public:
 	_FORCE_INLINE_ static const Signal *get_signal(const Variant *p_variant) { return reinterpret_cast<const Signal *>(p_variant->_data._mem); }
 	_FORCE_INLINE_ static Dictionary *get_dictionary(Variant *p_variant) { return reinterpret_cast<Dictionary *>(p_variant->_data._mem); }
 	_FORCE_INLINE_ static const Dictionary *get_dictionary(const Variant *p_variant) { return reinterpret_cast<const Dictionary *>(p_variant->_data._mem); }
+	_FORCE_INLINE_ static Struct *get_struct(Variant *p_variant) { return reinterpret_cast<Struct *>(p_variant->_data._mem); }
+	_FORCE_INLINE_ static const Struct *get_struct(const Variant *p_variant) { return reinterpret_cast<const Struct *>(p_variant->_data._mem); }
 	_FORCE_INLINE_ static Array *get_array(Variant *p_variant) { return reinterpret_cast<Array *>(p_variant->_data._mem); }
 	_FORCE_INLINE_ static const Array *get_array(const Variant *p_variant) { return reinterpret_cast<const Array *>(p_variant->_data._mem); }
 
@@ -332,6 +337,10 @@ public:
 	_FORCE_INLINE_ static void init_vector4_array(Variant *r_variant) {
 		r_variant->_data.packed_array = Variant::PackedArrayRef<Vector4>::create(Vector<Vector4>());
 		r_variant->type = Variant::PACKED_VECTOR4_ARRAY;
+	}
+	_FORCE_INLINE_ static void init_struct(Variant *r_variant) {
+		memnew_placement(r_variant->_data._mem, Struct);
+		r_variant->type = Variant::STRUCT;
 	}
 	_FORCE_INLINE_ static void init_object(Variant *r_variant) {
 		object_reset_data(r_variant);
@@ -473,6 +482,8 @@ public:
 				return get_vector4_array(p_variant);
 			case Variant::OBJECT:
 				return get_object(p_variant);
+			case Variant::STRUCT:
+				return get_struct(p_variant);
 			case Variant::VARIANT_MAX:
 				ERR_FAIL_V(nullptr);
 		}
@@ -559,6 +570,8 @@ public:
 				return get_vector4_array(p_variant);
 			case Variant::OBJECT:
 				return get_object(p_variant);
+			case Variant::STRUCT:
+				return get_struct(p_variant);
 			case Variant::VARIANT_MAX:
 				ERR_FAIL_V(nullptr);
 		}
@@ -790,6 +803,9 @@ struct VariantInternalAccessor<Signal> : _VariantInternalAccessorLocal<Signal> {
 
 template <>
 struct VariantInternalAccessor<Dictionary> : _VariantInternalAccessorLocal<Dictionary> {};
+
+template <>
+struct VariantInternalAccessor<Struct> : _VariantInternalAccessorLocal<Struct> {};
 
 template <>
 struct VariantInternalAccessor<Array> : _VariantInternalAccessorLocal<Array> {};

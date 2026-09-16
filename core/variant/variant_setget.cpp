@@ -259,6 +259,8 @@ void Variant::set_named(const StringName &p_member, const Variant &p_value, bool
 	} else if (type == Variant::DICTIONARY) {
 		Dictionary &dict = VariantInternalAccessor<Dictionary>::get(this);
 		r_valid = dict.set(p_member, p_value);
+	} else if (type == Variant::STRUCT) {
+		r_valid = VariantInternalAccessor<Struct>::get(this).set_field_by_name(p_member, p_value);
 	} else {
 		r_valid = false;
 	}
@@ -292,6 +294,14 @@ Variant Variant::get_named(const StringName &p_member, bool &r_valid) const {
 			if (v) {
 				r_valid = true;
 				return *v;
+			}
+		} break;
+		case Variant::STRUCT: {
+			bool found = false;
+			const Variant v = VariantInternalAccessor<Struct>::get(this).get_field_by_name(p_member, &found);
+			if (found) {
+				r_valid = true;
+				return v;
 			}
 		} break;
 		default: {
@@ -1994,6 +2004,9 @@ Variant Variant::recursive_duplicate(bool p_deep, ResourceDeepDuplicateMode p_de
 				return *this;
 			}
 		} break;
+		case STRUCT: {
+			return operator Struct().duplicate(p_deep);
+		}
 		case DICTIONARY:
 			return operator Dictionary().recursive_duplicate(p_deep, p_deep_subresources_mode, p_recursion_count);
 		case ARRAY:

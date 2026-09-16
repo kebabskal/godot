@@ -216,6 +216,8 @@ struct PtrToArg<Signal> : Internal::PtrToArgDirect<Signal> {};
 template <>
 struct PtrToArg<Dictionary> : Internal::PtrToArgDirect<Dictionary> {};
 template <>
+struct PtrToArg<Struct> : Internal::PtrToArgDirect<Struct> {};
+template <>
 struct PtrToArg<Array> : Internal::PtrToArgDirect<Array> {};
 template <>
 struct PtrToArg<PackedByteArray> : Internal::PtrToArgDirect<PackedByteArray> {};

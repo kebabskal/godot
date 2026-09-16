@@ -61,6 +61,7 @@
 #include "core/variant/array.h"
 #include "core/variant/callable.h"
 #include "core/variant/dictionary.h"
+#include "core/variant/struct.h"
 #include "core/variant/variant_deep_duplicate.h"
 
 class GDType;
@@ -142,6 +143,9 @@ public:
 		PACKED_VECTOR3_ARRAY,
 		PACKED_COLOR_ARRAY,
 		PACKED_VECTOR4_ARRAY,
+
+		// struct type
+		STRUCT,
 
 		VARIANT_MAX
 	};
@@ -314,6 +318,7 @@ private:
 		true, //PACKED_VECTOR3_ARRAY,
 		true, //PACKED_COLOR_ARRAY,
 		true, //PACKED_VECTOR4_ARRAY,
+		true, //STRUCT,
 	};
 
 	_FORCE_INLINE_ void clear() {
@@ -469,6 +474,7 @@ public:
 	operator PackedVector2Array() const;
 	operator PackedColorArray() const;
 	operator PackedVector4Array() const;
+	operator Struct() const;
 
 	operator Vector<::RID>() const;
 	operator Vector<Plane>() const;
@@ -543,6 +549,7 @@ public:
 	Variant(const PackedVector3Array &p_vector3_array);
 	Variant(const PackedColorArray &p_color_array);
 	Variant(const PackedVector4Array &p_vector4_array);
+	Variant(const Struct &p_struct);
 
 	Variant(const Vector<::RID> &p_array); // helper
 	Variant(const Vector<Plane> &p_array); // helper

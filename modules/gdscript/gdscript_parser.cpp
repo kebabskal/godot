@@ -53,7 +53,8 @@ Variant::Type GDScriptParser::get_builtin_type(const StringName &p_type) {
 	if (unlikely(builtin_types.is_empty())) {
 		for (int i = 0; i < Variant::VARIANT_MAX; i++) {
 			Variant::Type type = (Variant::Type)i;
-			if (type != Variant::NIL && type != Variant::OBJECT) {
+			// `Variant::STRUCT` - struct types come from `struct` declarations and engine layouts, not from a keyword.
+			if (type != Variant::NIL && type != Variant::OBJECT && type != Variant::STRUCT) {
 				builtin_types[Variant::get_type_name(type)] = type;
 			}
 		}

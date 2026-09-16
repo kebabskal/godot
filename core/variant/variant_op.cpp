@@ -518,6 +518,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorEqual<Callable, Callable>>(Variant::OP_EQUAL, Variant::CALLABLE, Variant::CALLABLE);
 	register_op<OperatorEvaluatorEqual<Signal, Signal>>(Variant::OP_EQUAL, Variant::SIGNAL, Variant::SIGNAL);
 	register_op<OperatorEvaluatorEqual<Dictionary, Dictionary>>(Variant::OP_EQUAL, Variant::DICTIONARY, Variant::DICTIONARY);
+	register_op<OperatorEvaluatorEqual<Struct, Struct>>(Variant::OP_EQUAL, Variant::STRUCT, Variant::STRUCT);
 	register_op<OperatorEvaluatorEqual<Array, Array>>(Variant::OP_EQUAL, Variant::ARRAY, Variant::ARRAY);
 	register_op<OperatorEvaluatorEqual<PackedByteArray, PackedByteArray>>(Variant::OP_EQUAL, Variant::PACKED_BYTE_ARRAY, Variant::PACKED_BYTE_ARRAY);
 	register_op<OperatorEvaluatorEqual<PackedInt32Array, PackedInt32Array>>(Variant::OP_EQUAL, Variant::PACKED_INT32_ARRAY, Variant::PACKED_INT32_ARRAY);
@@ -556,6 +557,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::CALLABLE, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::SIGNAL, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::DICTIONARY, Variant::NIL);
+	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::STRUCT, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::ARRAY, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::PACKED_BYTE_ARRAY, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::PACKED_INT32_ARRAY, Variant::NIL);
@@ -594,6 +596,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::CALLABLE);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::SIGNAL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::DICTIONARY);
+	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::STRUCT);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::ARRAY);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::PACKED_BYTE_ARRAY);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::PACKED_INT32_ARRAY);
@@ -640,6 +643,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorNotEqual<Callable, Callable>>(Variant::OP_NOT_EQUAL, Variant::CALLABLE, Variant::CALLABLE);
 	register_op<OperatorEvaluatorNotEqual<Signal, Signal>>(Variant::OP_NOT_EQUAL, Variant::SIGNAL, Variant::SIGNAL);
 	register_op<OperatorEvaluatorNotEqual<Dictionary, Dictionary>>(Variant::OP_NOT_EQUAL, Variant::DICTIONARY, Variant::DICTIONARY);
+	register_op<OperatorEvaluatorNotEqual<Struct, Struct>>(Variant::OP_NOT_EQUAL, Variant::STRUCT, Variant::STRUCT);
 	register_op<OperatorEvaluatorNotEqual<Array, Array>>(Variant::OP_NOT_EQUAL, Variant::ARRAY, Variant::ARRAY);
 	register_op<OperatorEvaluatorNotEqual<PackedByteArray, PackedByteArray>>(Variant::OP_NOT_EQUAL, Variant::PACKED_BYTE_ARRAY, Variant::PACKED_BYTE_ARRAY);
 	register_op<OperatorEvaluatorNotEqual<PackedInt32Array, PackedInt32Array>>(Variant::OP_NOT_EQUAL, Variant::PACKED_INT32_ARRAY, Variant::PACKED_INT32_ARRAY);
@@ -678,6 +682,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::CALLABLE, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::SIGNAL, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::DICTIONARY, Variant::NIL);
+	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::STRUCT, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::ARRAY, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::PACKED_BYTE_ARRAY, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::PACKED_INT32_ARRAY, Variant::NIL);
@@ -716,6 +721,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::CALLABLE);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::SIGNAL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::DICTIONARY);
+	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::STRUCT);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::ARRAY);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::PACKED_BYTE_ARRAY);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::PACKED_INT32_ARRAY);
@@ -909,6 +915,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorNot<Callable>>(Variant::OP_NOT, Variant::CALLABLE, Variant::NIL);
 	register_op<OperatorEvaluatorNot<Signal>>(Variant::OP_NOT, Variant::SIGNAL, Variant::NIL);
 	register_op<OperatorEvaluatorNot<Dictionary>>(Variant::OP_NOT, Variant::DICTIONARY, Variant::NIL);
+	register_op<OperatorEvaluatorNot<Struct>>(Variant::OP_NOT, Variant::STRUCT, Variant::NIL);
 	register_op<OperatorEvaluatorNot<Array>>(Variant::OP_NOT, Variant::ARRAY, Variant::NIL);
 	register_op<OperatorEvaluatorNot<PackedByteArray>>(Variant::OP_NOT, Variant::PACKED_BYTE_ARRAY, Variant::NIL);
 	register_op<OperatorEvaluatorNot<PackedInt32Array>>(Variant::OP_NOT, Variant::PACKED_INT32_ARRAY, Variant::NIL);
