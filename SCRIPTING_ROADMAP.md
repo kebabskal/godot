@@ -157,11 +157,16 @@ group are independent and can proceed in any order.
 - Measurement note: numbers from the editor build drift by up to ~15 ns
   between builds for opcodes that were not touched (code layout of the
   VM's dispatch function). Compare only within one build, min of 3 runs.
-- Release template builds (`target=template_release`) hang on this
-  Windows machine when loading any script via `-s`, also at the branch's
-  base commit, so it is not caused by this work. Numbers above are from
-  the editor build, which adds line tracking and call stack bookkeeping
-  to every call.
+- Release build numbers (template_release, `disable_path_overrides=no`
+  so `-s` works; min of 2 runs, ns per iteration, `call_bench.gd`):
+  loop only 8.7, while loop 7.2, compare+branch 9.8, int add x4 28.2,
+  float mul x4 20.3, vec2 add x4 30.5, int mod/div/neg 17.7, self call
+  51.8 (0 args 40.5, 4 args 74.4), typed var call 61.2, virtual via base
+  82.9, field set+get typed 40.2 vs untyped 81.3, setter+getter 88.1,
+  untyped int add x4 54.7. So in release a fused compare-and-branch is
+  ~1 ns over the loop, a typed statement is 3-5 ns, and a direct script
+  call is ~40 ns of which ~8 ns per argument. The earlier "hang" was the
+  template silently dropping `-s`; see the memory note.
 - 5 landed as the project setting `debug/gdscript/strict_mode`: the
   untyped/unsafe warnings become errors that `@warning_ignore` cannot
   silence; an explicit `Variant` type is the opt-in for dynamic code and
