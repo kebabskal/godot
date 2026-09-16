@@ -21,6 +21,17 @@
 				[b]Note:[/b] Any [Shape2D]s that the shape is already colliding with e.g. inside of, will be ignored. Use [method collide_shape] to determine the [Shape2D]s that the shape is already colliding with.
 			</description>
 		</method>
+		<method name="cast_motion_struct">
+			<return type="Struct" />
+			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
+			<description>
+				Checks how far a [Shape2D] can move without colliding, like [method cast_motion], but returns a [Struct] with the engine layout [code]PhysicsCastResult2D[/code] instead of an array. The fields are:
+				[code]safe_fraction[/code]: The maximum fraction (between 0 and 1) of the motion that can be made without a collision.
+				[code]unsafe_fraction[/code]: The minimum fraction of the motion that must be made for a collision.
+				Both fields are [code]1.0[/code] if no collision is detected, and also if the query itself fails.
+				[b]Note:[/b] Any [Shape2D]s that the shape is already colliding with e.g. inside of, will be ignored. Use [method collide_shape] to determine the [Shape2D]s that the shape is already colliding with.
+			</description>
+		</method>
 		<method name="collide_shape">
 			<return type="Vector2[]" />
 			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
@@ -44,6 +55,22 @@
 				If the shape did not intersect anything, then an empty dictionary is returned instead.
 			</description>
 		</method>
+		<method name="get_rest_info_struct">
+			<return type="Struct" />
+			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
+			<description>
+				Checks the intersections of a shape, given through a [PhysicsShapeQueryParameters2D] object, against the space, like [method get_rest_info], but returns a [Struct] with the engine layout [code]PhysicsRestInfo2D[/code] instead of a dictionary. If it collides with more than one shape, the nearest one is selected. The fields are:
+				[code]hit[/code]: [code]true[/code] if the shape intersected something. When [code]false[/code], every other field keeps its default value.
+				[code]point[/code]: The intersection point.
+				[code]normal[/code]: The collision normal of the query shape at the intersection point, pointing away from the intersecting object.
+				[code]rid[/code]: The intersecting object's [RID].
+				[code]collider_id[/code]: The colliding object's ID.
+				[code]collider[/code]: The colliding object.
+				[code]shape[/code]: The shape index of the colliding shape.
+				[code]linear_velocity[/code]: The colliding object's velocity [Vector2]. If the object is an [Area2D], the result is [code](0, 0)[/code].
+				[b]Note:[/b] This method does not take into account the [code]motion[/code] property of the object.
+			</description>
+		</method>
 		<method name="intersect_point">
 			<return type="Dictionary[]" />
 			<param index="0" name="parameters" type="PhysicsPointQueryParameters2D" />
@@ -56,6 +83,19 @@
 				[code]shape[/code]: The shape index of the colliding shape.
 				The number of intersections can be limited with the [param max_results] parameter, to reduce the processing time.
 				[b]Note:[/b] [ConcavePolygonShape2D]s and [CollisionPolygon2D]s in [code]Segments[/code] build mode are not solid shapes. Therefore, they will not be detected.
+			</description>
+		</method>
+		<method name="intersect_point_struct">
+			<return type="Struct[]" />
+			<param index="0" name="parameters" type="PhysicsPointQueryParameters2D" />
+			<param index="1" name="max_results" type="int" default="32" />
+			<description>
+				Checks whether a point is inside any solid shape, like [method intersect_point], but returns an array of [Struct] values with the engine layout [code]PhysicsShapeResult2D[/code] instead of dictionaries. In GDScript the result can be declared as [code]var hits: Array[PhysicsShapeResult2D][/code]. The fields are:
+				[code]rid[/code]: The intersecting object's [RID].
+				[code]collider_id[/code]: The colliding object's ID.
+				[code]collider[/code]: The colliding object.
+				[code]shape[/code]: The shape index of the colliding shape.
+				The number of intersections can be limited with the [param max_results] parameter, to reduce the processing time.
 			</description>
 		</method>
 		<method name="intersect_ray">
@@ -97,6 +137,16 @@
 				[code]rid[/code]: The intersecting object's [RID].
 				[code]shape[/code]: The shape index of the colliding shape.
 				The number of intersections can be limited with the [param max_results] parameter, to reduce the processing time.
+			</description>
+		</method>
+		<method name="intersect_shape_struct">
+			<return type="Struct[]" />
+			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
+			<param index="1" name="max_results" type="int" default="32" />
+			<description>
+				Checks the intersections of a shape, given through a [PhysicsShapeQueryParameters2D] object, against the space, like [method intersect_shape], but returns an array of [Struct] values with the engine layout [code]PhysicsShapeResult2D[/code] instead of dictionaries. See [method intersect_point_struct] for the fields.
+				The number of intersections can be limited with the [param max_results] parameter, to reduce the processing time.
+				[b]Note:[/b] This method does not take into account the [code]motion[/code] property of the object.
 			</description>
 		</method>
 	</methods>

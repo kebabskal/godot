@@ -32,6 +32,8 @@
 
 #include "core/variant/struct.h"
 
+#include <type_traits>
+
 // A `Struct` return or argument type annotated with its engine layout, so the binding's type info
 // carries the layout name (`PROPERTY_HINT_STRUCT_TYPE`) and typed callers know the fields:
 //
@@ -48,3 +50,8 @@ public:
 	_FORCE_INLINE_ TypedStruct(const Struct &p_struct) :
 			Struct(p_struct) {}
 };
+
+template <typename T>
+struct is_typed_struct : std::false_type {};
+template <const char *LAYOUT_NAME>
+struct is_typed_struct<TypedStruct<LAYOUT_NAME>> : std::true_type {};

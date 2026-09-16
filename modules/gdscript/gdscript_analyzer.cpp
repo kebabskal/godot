@@ -6577,6 +6577,11 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property_hint_string(const 
 		// Built-in type.
 		result.kind = GDScriptParser::DataType::BUILTIN;
 		result.builtin_type = builtin_type;
+	} else if (StructDB::has_layout(p_type_name)) {
+		// An engine struct, as the element type of a typed array.
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = Variant::STRUCT;
+		result.struct_layout = StructDB::get_layout(p_type_name);
 	} else if (class_exists(p_type_name)) {
 		result.kind = GDScriptParser::DataType::NATIVE;
 		result.builtin_type = Variant::OBJECT;

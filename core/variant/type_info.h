@@ -336,6 +336,8 @@ const String get_variant_type_identifier() {
 		return T::get_class_static();
 	} else if constexpr (std::is_same_v<Variant, T>) {
 		return "Variant";
+	} else if constexpr (is_typed_struct<T>::value) {
+		return T::get_layout_name(); // `Array[PhysicsShapeResult3D]`: the element hint is the layout name.
 	} else {
 		return Variant::get_type_name(GetTypeInfo<T>::VARIANT_TYPE);
 	}

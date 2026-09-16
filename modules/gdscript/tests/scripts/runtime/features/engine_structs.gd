@@ -13,3 +13,10 @@ func test():
 	print(r2.normal, " ", r2.collider == null, " ", r2.rid)
 	print(PhysicsRayResult2D().normal)
 	print(typeof(r2) == TYPE_STRUCT, " ", r2 == PhysicsRayResult3D(true, Vector3(4, 5, 6), Vector3.UP))
+
+	# The other query result layouts, and a typed array of an engine struct.
+	var rest := PhysicsRestInfo3D()
+	print(rest.hit, " ", rest.linear_velocity)
+	print(PhysicsCastResult2D().safe_fraction, " ", PhysicsCastResult2D(0.5, 0.75).unsafe_fraction)
+	var hits: Array[PhysicsShapeResult3D] = [PhysicsShapeResult3D(), PhysicsShapeResult3D(RID(), 7)]
+	print(hits.size(), " ", hits[1].collider_id, " ", hits[0].collider == null)

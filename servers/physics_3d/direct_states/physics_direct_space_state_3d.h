@@ -38,6 +38,9 @@
 #include "servers/physics_3d/queries/physics_shape_query_parameters_3d.h"
 
 inline constexpr char PhysicsRayResult3DName[] = "PhysicsRayResult3D";
+inline constexpr char PhysicsShapeResult3DName[] = "PhysicsShapeResult3D";
+inline constexpr char PhysicsRestInfo3DName[] = "PhysicsRestInfo3D";
+inline constexpr char PhysicsCastResult3DName[] = "PhysicsCastResult3D";
 
 class PhysicsDirectSpaceState3D : public Object {
 	GDCLASS(PhysicsDirectSpaceState3D, Object);
@@ -45,6 +48,10 @@ class PhysicsDirectSpaceState3D : public Object {
 private:
 	Dictionary _intersect_ray(RequiredParam<PhysicsRayQueryParameters3D> p_ray_query);
 	TypedStruct<PhysicsRayResult3DName> _intersect_ray_struct(RequiredParam<PhysicsRayQueryParameters3D> p_ray_query);
+	TypedArray<TypedStruct<PhysicsShapeResult3DName>> _intersect_point_struct(RequiredParam<PhysicsPointQueryParameters3D> p_point_query, int p_max_results = 32);
+	TypedArray<TypedStruct<PhysicsShapeResult3DName>> _intersect_shape_struct(RequiredParam<PhysicsShapeQueryParameters3D> p_shape_query, int p_max_results = 32);
+	TypedStruct<PhysicsCastResult3DName> _cast_motion_struct(RequiredParam<PhysicsShapeQueryParameters3D> p_shape_query);
+	TypedStruct<PhysicsRestInfo3DName> _get_rest_info_struct(RequiredParam<PhysicsShapeQueryParameters3D> p_shape_query);
 	TypedArray<Dictionary> _intersect_point(RequiredParam<PhysicsPointQueryParameters3D> p_point_query, int p_max_results = 32);
 	TypedArray<Dictionary> _intersect_shape(RequiredParam<PhysicsShapeQueryParameters3D> p_shape_query, int p_max_results = 32);
 	Vector<real_t> _cast_motion(RequiredParam<PhysicsShapeQueryParameters3D> p_shape_query);
@@ -55,7 +62,7 @@ protected:
 	static void _bind_methods();
 
 public:
-	// The `PhysicsRayResult3D` layout returned by `intersect_ray_struct`; registered with the server types.
+	// The result layouts returned by the `*_struct` queries; registered with the server types.
 	static void register_struct_layouts();
 	static void unregister_struct_layouts();
 

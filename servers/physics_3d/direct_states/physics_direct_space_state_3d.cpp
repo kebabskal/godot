@@ -48,6 +48,46 @@ enum {
 
 static Ref<StructLayout> ray_result_layout;
 
+// `PhysicsShapeResult3D`.
+enum {
+	SHAPE_RESULT_RID,
+	SHAPE_RESULT_COLLIDER_ID,
+	SHAPE_RESULT_COLLIDER,
+	SHAPE_RESULT_SHAPE,
+};
+
+// `PhysicsRestInfo3D`.
+enum {
+	REST_INFO_HIT,
+	REST_INFO_POINT,
+	REST_INFO_NORMAL,
+	REST_INFO_RID,
+	REST_INFO_COLLIDER_ID,
+	REST_INFO_COLLIDER,
+	REST_INFO_SHAPE,
+	REST_INFO_LINEAR_VELOCITY,
+};
+
+// `PhysicsCastResult3D`.
+enum {
+	CAST_RESULT_SAFE_FRACTION,
+	CAST_RESULT_UNSAFE_FRACTION,
+};
+
+static Ref<StructLayout> shape_result_layout;
+static Ref<StructLayout> rest_info_layout;
+static Ref<StructLayout> cast_result_layout;
+
+static Struct _make_shape_result(const PS3DT::ShapeResult &p_result) {
+	Struct s = shape_result_layout->instantiate();
+	Variant *fields = s.get_fields_ptrw();
+	fields[SHAPE_RESULT_RID] = p_result.rid;
+	fields[SHAPE_RESULT_COLLIDER_ID] = p_result.collider_id;
+	fields[SHAPE_RESULT_COLLIDER] = p_result.get_collider();
+	fields[SHAPE_RESULT_SHAPE] = p_result.shape;
+	return s;
+}
+
 void PhysicsDirectSpaceState3D::register_struct_layouts() {
 	ray_result_layout = StructDB::add_layout(PhysicsRayResult3DName, {
 			{ "hit", Variant::BOOL, false },
@@ -59,11 +99,37 @@ void PhysicsDirectSpaceState3D::register_struct_layouts() {
 			{ "shape", Variant::INT, 0 },
 			{ "rid", Variant::RID, RID() },
 	});
+	shape_result_layout = StructDB::add_layout(PhysicsShapeResult3DName, {
+			{ "rid", Variant::RID, RID() },
+			{ "collider_id", Variant::INT, 0 },
+			{ "collider", Variant::OBJECT, Variant(), "Object" },
+			{ "shape", Variant::INT, 0 },
+	});
+	rest_info_layout = StructDB::add_layout(PhysicsRestInfo3DName, {
+			{ "hit", Variant::BOOL, false },
+			{ "point", Variant::VECTOR3, Vector3() },
+			{ "normal", Variant::VECTOR3, Vector3() },
+			{ "rid", Variant::RID, RID() },
+			{ "collider_id", Variant::INT, 0 },
+			{ "collider", Variant::OBJECT, Variant(), "Object" },
+			{ "shape", Variant::INT, 0 },
+			{ "linear_velocity", Variant::VECTOR3, Vector3() },
+	});
+	cast_result_layout = StructDB::add_layout(PhysicsCastResult3DName, {
+			{ "safe_fraction", Variant::FLOAT, 1.0 },
+			{ "unsafe_fraction", Variant::FLOAT, 1.0 },
+	});
 }
 
 void PhysicsDirectSpaceState3D::unregister_struct_layouts() {
 	StructDB::remove_layout(PhysicsRayResult3DName);
+	StructDB::remove_layout(PhysicsShapeResult3DName);
+	StructDB::remove_layout(PhysicsRestInfo3DName);
+	StructDB::remove_layout(PhysicsCastResult3DName);
 	ray_result_layout.unref();
+	shape_result_layout.unref();
+	rest_info_layout.unref();
+	cast_result_layout.unref();
 }
 
 Dictionary PhysicsDirectSpaceState3D::_intersect_ray(RequiredParam<PhysicsRayQueryParameters3D> p_ray_query) {
@@ -210,6 +276,72 @@ Dictionary PhysicsDirectSpaceState3D::_get_rest_info(RequiredParam<PhysicsShapeQ
 	return r;
 }
 
+TypedArray<TypedStruct<PhysicsShapeResult3DName>> PhysicsDirectSpaceState3D::_intersect_point_struct(RequiredParam<PhysicsPointQueryParameters3D> p_point_query, int p_max_results) {
+	TypedArray<TypedStruct<PhysicsShapeResult3DName>> r;
+	ERR_FAIL_COND_V(shape_result_layout.is_null(), r);
+	EXTRACT_PARAM_OR_FAIL_V(point_query, p_point_query, r);
+
+	Vector<PS3DT::ShapeResult> ret;
+	ret.resize(MAX(p_max_results, 0));
+	const int rc = intersect_point(point_query->get_parameters(), ret.ptrw(), ret.size());
+	r.resize(rc);
+	for (int i = 0; i < rc; i++) {
+		r[i] = _make_shape_result(ret[i]);
+	}
+	return r;
+}
+
+TypedArray<TypedStruct<PhysicsShapeResult3DName>> PhysicsDirectSpaceState3D::_intersect_shape_struct(RequiredParam<PhysicsShapeQueryParameters3D> p_shape_query, int p_max_results) {
+	TypedArray<TypedStruct<PhysicsShapeResult3DName>> r;
+	ERR_FAIL_COND_V(shape_result_layout.is_null(), r);
+	EXTRACT_PARAM_OR_FAIL_V(shape_query, p_shape_query, r);
+
+	Vector<PS3DT::ShapeResult> ret;
+	ret.resize(MAX(p_max_results, 0));
+	const int rc = intersect_shape(shape_query->get_parameters(), ret.ptrw(), ret.size());
+	r.resize(rc);
+	for (int i = 0; i < rc; i++) {
+		r[i] = _make_shape_result(ret[i]);
+	}
+	return r;
+}
+
+TypedStruct<PhysicsCastResult3DName> PhysicsDirectSpaceState3D::_cast_motion_struct(RequiredParam<PhysicsShapeQueryParameters3D> p_shape_query) {
+	ERR_FAIL_COND_V(cast_result_layout.is_null(), Struct());
+	Struct s = cast_result_layout->instantiate();
+	EXTRACT_PARAM_OR_FAIL_V(shape_query, p_shape_query, s);
+
+	real_t closest_safe = 1.0f, closest_unsafe = 1.0f;
+	if (cast_motion(shape_query->get_parameters(), closest_safe, closest_unsafe)) {
+		Variant *fields = s.get_fields_ptrw();
+		fields[CAST_RESULT_SAFE_FRACTION] = closest_safe;
+		fields[CAST_RESULT_UNSAFE_FRACTION] = closest_unsafe;
+	}
+	return s; // Both fractions stay 1.0 when nothing is hit or the query fails.
+}
+
+TypedStruct<PhysicsRestInfo3DName> PhysicsDirectSpaceState3D::_get_rest_info_struct(RequiredParam<PhysicsShapeQueryParameters3D> p_shape_query) {
+	ERR_FAIL_COND_V(rest_info_layout.is_null(), Struct());
+	Struct s = rest_info_layout->instantiate();
+	EXTRACT_PARAM_OR_FAIL_V(shape_query, p_shape_query, s);
+
+	PS3DT::ShapeRestInfo sri;
+	if (!rest_info(shape_query->get_parameters(), &sri)) {
+		return s; // `hit` stays false.
+	}
+
+	Variant *fields = s.get_fields_ptrw();
+	fields[REST_INFO_HIT] = true;
+	fields[REST_INFO_POINT] = sri.point;
+	fields[REST_INFO_NORMAL] = sri.normal;
+	fields[REST_INFO_RID] = sri.rid;
+	fields[REST_INFO_COLLIDER_ID] = sri.collider_id;
+	fields[REST_INFO_COLLIDER] = ObjectDB::get_instance(sri.collider_id);
+	fields[REST_INFO_SHAPE] = sri.shape;
+	fields[REST_INFO_LINEAR_VELOCITY] = sri.linear_velocity;
+	return s;
+}
+
 PhysicsDirectSpaceState3D::PhysicsDirectSpaceState3D() {
 }
 
@@ -217,6 +349,10 @@ void PhysicsDirectSpaceState3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("intersect_point", "parameters", "max_results"), &PhysicsDirectSpaceState3D::_intersect_point, DEFVAL(32));
 	ClassDB::bind_method(D_METHOD("intersect_ray", "parameters"), &PhysicsDirectSpaceState3D::_intersect_ray);
 	ClassDB::bind_method(D_METHOD("intersect_ray_struct", "parameters"), &PhysicsDirectSpaceState3D::_intersect_ray_struct);
+	ClassDB::bind_method(D_METHOD("intersect_point_struct", "parameters", "max_results"), &PhysicsDirectSpaceState3D::_intersect_point_struct, DEFVAL(32));
+	ClassDB::bind_method(D_METHOD("intersect_shape_struct", "parameters", "max_results"), &PhysicsDirectSpaceState3D::_intersect_shape_struct, DEFVAL(32));
+	ClassDB::bind_method(D_METHOD("cast_motion_struct", "parameters"), &PhysicsDirectSpaceState3D::_cast_motion_struct);
+	ClassDB::bind_method(D_METHOD("get_rest_info_struct", "parameters"), &PhysicsDirectSpaceState3D::_get_rest_info_struct);
 	ClassDB::bind_method(D_METHOD("intersect_shape", "parameters", "max_results"), &PhysicsDirectSpaceState3D::_intersect_shape, DEFVAL(32));
 	ClassDB::bind_method(D_METHOD("cast_motion", "parameters"), &PhysicsDirectSpaceState3D::_cast_motion);
 	ClassDB::bind_method(D_METHOD("collide_shape", "parameters", "max_results"), &PhysicsDirectSpaceState3D::_collide_shape, DEFVAL(32));

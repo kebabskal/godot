@@ -30,6 +30,8 @@
 
 #include "doc_data.h"
 
+#include "core/variant/struct_db.h"
+
 #include "core/object/method_info.h"
 #include "core/object/property_info.h"
 
@@ -75,7 +77,8 @@ void DocData::return_doc_from_retinfo(DocData::MethodDoc &p_method, const Proper
 	} else if (p_retinfo.class_name != StringName()) {
 		p_method.return_type = p_retinfo.class_name;
 	} else if (p_retinfo.type == Variant::ARRAY && p_retinfo.hint == PROPERTY_HINT_ARRAY_TYPE) {
-		p_method.return_type = p_retinfo.hint_string + "[]";
+		// Engine struct layouts have no class page; the layout is named in the description.
+		p_method.return_type = (StructDB::has_layout(p_retinfo.hint_string) ? String("Struct") : p_retinfo.hint_string) + "[]";
 	} else if (p_retinfo.type == Variant::DICTIONARY && p_retinfo.hint == PROPERTY_HINT_DICTIONARY_TYPE) {
 		p_method.return_type = "Dictionary[" + p_retinfo.hint_string.replace(";", ", ") + "]";
 	} else if (p_retinfo.hint == PROPERTY_HINT_RESOURCE_TYPE) {
@@ -109,7 +112,7 @@ void DocData::argument_doc_from_arginfo(DocData::ArgumentDoc &p_argument, const 
 	} else if (p_arginfo.class_name != StringName()) {
 		p_argument.type = p_arginfo.class_name;
 	} else if (p_arginfo.type == Variant::ARRAY && p_arginfo.hint == PROPERTY_HINT_ARRAY_TYPE) {
-		p_argument.type = p_arginfo.hint_string + "[]";
+		p_argument.type = (StructDB::has_layout(p_arginfo.hint_string) ? String("Struct") : p_arginfo.hint_string) + "[]";
 	} else if (p_arginfo.type == Variant::DICTIONARY && p_arginfo.hint == PROPERTY_HINT_DICTIONARY_TYPE) {
 		p_argument.type = "Dictionary[" + p_arginfo.hint_string.replace(";", ", ") + "]";
 	} else if (p_arginfo.hint == PROPERTY_HINT_RESOURCE_TYPE) {
