@@ -153,6 +153,7 @@ void register_core_types() {
 
 	GDREGISTER_CLASS(Time);
 	_time = memnew(Time);
+	Time::register_struct_layouts();
 	ResourceLoader::initialize();
 
 	Variant::register_types();
@@ -268,6 +269,7 @@ void register_core_types() {
 	GDREGISTER_CLASS(OptimizedTranslation);
 	GDREGISTER_CLASS(UndoRedo);
 	GDREGISTER_CLASS(TriangleMesh);
+	TriangleMesh::register_struct_layouts();
 
 	GDREGISTER_ABSTRACT_CLASS(FileAccess);
 	GDREGISTER_ABSTRACT_CLASS(DirAccess);
@@ -347,6 +349,8 @@ void register_core_types() {
 	_resource_saver = memnew(CoreBind::ResourceSaver);
 	_os = memnew(CoreBind::OS);
 	_engine = memnew(CoreBind::Engine);
+	CoreBind::OS::register_struct_layouts();
+	CoreBind::Engine::register_struct_layouts();
 	_classdb = memnew(CoreBind::Special::ClassDB);
 	_marshalls = memnew(CoreBind::Marshalls);
 	_engine_debugger = memnew(CoreBind::EngineDebugger);
@@ -422,6 +426,10 @@ void unregister_core_extensions() {
 }
 
 void unregister_core_types() {
+	CoreBind::Engine::unregister_struct_layouts();
+	CoreBind::OS::unregister_struct_layouts();
+	TriangleMesh::unregister_struct_layouts();
+	Time::unregister_struct_layouts();
 	StructLayout::cleanup();
 	OS::get_singleton()->benchmark_begin_measure("Core", "Unregister Types");
 

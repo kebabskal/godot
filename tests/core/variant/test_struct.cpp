@@ -35,6 +35,8 @@ TEST_FORCE_LINK(test_struct)
 
 #include "core/io/json.h"
 #include "core/io/marshalls.h"
+#include "core/math/triangle_mesh.h"
+#include "core/os/time.h"
 #include "core/variant/struct.h"
 #include "core/variant/struct_db.h"
 #include "core/variant/struct_layout.h"
@@ -297,6 +299,56 @@ TEST_CASE("[Struct] StructDB") {
 	}
 	CHECK(StructDB::get_layout("PhysicsRestInfo3D")->get_field_default_value(0) == Variant(false)); // `hit`.
 	CHECK(StructDB::get_layout("PhysicsCastResult3D")->get_field_default_value(0) == Variant(1.0)); // `safe_fraction`.
+	for (const char *name : { "DateTime", "Date", "TimeOfDay", "TimeZoneInfo", "TriangleMeshHit", "MemoryInfo", "VersionInfo" }) {
+		CHECK_MESSAGE(StructDB::has_layout(name), name);
+	}
+}
+
+TEST_CASE("[Struct] Time layouts") {
+	Time *time = Time::get_singleton();
+	REQUIRE(time != nullptr);
+
+	const Struct epoch = time->get_datetime_from_unix_time(0);
+	CHECK(epoch.get_struct_name() == "DateTime");
+	CHECK(epoch.get_field_by_name("year") == Variant(1970));
+	CHECK(epoch.get_field_by_name("weekday") == Variant(4)); // Thursday.
+	CHECK(epoch.get_field_by_name("dst") == Variant(false));
+	CHECK(time->get_unix_time_from_datetime(time->get_datetime_from_unix_time(946684800)) == 946684800);
+	CHECK(time->get_datetime_string_from_datetime(time->get_datetime_from_datetime_string("2001-02-03T04:05:06"), true) == "2001-02-03 04:05:06");
+	CHECK(time->get_datetime_from_datetime_string("2001-02-03T04:05:06").get_field_by_name("weekday") == Variant(6)); // Saturday.
+	CHECK(time->get_date_from_unix_time(86400).get_field_by_name("day") == Variant(2));
+	CHECK(time->get_time_from_unix_time(3661).get_field_by_name("minute") == Variant(1));
+	// A user struct with the same field names is accepted by name; missing fields take the epoch defaults.
+	Ref<StructLayout> partial;
+	partial.instantiate();
+	partial->add_field("year", Variant::INT, 2000);
+	partial->add_field("month", Variant::INT, 1);
+	partial->add_field("day", Variant::INT, 2);
+	CHECK(time->get_unix_time_from_datetime(TypedStruct<DateTimeName>(partial->instantiate())) == 946684800 + 86400);
+	ERR_PRINT_OFF;
+	CHECK(time->get_unix_time_from_datetime(Struct()) == 0); // No layout.
+	ERR_PRINT_ON;
+	CHECK(time->get_time_zone_info_from_system().get_struct_name() == "TimeZoneInfo");
+}
+
+TEST_CASE("[Struct] TriangleMesh hits") {
+	Ref<TriangleMesh> mesh;
+	mesh.instantiate();
+	Vector<Vector3> faces;
+	faces.push_back(Vector3(-1, 0, -1));
+	faces.push_back(Vector3(1, 0, -1));
+	faces.push_back(Vector3(0, 0, 1));
+	REQUIRE(mesh->create_from_faces(faces));
+
+	const Struct hit = mesh->intersect_ray_struct(Vector3(0, 1, 0), Vector3(0, -1, 0));
+	CHECK(hit.get_struct_name() == "TriangleMeshHit");
+	CHECK(hit.get_field_by_name("hit") == Variant(true));
+	CHECK(hit.get_field_by_name("face_index") == Variant(0));
+	CHECK(Vector3(hit.get_field_by_name("position")).is_equal_approx(Vector3(0, 0, 0)));
+
+	const Struct miss = mesh->intersect_segment_struct(Vector3(0, 1, 0), Vector3(0, 0.5, 0));
+	CHECK(miss.get_field_by_name("hit") == Variant(false));
+	CHECK(miss.get_field_by_name("face_index") == Variant(-1));
 }
 
 // Serialization resolves layouts by name, so these register the layout for the duration of the test.

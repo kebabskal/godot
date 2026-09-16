@@ -46,6 +46,7 @@
 #include "core/os/os.h"
 #include "core/os/process_id.h"
 #include "core/os/thread_safe.h"
+#include "core/variant/struct_db.h"
 #include "core/variant/typed_array.h"
 
 namespace CoreBind {
@@ -618,6 +619,28 @@ Dictionary OS::get_memory_info() const {
 	return ::OS::get_singleton()->get_memory_info();
 }
 
+static Ref<StructLayout> memory_info_layout;
+
+void OS::register_struct_layouts() {
+	memory_info_layout = StructDB::add_layout(MemoryInfoName, {
+			{ "physical", Variant::INT, -1 },
+			{ "free", Variant::INT, -1 },
+			{ "available", Variant::INT, -1 },
+			{ "stack", Variant::INT, -1 },
+	});
+}
+
+void OS::unregister_struct_layouts() {
+	StructDB::remove_layout(MemoryInfoName);
+	memory_info_layout.unref();
+}
+
+TypedStruct<MemoryInfoName> OS::get_memory_info_struct() const {
+	ERR_FAIL_COND_V(memory_info_layout.is_null(), Struct());
+	// Platforms fill a dictionary; unknown values stay -1.
+	return memory_info_layout->instantiate(::OS::get_singleton()->get_memory_info());
+}
+
 /** This method uses a signed argument for better error reporting as it's used from the scripting API. */
 void OS::delay_usec(int p_usec) const {
 	ERR_FAIL_COND_MSG(
@@ -839,6 +862,7 @@ void OS::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_static_memory_usage"), &OS::get_static_memory_usage);
 	ClassDB::bind_method(D_METHOD("get_static_memory_peak_usage"), &OS::get_static_memory_peak_usage);
 	ClassDB::bind_method(D_METHOD("get_memory_info"), &OS::get_memory_info);
+	ClassDB::bind_method(D_METHOD("get_memory_info_struct"), &OS::get_memory_info_struct);
 
 	ClassDB::bind_method(D_METHOD("move_to_trash", "path"), &OS::move_to_trash);
 	ClassDB::bind_method(D_METHOD("get_user_data_dir"), &OS::get_user_data_dir);
@@ -1971,6 +1995,32 @@ Dictionary Engine::get_version_info() const {
 	return ::Engine::get_singleton()->get_version_info();
 }
 
+static Ref<StructLayout> version_info_layout;
+
+void Engine::register_struct_layouts() {
+	version_info_layout = StructDB::add_layout(VersionInfoName, {
+			{ "major", Variant::INT, 0 },
+			{ "minor", Variant::INT, 0 },
+			{ "patch", Variant::INT, 0 },
+			{ "hex", Variant::INT, 0 },
+			{ "status", Variant::STRING, String() },
+			{ "build", Variant::STRING, String() },
+			{ "hash", Variant::STRING, String() },
+			{ "timestamp", Variant::INT, 0 },
+			{ "string", Variant::STRING, String() },
+	});
+}
+
+void Engine::unregister_struct_layouts() {
+	StructDB::remove_layout(VersionInfoName);
+	version_info_layout.unref();
+}
+
+TypedStruct<VersionInfoName> Engine::get_version_info_struct() const {
+	ERR_FAIL_COND_V(version_info_layout.is_null(), Struct());
+	return version_info_layout->instantiate(::Engine::get_singleton()->get_version_info());
+}
+
 Dictionary Engine::get_author_info() const {
 	return ::Engine::get_singleton()->get_author_info();
 }
@@ -2129,6 +2179,7 @@ void Engine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_main_loop"), &Engine::get_main_loop);
 
 	ClassDB::bind_method(D_METHOD("get_version_info"), &Engine::get_version_info);
+	ClassDB::bind_method(D_METHOD("get_version_info_struct"), &Engine::get_version_info_struct);
 	ClassDB::bind_method(D_METHOD("get_author_info"), &Engine::get_author_info);
 	ClassDB::bind_method(D_METHOD("get_copyright_info"), &Engine::get_copyright_info);
 	ClassDB::bind_method(D_METHOD("get_donor_info"), &Engine::get_donor_info);

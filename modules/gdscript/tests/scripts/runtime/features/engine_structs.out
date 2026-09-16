@@ -7,3 +7,8 @@ true true
 false (0.0, 0.0, 0.0)
 1.0 0.75
 2 7 true
+DateTime(year: 1970, month: 1, day: 1, weekday: 4, hour: 0, minute: 0, second: 0, dst: false)
+946684800
+2000-01-01 12:30:00
+6 6
+true true

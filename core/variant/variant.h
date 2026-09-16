@@ -76,6 +76,8 @@ template <typename T>
 class TypedArray;
 template <typename K, typename V>
 class TypedDictionary;
+template <const char *LAYOUT_NAME>
+class TypedStruct;
 
 struct PropertyInfo;
 struct MethodInfo;
@@ -492,6 +494,8 @@ public:
 	_FORCE_INLINE_ operator TypedArray<T>() const { return operator Array(); }
 	template <typename K, typename V>
 	_FORCE_INLINE_ operator TypedDictionary<K, V>() const { return operator Dictionary(); }
+	template <const char *LAYOUT_NAME>
+	_FORCE_INLINE_ operator TypedStruct<LAYOUT_NAME>() const { return operator Struct(); }
 
 	Object *get_validated_object() const;
 	Object *get_validated_object_with_check(bool &r_previously_freed) const;

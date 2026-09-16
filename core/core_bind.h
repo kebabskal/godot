@@ -40,6 +40,10 @@
 #include "core/os/thread.h"
 #include "core/templates/safe_refcount.h"
 #include "core/variant/typed_array.h"
+#include "core/variant/typed_struct.h"
+
+inline constexpr char MemoryInfoName[] = "MemoryInfo";
+inline constexpr char VersionInfoName[] = "VersionInfo";
 
 class MainLoop;
 
@@ -270,6 +274,9 @@ public:
 	uint64_t get_static_memory_usage() const;
 	uint64_t get_static_memory_peak_usage() const;
 	Dictionary get_memory_info() const;
+	TypedStruct<MemoryInfoName> get_memory_info_struct() const;
+	static void register_struct_layouts();
+	static void unregister_struct_layouts();
 
 	void delay_usec(int p_usec) const;
 	void delay_msec(int p_msec) const;
@@ -603,6 +610,9 @@ public:
 	MainLoop *get_main_loop() const;
 
 	Dictionary get_version_info() const;
+	TypedStruct<VersionInfoName> get_version_info_struct() const;
+	static void register_struct_layouts();
+	static void unregister_struct_layouts();
 	Dictionary get_author_info() const;
 	TypedArray<Dictionary> get_copyright_info() const;
 	Dictionary get_donor_info() const;

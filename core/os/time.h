@@ -33,6 +33,12 @@
 #include "core/object/object.h"
 #include "core/os/time_enums.h"
 #include "core/variant/type_info.h"
+#include "core/variant/typed_struct.h"
+
+inline constexpr char DateTimeName[] = "DateTime";
+inline constexpr char DateName[] = "Date";
+inline constexpr char TimeOfDayName[] = "TimeOfDay";
+inline constexpr char TimeZoneInfoName[] = "TimeZoneInfo";
 
 // This Time class conforms with as many of the ISO 8601 standards as possible.
 // * As per ISO 8601:2004 4.3.2.1, all dates follow the Proleptic Gregorian
@@ -51,6 +57,23 @@ class Time : public Object {
 
 public:
 	static Time *get_singleton();
+
+	// The `DateTime`, `Date`, `TimeOfDay` and `TimeZoneInfo` layouts returned by the struct methods.
+	static void register_struct_layouts();
+	static void unregister_struct_layouts();
+
+	// Struct versions of the dictionary methods below. `DateTime` always carries `weekday`; `dst`
+	// is only known when the value comes from the system.
+	TypedStruct<DateTimeName> get_datetime_from_unix_time(int64_t p_unix_time_val) const;
+	TypedStruct<DateName> get_date_from_unix_time(int64_t p_unix_time_val) const;
+	TypedStruct<TimeOfDayName> get_time_from_unix_time(int64_t p_unix_time_val) const;
+	TypedStruct<DateTimeName> get_datetime_from_datetime_string(const String &p_datetime) const;
+	String get_datetime_string_from_datetime(const TypedStruct<DateTimeName> &p_datetime, bool p_use_space = false) const;
+	int64_t get_unix_time_from_datetime(const TypedStruct<DateTimeName> &p_datetime) const;
+	TypedStruct<DateTimeName> get_datetime_from_system(bool p_utc = false) const;
+	TypedStruct<DateName> get_date_from_system(bool p_utc = false) const;
+	TypedStruct<TimeOfDayName> get_time_from_system(bool p_utc = false) const;
+	TypedStruct<TimeZoneInfoName> get_time_zone_info_from_system() const;
 
 	// Methods that convert times.
 	Dictionary get_datetime_dict_from_unix_time(int64_t p_unix_time_val) const;

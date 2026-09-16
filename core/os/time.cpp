@@ -32,6 +32,7 @@
 
 #include "core/object/class_db.h"
 #include "core/os/os.h"
+#include "core/variant/struct_db.h"
 
 #define UNIX_EPOCH_YEAR_AD 1970 // 1970
 #define SECONDS_PER_DAY (24 * 60 * 60) // 86400
@@ -200,6 +201,216 @@ static const uint8_t MONTH_DAYS_TABLE[2][12] = {
 	int hour = p_datetime.has(HOUR_KEY) ? int(p_datetime[HOUR_KEY]) : 0; \
 	int minute = p_datetime.has(MINUTE_KEY) ? int(p_datetime[MINUTE_KEY]) : 0; \
 	int second = p_datetime.has(SECOND_KEY) ? int(p_datetime[SECOND_KEY]) : 0;
+
+// Field order of the struct layouts, matching `register_struct_layouts()`.
+enum {
+	DATETIME_YEAR,
+	DATETIME_MONTH,
+	DATETIME_DAY,
+	DATETIME_WEEKDAY,
+	DATETIME_HOUR,
+	DATETIME_MINUTE,
+	DATETIME_SECOND,
+	DATETIME_DST,
+};
+enum {
+	DATE_YEAR,
+	DATE_MONTH,
+	DATE_DAY,
+	DATE_WEEKDAY,
+};
+enum {
+	TIME_HOUR,
+	TIME_MINUTE,
+	TIME_SECOND,
+};
+enum {
+	TIME_ZONE_BIAS,
+	TIME_ZONE_NAME,
+};
+
+static Ref<StructLayout> datetime_layout;
+static Ref<StructLayout> date_layout;
+static Ref<StructLayout> time_layout;
+static Ref<StructLayout> time_zone_layout;
+
+void Time::register_struct_layouts() {
+	datetime_layout = StructDB::add_layout(DateTimeName, {
+			{ YEAR_KEY, Variant::INT, (int64_t)UNIX_EPOCH_YEAR_AD },
+			{ MONTH_KEY, Variant::INT, 1 },
+			{ DAY_KEY, Variant::INT, 1 },
+			{ WEEKDAY_KEY, Variant::INT, (int)WEEKDAY_THURSDAY },
+			{ HOUR_KEY, Variant::INT, 0 },
+			{ MINUTE_KEY, Variant::INT, 0 },
+			{ SECOND_KEY, Variant::INT, 0 },
+			{ DST_KEY, Variant::BOOL, false },
+	});
+	date_layout = StructDB::add_layout(DateName, {
+			{ YEAR_KEY, Variant::INT, (int64_t)UNIX_EPOCH_YEAR_AD },
+			{ MONTH_KEY, Variant::INT, 1 },
+			{ DAY_KEY, Variant::INT, 1 },
+			{ WEEKDAY_KEY, Variant::INT, (int)WEEKDAY_THURSDAY },
+	});
+	time_layout = StructDB::add_layout(TimeOfDayName, {
+			{ HOUR_KEY, Variant::INT, 0 },
+			{ MINUTE_KEY, Variant::INT, 0 },
+			{ SECOND_KEY, Variant::INT, 0 },
+	});
+	time_zone_layout = StructDB::add_layout(TimeZoneInfoName, {
+			{ "bias", Variant::INT, 0 },
+			{ "name", Variant::STRING, String() },
+	});
+}
+
+void Time::unregister_struct_layouts() {
+	StructDB::remove_layout(DateTimeName);
+	StructDB::remove_layout(DateName);
+	StructDB::remove_layout(TimeOfDayName);
+	StructDB::remove_layout(TimeZoneInfoName);
+	datetime_layout.unref();
+	date_layout.unref();
+	time_layout.unref();
+	time_zone_layout.unref();
+}
+
+// Reads the date and time fields of a struct by name, like `EXTRACT_FROM_DICTIONARY`, so any
+// struct with those fields (a `DateTime`, a `Date`, a user struct) is accepted.
+#define EXTRACT_FROM_STRUCT                                                                   \
+	bool _valid = false;                                                                      \
+	Variant _v;                                                                               \
+	_v = p_datetime.get_field_by_name(YEAR_KEY, &_valid);                                     \
+	int64_t year = _valid ? int64_t(_v) : UNIX_EPOCH_YEAR_AD;                                 \
+	_v = p_datetime.get_field_by_name(MONTH_KEY, &_valid);                                    \
+	Month month = Month(_valid ? int(_v) : 1);                                                \
+	_v = p_datetime.get_field_by_name(DAY_KEY, &_valid);                                      \
+	int day = _valid ? int(_v) : 1;                                                           \
+	_v = p_datetime.get_field_by_name(HOUR_KEY, &_valid);                                     \
+	int hour = _valid ? int(_v) : 0;                                                          \
+	_v = p_datetime.get_field_by_name(MINUTE_KEY, &_valid);                                   \
+	int minute = _valid ? int(_v) : 0;                                                        \
+	_v = p_datetime.get_field_by_name(SECOND_KEY, &_valid);                                   \
+	int second = _valid ? int(_v) : 0;
+
+TypedStruct<DateTimeName> Time::get_datetime_from_unix_time(int64_t p_unix_time_val) const {
+	ERR_FAIL_COND_V(datetime_layout.is_null(), Struct());
+	UNIX_TIME_TO_HMS
+	UNIX_TIME_TO_YMD
+	Struct s = datetime_layout->instantiate();
+	Variant *fields = s.get_fields_ptrw();
+	fields[DATETIME_YEAR] = year;
+	fields[DATETIME_MONTH] = (int)month;
+	fields[DATETIME_DAY] = day;
+	// Unix epoch was a Thursday (day 0 aka 1970-01-01).
+	fields[DATETIME_WEEKDAY] = (int)Math::posmod(day_number + WEEKDAY_THURSDAY, 7);
+	fields[DATETIME_HOUR] = hour;
+	fields[DATETIME_MINUTE] = minute;
+	fields[DATETIME_SECOND] = second;
+	return s;
+}
+
+TypedStruct<DateName> Time::get_date_from_unix_time(int64_t p_unix_time_val) const {
+	ERR_FAIL_COND_V(date_layout.is_null(), Struct());
+	UNIX_TIME_TO_YMD
+	Struct s = date_layout->instantiate();
+	Variant *fields = s.get_fields_ptrw();
+	fields[DATE_YEAR] = year;
+	fields[DATE_MONTH] = (int)month;
+	fields[DATE_DAY] = day;
+	fields[DATE_WEEKDAY] = (int)Math::posmod(day_number + WEEKDAY_THURSDAY, 7);
+	return s;
+}
+
+TypedStruct<TimeOfDayName> Time::get_time_from_unix_time(int64_t p_unix_time_val) const {
+	ERR_FAIL_COND_V(time_layout.is_null(), Struct());
+	UNIX_TIME_TO_HMS
+	Struct s = time_layout->instantiate();
+	Variant *fields = s.get_fields_ptrw();
+	fields[TIME_HOUR] = hour;
+	fields[TIME_MINUTE] = minute;
+	fields[TIME_SECOND] = second;
+	return s;
+}
+
+TypedStruct<DateTimeName> Time::get_datetime_from_datetime_string(const String &p_datetime) const {
+	ERR_FAIL_COND_V(datetime_layout.is_null(), Struct());
+	PARSE_ISO8601_STRING(Struct())
+	YMD_TO_DAY_NUMBER
+	Struct s = datetime_layout->instantiate();
+	Variant *fields = s.get_fields_ptrw();
+	fields[DATETIME_YEAR] = year;
+	fields[DATETIME_MONTH] = (int)month;
+	fields[DATETIME_DAY] = day;
+	fields[DATETIME_WEEKDAY] = (int)Math::posmod(day_number + WEEKDAY_THURSDAY, 7);
+	fields[DATETIME_HOUR] = hour;
+	fields[DATETIME_MINUTE] = minute;
+	fields[DATETIME_SECOND] = second;
+	return s;
+}
+
+String Time::get_datetime_string_from_datetime(const TypedStruct<DateTimeName> &p_datetime, bool p_use_space) const {
+	ERR_FAIL_COND_V_MSG(p_datetime.is_null(), "", "Invalid datetime struct: it has no layout.");
+	EXTRACT_FROM_STRUCT
+	VALIDATE_YMDHMS("")
+	const String format_string = p_use_space ? "%04d-%02d-%02d %02d:%02d:%02d" : "%04d-%02d-%02dT%02d:%02d:%02d";
+	return vformat(format_string, year, (uint8_t)month, day, hour, minute, second);
+}
+
+int64_t Time::get_unix_time_from_datetime(const TypedStruct<DateTimeName> &p_datetime) const {
+	ERR_FAIL_COND_V_MSG(p_datetime.is_null(), 0, "Invalid datetime struct: it has no layout.");
+	EXTRACT_FROM_STRUCT
+	VALIDATE_YMDHMS(0)
+	YMD_TO_DAY_NUMBER
+	return day_number * SECONDS_PER_DAY + hour * 3600 + minute * 60 + second;
+}
+
+TypedStruct<DateTimeName> Time::get_datetime_from_system(bool p_utc) const {
+	ERR_FAIL_COND_V(datetime_layout.is_null(), Struct());
+	OS::DateTime dt = OS::get_singleton()->get_datetime(p_utc);
+	Struct s = datetime_layout->instantiate();
+	Variant *fields = s.get_fields_ptrw();
+	fields[DATETIME_YEAR] = dt.year;
+	fields[DATETIME_MONTH] = (int)dt.month;
+	fields[DATETIME_DAY] = dt.day;
+	fields[DATETIME_WEEKDAY] = (int)dt.weekday;
+	fields[DATETIME_HOUR] = dt.hour;
+	fields[DATETIME_MINUTE] = dt.minute;
+	fields[DATETIME_SECOND] = dt.second;
+	fields[DATETIME_DST] = dt.dst;
+	return s;
+}
+
+TypedStruct<DateName> Time::get_date_from_system(bool p_utc) const {
+	ERR_FAIL_COND_V(date_layout.is_null(), Struct());
+	OS::DateTime dt = OS::get_singleton()->get_datetime(p_utc);
+	Struct s = date_layout->instantiate();
+	Variant *fields = s.get_fields_ptrw();
+	fields[DATE_YEAR] = dt.year;
+	fields[DATE_MONTH] = (int)dt.month;
+	fields[DATE_DAY] = dt.day;
+	fields[DATE_WEEKDAY] = (int)dt.weekday;
+	return s;
+}
+
+TypedStruct<TimeOfDayName> Time::get_time_from_system(bool p_utc) const {
+	ERR_FAIL_COND_V(time_layout.is_null(), Struct());
+	OS::DateTime dt = OS::get_singleton()->get_datetime(p_utc);
+	Struct s = time_layout->instantiate();
+	Variant *fields = s.get_fields_ptrw();
+	fields[TIME_HOUR] = dt.hour;
+	fields[TIME_MINUTE] = dt.minute;
+	fields[TIME_SECOND] = dt.second;
+	return s;
+}
+
+TypedStruct<TimeZoneInfoName> Time::get_time_zone_info_from_system() const {
+	ERR_FAIL_COND_V(time_zone_layout.is_null(), Struct());
+	OS::TimeZoneInfo info = OS::get_singleton()->get_time_zone_info();
+	Struct s = time_zone_layout->instantiate();
+	Variant *fields = s.get_fields_ptrw();
+	fields[TIME_ZONE_BIAS] = info.bias;
+	fields[TIME_ZONE_NAME] = info.name;
+	return s;
+}
 
 Time *Time::singleton = nullptr;
 
@@ -409,6 +620,17 @@ void Time::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_date_string_from_system", "utc"), &Time::get_date_string_from_system, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_time_string_from_system", "utc"), &Time::get_time_string_from_system, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_time_zone_from_system"), &Time::get_time_zone_from_system);
+
+	ClassDB::bind_method(D_METHOD("get_datetime_from_unix_time", "unix_time_val"), &Time::get_datetime_from_unix_time);
+	ClassDB::bind_method(D_METHOD("get_date_from_unix_time", "unix_time_val"), &Time::get_date_from_unix_time);
+	ClassDB::bind_method(D_METHOD("get_time_from_unix_time", "unix_time_val"), &Time::get_time_from_unix_time);
+	ClassDB::bind_method(D_METHOD("get_datetime_from_datetime_string", "datetime"), &Time::get_datetime_from_datetime_string);
+	ClassDB::bind_method(D_METHOD("get_datetime_string_from_datetime", "datetime", "use_space"), &Time::get_datetime_string_from_datetime, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_unix_time_from_datetime", "datetime"), &Time::get_unix_time_from_datetime);
+	ClassDB::bind_method(D_METHOD("get_datetime_from_system", "utc"), &Time::get_datetime_from_system, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_date_from_system", "utc"), &Time::get_date_from_system, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_time_from_system", "utc"), &Time::get_time_from_system, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_time_zone_info_from_system"), &Time::get_time_zone_info_from_system);
 	ClassDB::bind_method(D_METHOD("get_unix_time_from_system"), &Time::get_unix_time_from_system);
 	ClassDB::bind_method(D_METHOD("get_ticks_msec"), &Time::get_ticks_msec);
 	ClassDB::bind_method(D_METHOD("get_ticks_usec"), &Time::get_ticks_usec);

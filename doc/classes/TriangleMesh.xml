@@ -40,6 +40,14 @@
 				See also [method intersect_segment], which is similar but uses a finite-length segment.
 			</description>
 		</method>
+		<method name="intersect_ray_struct" qualifiers="const">
+			<return type="Struct" />
+			<param index="0" name="begin" type="Vector3" />
+			<param index="1" name="dir" type="Vector3" />
+			<description>
+				Tests for intersection with a ray starting at [param begin] and facing [param dir], like [method intersect_ray], but returns a [Struct] with the engine layout [code]TriangleMeshHit[/code] instead of a dictionary. The fields are [code]hit[/code] ([code]false[/code] when nothing was hit, in which case the other fields keep their defaults), [code]position[/code], [code]normal[/code] and [code]face_index[/code].
+			</description>
+		</method>
 		<method name="intersect_segment" qualifiers="const">
 			<return type="Dictionary" />
 			<param index="0" name="begin" type="Vector3" />
@@ -52,6 +60,14 @@
 				[code]face_index[/code]: The index of the intersected triangle.
 				Returns an empty [Dictionary] if no intersection happens.
 				See also [method intersect_ray], which is similar but uses an infinite-length ray.
+			</description>
+		</method>
+		<method name="intersect_segment_struct" qualifiers="const">
+			<return type="Struct" />
+			<param index="0" name="begin" type="Vector3" />
+			<param index="1" name="end" type="Vector3" />
+			<description>
+				Tests for intersection with a segment going from [param begin] to [param end], like [method intersect_segment], but returns a [Struct] with the engine layout [code]TriangleMeshHit[/code] instead of a dictionary. The fields are [code]hit[/code] ([code]false[/code] when nothing was hit, in which case the other fields keep their defaults), [code]position[/code], [code]normal[/code] and [code]face_index[/code].
 			</description>
 		</method>
 	</methods>

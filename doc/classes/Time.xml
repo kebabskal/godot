@@ -28,6 +28,22 @@
 				Converts the given Unix timestamp to a dictionary of keys: [code]year[/code], [code]month[/code], [code]day[/code], and [code]weekday[/code].
 			</description>
 		</method>
+		<method name="get_date_from_system" qualifiers="const">
+			<return type="Struct" />
+			<param index="0" name="utc" type="bool" default="false" />
+			<description>
+				Returns the current date as a [Struct] with the engine layout [code]Date[/code], like [method get_date_dict_from_system]. The fields are [code]year[/code], [code]month[/code], [code]day[/code] and [code]weekday[/code].
+				The returned values are in the system's local time when [param utc] is [code]false[/code], otherwise they are in UTC.
+			</description>
+		</method>
+		<method name="get_date_from_unix_time" qualifiers="const">
+			<return type="Struct" />
+			<param index="0" name="unix_time_val" type="int" />
+			<description>
+				Converts the given Unix timestamp to a [Struct] with the engine layout [code]Date[/code], like [method get_date_dict_from_unix_time]. The fields are [code]year[/code], [code]month[/code], [code]day[/code] and [code]weekday[/code].
+				The returned value is in UTC.
+			</description>
+		</method>
 		<method name="get_date_string_from_system" qualifiers="const">
 			<return type="String" />
 			<param index="0" name="utc" type="bool" default="false" />
@@ -66,6 +82,39 @@
 			<description>
 				Converts the given Unix timestamp to a dictionary of keys: [code]year[/code], [code]month[/code], [code]day[/code], [code]weekday[/code], [code]hour[/code], [code]minute[/code], and [code]second[/code].
 				The returned Dictionary's values will be the same as the [method get_datetime_dict_from_system] if the Unix timestamp is the current time, with the exception of Daylight Savings Time as it cannot be determined from the epoch.
+			</description>
+		</method>
+		<method name="get_datetime_from_datetime_string" qualifiers="const">
+			<return type="Struct" />
+			<param index="0" name="datetime" type="String" />
+			<description>
+				Converts the given ISO 8601 date and time string (YYYY-MM-DDTHH:MM:SS) to a [Struct] with the engine layout [code]DateTime[/code], like [method get_datetime_dict_from_datetime_string], except that [code]weekday[/code] is always computed. The fields of [code]DateTime[/code] are [code]year[/code], [code]month[/code] (see [enum Month]), [code]day[/code], [code]weekday[/code] (see [enum Weekday]), [code]hour[/code], [code]minute[/code], [code]second[/code] and [code]dst[/code] (daylight saving time, only meaningful for values from the system).
+				[b]Note:[/b] Any decimal fraction in the time string will be ignored silently.
+			</description>
+		</method>
+		<method name="get_datetime_from_system" qualifiers="const">
+			<return type="Struct" />
+			<param index="0" name="utc" type="bool" default="false" />
+			<description>
+				Returns the current date as a [Struct] with the engine layout [code]DateTime[/code], like [method get_datetime_dict_from_system]. The fields of [code]DateTime[/code] are [code]year[/code], [code]month[/code] (see [enum Month]), [code]day[/code], [code]weekday[/code] (see [enum Weekday]), [code]hour[/code], [code]minute[/code], [code]second[/code] and [code]dst[/code] (daylight saving time, only meaningful for values from the system).
+				The returned values are in the system's local time when [param utc] is [code]false[/code], otherwise they are in UTC.
+			</description>
+		</method>
+		<method name="get_datetime_from_unix_time" qualifiers="const">
+			<return type="Struct" />
+			<param index="0" name="unix_time_val" type="int" />
+			<description>
+				Converts the given Unix timestamp to a [Struct] with the engine layout [code]DateTime[/code], like [method get_datetime_dict_from_unix_time]. The fields of [code]DateTime[/code] are [code]year[/code], [code]month[/code] (see [enum Month]), [code]day[/code], [code]weekday[/code] (see [enum Weekday]), [code]hour[/code], [code]minute[/code], [code]second[/code] and [code]dst[/code] (daylight saving time, only meaningful for values from the system).
+				The returned value is in UTC.
+			</description>
+		</method>
+		<method name="get_datetime_string_from_datetime" qualifiers="const">
+			<return type="String" />
+			<param index="0" name="datetime" type="Struct" />
+			<param index="1" name="use_space" type="bool" default="false" />
+			<description>
+				Converts the given [code]DateTime[/code] struct to an ISO 8601 date and time string (YYYY-MM-DDTHH:MM:SS), like [method get_datetime_string_from_datetime_dict]. Any struct with [code]year[/code], [code]month[/code], [code]day[/code], [code]hour[/code], [code]minute[/code] and [code]second[/code] fields is accepted; a missing field takes its Unix epoch value.
+				If [param use_space] is [code]true[/code], the date and time bits are separated by an empty space character instead of the letter T.
 			</description>
 		</method>
 		<method name="get_datetime_string_from_datetime_dict" qualifiers="const">
@@ -134,6 +183,22 @@
 				Converts the given time to a dictionary of keys: [code]hour[/code], [code]minute[/code], and [code]second[/code].
 			</description>
 		</method>
+		<method name="get_time_from_system" qualifiers="const">
+			<return type="Struct" />
+			<param index="0" name="utc" type="bool" default="false" />
+			<description>
+				Returns the current time as a [Struct] with the engine layout [code]TimeOfDay[/code], like [method get_time_dict_from_system]. The fields are [code]hour[/code], [code]minute[/code] and [code]second[/code].
+				The returned values are in the system's local time when [param utc] is [code]false[/code], otherwise they are in UTC.
+			</description>
+		</method>
+		<method name="get_time_from_unix_time" qualifiers="const">
+			<return type="Struct" />
+			<param index="0" name="unix_time_val" type="int" />
+			<description>
+				Converts the given time since Unix epoch to a [Struct] with the engine layout [code]TimeOfDay[/code], like [method get_time_dict_from_unix_time]. The fields are [code]hour[/code], [code]minute[/code] and [code]second[/code].
+				The returned value is in UTC.
+			</description>
+		</method>
 		<method name="get_time_string_from_system" qualifiers="const">
 			<return type="String" />
 			<param index="0" name="utc" type="bool" default="false" />
@@ -155,6 +220,20 @@
 				Returns the current time zone as a dictionary of keys: [code]bias[/code] and [code]name[/code].
 				- [code]bias[/code] is the offset from UTC in minutes, since not all time zones are multiples of an hour from UTC.
 				- [code]name[/code] is the localized name of the time zone, according to the OS locale settings of the current user.
+			</description>
+		</method>
+		<method name="get_time_zone_info_from_system" qualifiers="const">
+			<return type="Struct" />
+			<description>
+				Returns the current time zone as a [Struct] with the engine layout [code]TimeZoneInfo[/code], like [method get_time_zone_from_system]. The fields are [code]bias[/code] (the offset from UTC in minutes, since the actual offset is negative for time zones west of UTC) and [code]name[/code] (the localized name of the time zone).
+			</description>
+		</method>
+		<method name="get_unix_time_from_datetime" qualifiers="const">
+			<return type="int" />
+			<param index="0" name="datetime" type="Struct" />
+			<description>
+				Converts a [code]DateTime[/code] struct to a Unix timestamp, like [method get_unix_time_from_datetime_dict]. Any struct with [code]year[/code], [code]month[/code], [code]day[/code], [code]hour[/code], [code]minute[/code] and [code]second[/code] fields is accepted; a missing field takes its Unix epoch value. The struct is assumed to be in UTC.
+				[b]Note:[/b] Unix timestamps are often in UTC. This method does not do any timezone conversion, so the timestamp will be in the same timezone as the given struct.
 			</description>
 		</method>
 		<method name="get_unix_time_from_datetime_dict" qualifiers="const">

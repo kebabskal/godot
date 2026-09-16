@@ -122,6 +122,10 @@ public:
 	Struct instantiate() const;
 	// A value with the leading fields set from positional arguments and the rest at their defaults.
 	Struct instantiate(const Variant **p_args, int p_argcount, Callable::CallError &r_error) const;
+	// A value with the fields named in `p_values` set from it (converted like an assignment; a value
+	// that cannot be accepted keeps the default) and the rest at their defaults. Unknown keys are
+	// ignored. For engine code that still builds a `Dictionary` internally.
+	Struct instantiate(const Dictionary &p_values) const;
 
 	// Registry of layouts by name. Engine layouts register at startup; script layouts register under a
 	// qualified name when their script compiles. Serialized values are resolved through it.

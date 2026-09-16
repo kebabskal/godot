@@ -32,6 +32,9 @@
 
 #include "core/math/face3.h"
 #include "core/object/ref_counted.h"
+#include "core/variant/typed_struct.h"
+
+inline constexpr char TriangleMeshHitName[] = "TriangleMeshHit";
 
 class TriangleMesh : public RefCounted {
 	GDCLASS(TriangleMesh, RefCounted);
@@ -101,6 +104,12 @@ public:
 	bool create_from_faces(const Vector<Vector3> &p_faces);
 	Dictionary intersect_segment_scriptwrap(const Vector3 &p_begin, const Vector3 &p_end) const;
 	Dictionary intersect_ray_scriptwrap(const Vector3 &p_begin, const Vector3 &p_dir) const;
+	TypedStruct<TriangleMeshHitName> intersect_segment_struct(const Vector3 &p_begin, const Vector3 &p_end) const;
+	TypedStruct<TriangleMeshHitName> intersect_ray_struct(const Vector3 &p_begin, const Vector3 &p_dir) const;
+
+	// The `TriangleMeshHit` layout returned by the struct queries.
+	static void register_struct_layouts();
+	static void unregister_struct_layouts();
 	Vector<Vector3> get_faces_scriptwrap() const;
 
 	TriangleMesh();

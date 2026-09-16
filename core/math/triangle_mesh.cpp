@@ -32,6 +32,7 @@
 
 #include "core/object/class_db.h"
 #include "core/templates/sort_array.h"
+#include "core/variant/struct_db.h"
 
 int TriangleMesh::_create_bvh(BVH *p_bvh, BVH **p_bb, int p_from, int p_size, int p_depth, int &r_max_depth, int &r_max_alloc) {
 	if (p_depth > r_max_depth) {
@@ -535,6 +536,60 @@ bool TriangleMesh::create_from_faces(const Vector<Vector3> &p_faces) {
 	return is_valid();
 }
 
+// `TriangleMeshHit`: field order, matching `register_struct_layouts()`.
+enum {
+	HIT_HIT,
+	HIT_POSITION,
+	HIT_NORMAL,
+	HIT_FACE_INDEX,
+};
+
+static Ref<StructLayout> hit_layout;
+
+void TriangleMesh::register_struct_layouts() {
+	hit_layout = StructDB::add_layout(TriangleMeshHitName, {
+			{ "hit", Variant::BOOL, false },
+			{ "position", Variant::VECTOR3, Vector3() },
+			{ "normal", Variant::VECTOR3, Vector3() },
+			{ "face_index", Variant::INT, -1 },
+	});
+}
+
+void TriangleMesh::unregister_struct_layouts() {
+	StructDB::remove_layout(TriangleMeshHitName);
+	hit_layout.unref();
+}
+
+static Struct _make_hit(bool p_hit, const Vector3 &p_point, const Vector3 &p_normal, int32_t p_face_index) {
+	Struct s = hit_layout->instantiate();
+	if (p_hit) {
+		Variant *fields = s.get_fields_ptrw();
+		fields[HIT_HIT] = true;
+		fields[HIT_POSITION] = p_point;
+		fields[HIT_NORMAL] = p_normal;
+		fields[HIT_FACE_INDEX] = p_face_index;
+	}
+	return s;
+}
+
+TypedStruct<TriangleMeshHitName> TriangleMesh::intersect_segment_struct(const Vector3 &p_begin, const Vector3 &p_end) const {
+	ERR_FAIL_COND_V(hit_layout.is_null(), Struct());
+	Vector3 r_point;
+	Vector3 r_normal;
+	int32_t r_face_index = -1;
+	const bool intersected = valid && intersect_segment(p_begin, p_end, r_point, r_normal, nullptr, &r_face_index);
+	return _make_hit(intersected, r_point, r_normal, r_face_index);
+}
+
+TypedStruct<TriangleMeshHitName> TriangleMesh::intersect_ray_struct(const Vector3 &p_begin, const Vector3 &p_dir) const {
+	ERR_FAIL_COND_V(hit_layout.is_null(), Struct());
+	Vector3 r_point;
+	Vector3 r_normal;
+	int32_t r_face_index = -1;
+	const bool intersected = valid && intersect_ray(p_begin, p_dir, r_point, r_normal, nullptr, &r_face_index);
+	return _make_hit(intersected, r_point, r_normal, r_face_index);
+}
+
 Dictionary TriangleMesh::intersect_segment_scriptwrap(const Vector3 &p_begin, const Vector3 &p_end) const {
 	if (!valid) {
 		return Dictionary();
@@ -607,6 +662,8 @@ void TriangleMesh::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("intersect_segment", "begin", "end"), &TriangleMesh::intersect_segment_scriptwrap);
 	ClassDB::bind_method(D_METHOD("intersect_ray", "begin", "dir"), &TriangleMesh::intersect_ray_scriptwrap);
+	ClassDB::bind_method(D_METHOD("intersect_segment_struct", "begin", "end"), &TriangleMesh::intersect_segment_struct);
+	ClassDB::bind_method(D_METHOD("intersect_ray_struct", "begin", "dir"), &TriangleMesh::intersect_ray_struct);
 }
 
 TriangleMesh::TriangleMesh() {

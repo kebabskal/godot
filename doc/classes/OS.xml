@@ -367,6 +367,12 @@
 				[b]Note:[/b] Each entry's value may be [code]-1[/code] if it is unknown.
 			</description>
 		</method>
+		<method name="get_memory_info_struct" qualifiers="const">
+			<return type="Struct" />
+			<description>
+				Returns the current memory usage as a [Struct] with the engine layout [code]MemoryInfo[/code], like [method get_memory_info]. The fields are [code]physical[/code], [code]free[/code], [code]available[/code] and [code]stack[/code], in bytes; a value the platform cannot provide is [code]-1[/code].
+			</description>
+		</method>
 		<method name="get_model_name" qualifiers="const">
 			<return type="String" />
 			<description>

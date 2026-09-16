@@ -200,6 +200,12 @@
 				[/codeblocks]
 			</description>
 		</method>
+		<method name="get_version_info_struct" qualifiers="const">
+			<return type="Struct" />
+			<description>
+				Returns the engine version as a [Struct] with the engine layout [code]VersionInfo[/code], like [method get_version_info]. The fields are [code]major[/code], [code]minor[/code], [code]patch[/code], [code]hex[/code], [code]status[/code], [code]build[/code], [code]hash[/code], [code]timestamp[/code] and [code]string[/code]. In GDScript the value can be declared as [code]var version: VersionInfo = Engine.get_version_info_struct()[/code].
+			</description>
+		</method>
 		<method name="get_write_movie_path" qualifiers="const">
 			<return type="String" />
 			<description>

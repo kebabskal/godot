@@ -435,6 +435,20 @@ const Callable &StructLayout::get_operator(Variant::Operator p_op) const {
 	return callable != nullptr ? *callable : invalid;
 }
 
+Struct StructLayout::instantiate(const Dictionary &p_values) const {
+	Struct s = instantiate();
+	for (const KeyValue<Variant, Variant> &E : p_values) {
+		if (E.key.get_type() != Variant::STRING && E.key.get_type() != Variant::STRING_NAME) {
+			continue;
+		}
+		const int index = find_field(E.key);
+		if (index >= 0) {
+			s.set_field(index, E.value);
+		}
+	}
+	return s;
+}
+
 void StructLayout::clear_methods() {
 	methods.clear();
 	method_index.clear();
