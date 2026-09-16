@@ -30,6 +30,7 @@
 
 #include "marshalls.h"
 
+#include "core/variant/struct_layout.h"
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
 #include "core/object/ref_counted.h"
@@ -764,6 +765,35 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 		} break;
 		case Variant::CALLABLE: {
 			r_variant = Callable();
+		} break;
+		case Variant::STRUCT: {
+			String name;
+			RETURN_IF_ERROR(_decode_string(buf, len, r_len, name));
+			ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
+			int32_t count = decode_uint32(buf);
+			buf += 4;
+			len -= 4;
+			if (r_len) {
+				(*r_len) += 4;
+			}
+			const Ref<StructLayout> layout = StructLayout::find_layout(name);
+			ERR_FAIL_COND_V_MSG(layout.is_null(), ERR_INVALID_DATA, "Unknown struct type \"" + name + "\".");
+			Struct s = layout->instantiate();
+			for (int32_t i = 0; i < count; i++) {
+				Variant value;
+				int used;
+				Error err = decode_variant(value, buf, len, &used, p_allow_objects, p_depth + 1);
+				ERR_FAIL_COND_V_MSG(err != OK, err, "Error when trying to decode Variant.");
+				buf += used;
+				len -= used;
+				if (r_len) {
+					(*r_len) += used;
+				}
+				if (i < s.get_field_count()) {
+					s.set_field(i, value);
+				}
+			}
+			r_variant = s;
 		} break;
 		case Variant::SIGNAL: {
 			String name;
@@ -1779,6 +1809,25 @@ Error encode_variant(const Variant &p_variant, uint8_t *p_buffer, int &r_len, bo
 
 		} break;
 		case Variant::CALLABLE: {
+		} break;
+		case Variant::STRUCT: {
+			const Struct s = p_variant;
+			_encode_string(s.get_struct_name(), buf, r_len);
+			if (buf) {
+				encode_uint32(uint32_t(s.get_field_count()), buf);
+				buf += 4;
+			}
+			r_len += 4;
+			for (int i = 0; i < s.get_field_count(); i++) {
+				int len;
+				Error err = encode_variant(s.get_field(i), buf, len, p_full_objects, p_depth + 1);
+				ERR_FAIL_COND_V(err, err);
+				ERR_FAIL_COND_V(len % 4, ERR_BUG);
+				r_len += len;
+				if (buf) {
+					buf += len;
+				}
+			}
 		} break;
 		case Variant::SIGNAL: {
 			Signal signal = p_variant;

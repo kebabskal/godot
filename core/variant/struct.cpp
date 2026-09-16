@@ -30,6 +30,7 @@
 
 #include "struct.h"
 
+#include "core/os/mutex.h"
 #include "core/templates/hashfuncs.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/safe_refcount.h"
@@ -382,6 +383,43 @@ Struct StructLayout::instantiate(const Variant **p_args, int p_argcount, Callabl
 		}
 	}
 	return result;
+}
+
+static HashMap<StringName, Ref<StructLayout>> *struct_layout_registry = nullptr;
+static Mutex struct_layout_registry_mutex;
+
+void StructLayout::register_layout(const Ref<StructLayout> &p_layout) {
+	ERR_FAIL_COND(p_layout.is_null());
+	ERR_FAIL_COND_MSG(p_layout->name == StringName(), "A struct layout needs a name to be registered.");
+	MutexLock lock(struct_layout_registry_mutex);
+	if (struct_layout_registry == nullptr) {
+		struct_layout_registry = memnew((HashMap<StringName, Ref<StructLayout>>));
+	}
+	(*struct_layout_registry)[p_layout->name] = p_layout;
+}
+
+void StructLayout::unregister_layout(const StringName &p_name) {
+	MutexLock lock(struct_layout_registry_mutex);
+	if (struct_layout_registry != nullptr) {
+		struct_layout_registry->erase(p_name);
+	}
+}
+
+Ref<StructLayout> StructLayout::find_layout(const StringName &p_name) {
+	MutexLock lock(struct_layout_registry_mutex);
+	if (struct_layout_registry == nullptr) {
+		return Ref<StructLayout>();
+	}
+	const Ref<StructLayout> *layout = struct_layout_registry->getptr(p_name);
+	return layout != nullptr ? *layout : Ref<StructLayout>();
+}
+
+void StructLayout::cleanup() {
+	MutexLock lock(struct_layout_registry_mutex);
+	if (struct_layout_registry != nullptr) {
+		memdelete(struct_layout_registry);
+		struct_layout_registry = nullptr;
+	}
 }
 
 void StructLayout::_bind_methods() {

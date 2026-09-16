@@ -33,9 +33,12 @@
 
 TEST_FORCE_LINK(test_struct)
 
+#include "core/io/json.h"
+#include "core/io/marshalls.h"
 #include "core/variant/struct.h"
 #include "core/variant/struct_layout.h"
 #include "core/variant/variant.h"
+#include "core/variant/variant_parser.h"
 
 namespace TestStruct {
 
@@ -237,6 +240,103 @@ TEST_CASE("[Struct] Variant integration") {
 	CHECK(empty.get_type() == Variant::STRUCT);
 	CHECK(empty.operator Struct().is_null());
 	CHECK(empty.is_zero());
+}
+
+TEST_CASE("[Struct] Registry") {
+	Ref<StructLayout> layout = make_point_layout();
+	CHECK(StructLayout::find_layout("Point").is_null());
+	StructLayout::register_layout(layout);
+	CHECK(StructLayout::find_layout("Point") == layout);
+	StructLayout::unregister_layout("Point");
+	CHECK(StructLayout::find_layout("Point").is_null());
+	ERR_PRINT_OFF;
+	StructLayout::register_layout(Ref<StructLayout>()); // Refused, no crash.
+	ERR_PRINT_ON;
+}
+
+// Serialization resolves layouts by name, so these register the layout for the duration of the test.
+struct RegisteredPoint {
+	Ref<StructLayout> layout = make_point_layout();
+	RegisteredPoint() { StructLayout::register_layout(layout); }
+	~RegisteredPoint() { StructLayout::unregister_layout("Point"); }
+};
+
+TEST_CASE("[Struct] Text serialization") {
+	RegisteredPoint registered;
+	Struct p = registered.layout->instantiate();
+	CHECK(p.set_field(0, 1.5));
+	CHECK(p.set_field(2, "moved"));
+
+	String text;
+	CHECK(VariantWriter::write_to_string(p, text) == OK);
+	CHECK(text.begins_with("Struct(\"Point\", {"));
+	CHECK(text.ends_with("})"));
+	CHECK(text.contains("\"x\": 1.5"));
+	CHECK(text.contains("\"label\": \"moved\""));
+
+	VariantParser::StreamString stream;
+	stream.s = text;
+	Variant parsed;
+	String err_str;
+	int err_line = 0;
+	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) == OK);
+	CHECK(parsed.get_type() == Variant::STRUCT);
+	CHECK(parsed.operator Struct() == p);
+
+	// Missing fields keep their defaults; an unknown type or field is an error; the null struct round-trips.
+	stream = VariantParser::StreamString();
+	stream.s = "Struct(\"Point\", {\"y\": 2.0})";
+	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) == OK);
+	CHECK(parsed.operator Struct().get_field(1) == Variant(2.0));
+	CHECK(parsed.operator Struct().get_field(2) == Variant("origin"));
+	stream = VariantParser::StreamString();
+	stream.s = "Struct(\"Nope\", {})";
+	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) != OK);
+	stream = VariantParser::StreamString();
+	stream.s = "Struct(\"Point\", {\"nope\": 1})";
+	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) != OK);
+	stream = VariantParser::StreamString();
+	stream.s = "Struct()";
+	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) == OK);
+	CHECK(parsed.get_type() == Variant::STRUCT);
+	CHECK(parsed.operator Struct().is_null());
+	String null_text;
+	CHECK(VariantWriter::write_to_string(Struct(), null_text) == OK);
+	CHECK(null_text == "Struct()");
+}
+
+TEST_CASE("[Struct] Binary serialization") {
+	RegisteredPoint registered;
+	Struct p = registered.layout->instantiate();
+	CHECK(p.set_field(1, 4.25));
+	CHECK(p.set_field(2, "binary"));
+	Variant v = p;
+
+	int len = 0;
+	CHECK(encode_variant(v, nullptr, len) == OK);
+	Vector<uint8_t> buffer;
+	buffer.resize(len);
+	CHECK(encode_variant(v, buffer.ptrw(), len) == OK);
+
+	Variant decoded;
+	int used = 0;
+	CHECK(decode_variant(decoded, buffer.ptr(), buffer.size(), &used) == OK);
+	CHECK(used == len);
+	CHECK(decoded.get_type() == Variant::STRUCT);
+	CHECK(decoded == v);
+}
+
+TEST_CASE("[Struct] JSON serialization") {
+	RegisteredPoint registered;
+	Struct p = registered.layout->instantiate();
+	CHECK(p.set_field(0, 7.0));
+	Variant json = JSON::from_native(p);
+	CHECK(json.get_type() == Variant::DICTIONARY);
+	CHECK(Dictionary(json)["type"] == Variant("Struct"));
+	CHECK(Dictionary(json)["name"] == Variant("Point"));
+	Variant back = JSON::to_native(json);
+	CHECK(back.get_type() == Variant::STRUCT);
+	CHECK(back == Variant(p));
 }
 
 } // namespace TestStruct

@@ -30,6 +30,7 @@
 
 #include "resource_format_binary.h"
 
+#include "core/variant/struct_layout.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access_compressed.h"
@@ -87,6 +88,7 @@ enum {
 	VARIANT_VECTOR4I = 51,
 	VARIANT_PROJECTION = 52,
 	VARIANT_PACKED_VECTOR4_ARRAY = 53,
+	VARIANT_STRUCT = 54,
 	OBJECT_EMPTY = 0,
 	OBJECT_EXTERNAL_RESOURCE = 1,
 	OBJECT_INTERNAL_RESOURCE = 2,
@@ -96,7 +98,8 @@ enum {
 	// Version 4: New string ID for ext/subresources, breaks forward compat.
 	// Version 5: Ability to store script class in the header.
 	// Version 6: Added PackedVector4Array Variant type.
-	FORMAT_VERSION = 6,
+	// Version 7: Added Struct Variant type.
+	FORMAT_VERSION = 7,
 	FORMAT_VERSION_CAN_RENAME_DEPS = 1,
 	FORMAT_VERSION_NO_NODEPATH_PROPERTY = 3,
 };
@@ -462,6 +465,22 @@ Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
 			r_v = Signal();
 		} break;
 
+		case VARIANT_STRUCT: {
+			const String name = get_unicode_string();
+			const uint32_t count = f->get_32();
+			const Ref<StructLayout> layout = StructLayout::find_layout(name);
+			ERR_FAIL_COND_V_MSG(layout.is_null(), ERR_FILE_CORRUPT, "Unknown struct type \"" + name + "\".");
+			Struct s = layout->instantiate();
+			for (uint32_t i = 0; i < count; i++) {
+				Variant value;
+				Error err = parse_variant(value);
+				ERR_FAIL_COND_V_MSG(err, ERR_FILE_CORRUPT, "Error when trying to parse Variant.");
+				if (i < (uint32_t)s.get_field_count()) {
+					s.set_field(i, value);
+				}
+			}
+			r_v = s;
+		} break;
 		case VARIANT_DICTIONARY: {
 			uint32_t len = f->get_32();
 			Dictionary d; //last bit means shared
@@ -1836,6 +1855,15 @@ void ResourceFormatSaverBinaryInstance::write_variant(Ref<FileAccess> r_file, co
 			WARN_PRINT("Can't save Signals.");
 		} break;
 
+		case Variant::STRUCT: {
+			r_file->store_32(VARIANT_STRUCT);
+			const Struct s = p_property;
+			save_unicode_string(r_file, s.get_struct_name());
+			r_file->store_32(uint32_t(s.get_field_count()));
+			for (int i = 0; i < s.get_field_count(); i++) {
+				write_variant(r_file, s.get_field(i), r_resource_map, r_external_resources, r_string_map);
+			}
+		} break;
 		case Variant::DICTIONARY: {
 			r_file->store_32(VARIANT_DICTIONARY);
 			Dictionary d = p_property;
@@ -2044,6 +2072,12 @@ void ResourceFormatSaverBinaryInstance::_find_resources(const Variant &p_variant
 
 		} break;
 
+		case Variant::STRUCT: {
+			const Struct s = p_variant;
+			for (int i = 0; i < s.get_field_count(); i++) {
+				_find_resources(s.get_field(i));
+			}
+		} break;
 		case Variant::DICTIONARY: {
 			Dictionary d = p_variant;
 			_find_resources(d.get_typed_key_script());

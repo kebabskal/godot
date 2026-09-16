@@ -422,6 +422,7 @@ void unregister_core_extensions() {
 }
 
 void unregister_core_types() {
+	StructLayout::cleanup();
 	OS::get_singleton()->benchmark_begin_measure("Core", "Unregister Types");
 
 	// Destroy singletons in reverse order to ensure dependencies are not broken.

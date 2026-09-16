@@ -30,6 +30,7 @@
 
 #include "json.h"
 
+#include "core/variant/struct_layout.h"
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
@@ -681,6 +682,20 @@ Variant JSON::_from_native(const Variant &p_variant, bool p_full_objects, int p_
 			return ret;
 		} break;
 
+		case Variant::STRUCT: {
+			const Struct s = p_variant;
+			Dictionary ret;
+			ret[TYPE] = Variant::get_type_name(p_variant.get_type());
+			ret["name"] = String(s.get_struct_name());
+			Array args;
+			ret[ARGS] = args;
+			ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ret, "Variant is too deep. Bailing.");
+			for (int i = 0; i < s.get_field_count(); i++) {
+				args.push_back(_from_native(s.get_field(i), p_full_objects, p_depth + 1));
+			}
+			return ret;
+		} break;
+
 		case Variant::VECTOR2: {
 			const Vector2 v = p_variant;
 			Array args = { v.x, v.y };
@@ -1106,6 +1121,20 @@ Variant JSON::_to_native(const Variant &p_json, bool p_allow_objects, int p_dept
 				} break;
 				case Variant::SIGNAL: {
 					return Signal();
+				} break;
+				case Variant::STRUCT: {
+					if (!dict.has("name")) {
+						return Struct();
+					}
+					const Ref<StructLayout> layout = StructLayout::find_layout(dict["name"]);
+					ERR_FAIL_COND_V_MSG(layout.is_null(), Variant(), vformat(R"(Unknown struct type "%s".)", dict["name"]));
+					LOAD_ARGS_CHECK_SIZE(layout->get_field_count());
+					Struct ret = layout->instantiate();
+					ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ret, "Variant is too deep. Bailing.");
+					for (int i = 0; i < args.size(); i++) {
+						ret.set_field(i, _to_native(args[i], p_allow_objects, p_depth + 1));
+					}
+					return ret;
 				} break;
 
 				case Variant::VECTOR2: {

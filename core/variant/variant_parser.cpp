@@ -30,6 +30,7 @@
 
 #include "variant_parser.h"
 
+#include "core/variant/struct_layout.h"
 #include "core/crypto/crypto_core.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_uid.h"
@@ -937,6 +938,57 @@ Error VariantParser::parse_value(Token &r_token, Variant &r_value, Stream *p_str
 			if (r_token.type != TK_PARENTHESIS_CLOSE) {
 				r_err_str = "Expected ')'";
 				return ERR_PARSE_ERROR;
+			}
+		} else if (id == "Struct") {
+			// `Struct()` is the null struct; `Struct("Name", { "field": value, ... })` looks the layout up
+			// by name and fills the listed fields, leaving the others at their defaults.
+			get_token(p_stream, r_token, r_line, r_err_str);
+			if (r_token.type != TK_PARENTHESIS_OPEN) {
+				r_err_str = "Expected '('";
+				return ERR_PARSE_ERROR;
+			}
+			get_token(p_stream, r_token, r_line, r_err_str);
+			if (r_token.type == TK_PARENTHESIS_CLOSE) {
+				r_value = Struct();
+			} else {
+				if (r_token.type != TK_STRING) {
+					r_err_str = "Expected a struct type name as a string";
+					return ERR_PARSE_ERROR;
+				}
+				const StringName struct_name = r_token.value;
+				get_token(p_stream, r_token, r_line, r_err_str);
+				if (r_token.type != TK_COMMA) {
+					r_err_str = "Expected ','";
+					return ERR_PARSE_ERROR;
+				}
+				get_token(p_stream, r_token, r_line, r_err_str);
+				if (r_token.type != TK_CURLY_BRACKET_OPEN) {
+					r_err_str = "Expected '{'";
+					return ERR_PARSE_ERROR;
+				}
+				Dictionary fields;
+				const Error err = _parse_dictionary(fields, p_stream, r_line, r_err_str, p_res_parser);
+				if (err) {
+					return err;
+				}
+				get_token(p_stream, r_token, r_line, r_err_str);
+				if (r_token.type != TK_PARENTHESIS_CLOSE) {
+					r_err_str = "Expected ')'";
+					return ERR_PARSE_ERROR;
+				}
+				const Ref<StructLayout> layout = StructLayout::find_layout(struct_name);
+				if (layout.is_null()) {
+					r_err_str = "Unknown struct type: " + String(struct_name);
+					return ERR_PARSE_ERROR;
+				}
+				Struct s = layout->instantiate();
+				for (const KeyValue<Variant, Variant> &kv : fields) {
+					if (!s.set_field_by_name(kv.key, kv.value)) {
+						r_err_str = "Invalid field \"" + String(kv.key) + "\" or value for struct type " + String(struct_name);
+						return ERR_PARSE_ERROR;
+					}
+				}
+				r_value = s;
 			}
 		} else if (id == "Object") {
 			get_token(p_stream, r_token, r_line, r_err_str);
@@ -2041,6 +2093,25 @@ Error VariantWriter::write(const Variant &p_variant, StoreStringFunc p_store_str
 		} break;
 		case Variant::CALLABLE: {
 			p_store_string_func(p_store_string_ud, "Callable()");
+		} break;
+
+		case Variant::STRUCT: {
+			const Struct s = p_variant;
+			if (s.is_null()) {
+				p_store_string_func(p_store_string_ud, "Struct()");
+				break;
+			}
+			if (unlikely(p_recursion_count > MAX_RECURSION)) {
+				ERR_PRINT("Max recursion reached");
+				p_store_string_func(p_store_string_ud, "Struct()");
+				return OK;
+			}
+			p_store_string_func(p_store_string_ud, "Struct(\"" + String(s.get_struct_name()).c_escape() + "\", ");
+			const Error err = write(s.to_dictionary(), p_store_string_func, p_store_string_ud, p_encode_res_func, p_encode_res_ud, p_pretty_print, p_recursion_count + 1, p_compat);
+			if (err) {
+				return err;
+			}
+			p_store_string_func(p_store_string_ud, ")");
 		} break;
 
 		case Variant::OBJECT: {

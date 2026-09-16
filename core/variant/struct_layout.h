@@ -90,5 +90,13 @@ public:
 	// A value with the leading fields set from positional arguments and the rest at their defaults.
 	Struct instantiate(const Variant **p_args, int p_argcount, Callable::CallError &r_error) const;
 
+	// Registry of layouts by name. Engine layouts register at startup; script layouts register under a
+	// qualified name when their script compiles. Serialized values are resolved through it.
+	static void register_layout(const Ref<StructLayout> &p_layout);
+	static void unregister_layout(const StringName &p_name);
+	static Ref<StructLayout> find_layout(const StringName &p_name);
+	// Drops the registry. Called at shutdown.
+	static void cleanup();
+
 	StructLayout() {}
 };

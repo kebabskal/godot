@@ -1703,7 +1703,8 @@ void ResourceFormatSaverTextInstance::_find_resources(const Variant &p_variant, 
 				use_compat = false;
 			}
 		} break;
-		case Variant::PACKED_VECTOR4_ARRAY: {
+		case Variant::PACKED_VECTOR4_ARRAY:
+		case Variant::STRUCT: {
 			use_compat = false;
 		} break;
 		default: {
