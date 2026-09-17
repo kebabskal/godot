@@ -632,6 +632,10 @@ public:
 		IdentifierNode *identifier = nullptr;
 		Vector<FunctionNode *> methods;
 		Vector<VariableNode *> properties; // `var name: Type`: required from every user. Traits hold no state.
+		Vector<ConstantNode *> constants; // `Trait.NAME`, and by bare name in the trait's default methods.
+		Vector<SignalNode *> signals; // Every class that uses the trait gets the signal.
+		Vector<TypeNode *> used_traits; // `uses A, B`: this trait includes those.
+		Vector<DataType> used_trait_types; // Resolved by the analyzer, same order; unset entries failed.
 		DataType trait_type; // The meta type; `type_from_metatype()` of it is the type of a value.
 		StringName qualified_name; // `script_path::Name`.
 		bool resolved = false;
@@ -871,6 +875,7 @@ public:
 		Vector<TypeNode *> used_traits; // `uses A, B` statements.
 		Vector<DataType> used_trait_types; // Resolved by the analyzer, same order; unset entries failed.
 		Vector<FunctionNode *> trait_default_methods; // Default methods of used traits that no class in the chain implements; compiled into this class.
+		Vector<SignalNode *> trait_signals; // Signals of used traits that no class in the chain declares; added to this class.
 		bool onready_used = false;
 		bool is_abstract = false;
 		bool has_static_data = false;

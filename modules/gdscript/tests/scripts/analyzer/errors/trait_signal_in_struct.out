@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Struct "Quiet" cannot use trait "Noisy": it has signals, and a struct cannot have signals.

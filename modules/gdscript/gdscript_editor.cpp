@@ -1726,13 +1726,27 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 				if (p_types_only || base_type.is_meta_type || base_type.trait_type == nullptr) {
 					return;
 				}
+				Vector<const GDScriptParser::TraitNode *> trait_closure;
+				GDScriptAnalyzer::collect_trait_closure(base_type.trait_type, trait_closure);
 				if (!p_only_functions) {
-					for (const GDScriptParser::VariableNode *property : base_type.trait_type->properties) {
-						EditorLanguage::CompletionOption option(property->identifier->name, EditorLanguage::CompletionKind::MEMBER_VARIABLE, EditorLanguage::CompletionLocation::LOCAL);
-						r_result.insert(option.display, option);
+					for (const GDScriptParser::TraitNode *trait : trait_closure) {
+						for (const GDScriptParser::VariableNode *property : trait->properties) {
+							EditorLanguage::CompletionOption option(property->identifier->name, EditorLanguage::CompletionKind::MEMBER_VARIABLE, EditorLanguage::CompletionLocation::LOCAL);
+							r_result.insert(option.display, option);
+						}
+						for (const GDScriptParser::SignalNode *signal : trait->signals) {
+							EditorLanguage::CompletionOption option(signal->identifier->name, EditorLanguage::CompletionKind::SIGNAL, EditorLanguage::CompletionLocation::LOCAL);
+							r_result.insert(option.display, option);
+						}
 					}
 				}
-				for (const GDScriptParser::FunctionNode *method : base_type.trait_type->methods) {
+				Vector<const GDScriptParser::FunctionNode *> trait_methods;
+				for (const GDScriptParser::TraitNode *trait : trait_closure) {
+					for (const GDScriptParser::FunctionNode *method : trait->methods) {
+						trait_methods.push_back(method);
+					}
+				}
+				for (const GDScriptParser::FunctionNode *method : trait_methods) {
 					if (method->identifier == nullptr) {
 						continue;
 					}
@@ -1765,13 +1779,29 @@ static void _find_identifiers(const GDScriptParser::CompletionContext &p_context
 
 	if (p_context.current_function != nullptr && p_context.current_function->trait_owner != nullptr) {
 		// Inside a trait's default method: the trait's properties and other methods.
-		if (!p_only_functions) {
-			for (const GDScriptParser::VariableNode *property : p_context.current_function->trait_owner->properties) {
-				EditorLanguage::CompletionOption option(property->identifier->name, EditorLanguage::CompletionKind::MEMBER_VARIABLE, EditorLanguage::CompletionLocation::LOCAL);
-				r_result.insert(option.display, option);
+		Vector<const GDScriptParser::TraitNode *> trait_closure;
+		GDScriptAnalyzer::collect_trait_closure(p_context.current_function->trait_owner, trait_closure);
+		Vector<const GDScriptParser::FunctionNode *> trait_methods;
+		for (const GDScriptParser::TraitNode *trait : trait_closure) {
+			if (!p_only_functions) {
+				for (const GDScriptParser::VariableNode *property : trait->properties) {
+					EditorLanguage::CompletionOption option(property->identifier->name, EditorLanguage::CompletionKind::MEMBER_VARIABLE, EditorLanguage::CompletionLocation::LOCAL);
+					r_result.insert(option.display, option);
+				}
+				for (const GDScriptParser::ConstantNode *constant : trait->constants) {
+					EditorLanguage::CompletionOption option(constant->identifier->name, EditorLanguage::CompletionKind::CONSTANT, EditorLanguage::CompletionLocation::LOCAL);
+					r_result.insert(option.display, option);
+				}
+				for (const GDScriptParser::SignalNode *signal : trait->signals) {
+					EditorLanguage::CompletionOption option(signal->identifier->name, EditorLanguage::CompletionKind::SIGNAL, EditorLanguage::CompletionLocation::LOCAL);
+					r_result.insert(option.display, option);
+				}
+			}
+			for (const GDScriptParser::FunctionNode *method : trait->methods) {
+				trait_methods.push_back(method);
 			}
 		}
-		for (const GDScriptParser::FunctionNode *method : p_context.current_function->trait_owner->methods) {
+		for (const GDScriptParser::FunctionNode *method : trait_methods) {
 			if (method->identifier == nullptr) {
 				continue;
 			}
@@ -4415,13 +4445,21 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 			case GDScriptParser::DataType::TRAIT: {
 				// A member of a trait-typed value: its declaration in the trait.
 				if (base_type.trait_type != nullptr) {
-					for (const GDScriptParser::VariableNode *property : base_type.trait_type->properties) {
-						if (property->identifier->name == p_symbol) {
-							r_result.type = EditorLanguage::LookupResult::Type::SCRIPT_LOCATION;
-							r_result.script_path = base_type.script_path;
-							r_result.location = property->start_line;
-							return OK;
-						}
+					const GDScriptParser::Node *declaration = GDScriptAnalyzer::find_trait_property(base_type.trait_type, p_symbol);
+					if (declaration == nullptr) {
+						declaration = GDScriptAnalyzer::find_trait_method(base_type.trait_type, p_symbol);
+					}
+					if (declaration == nullptr) {
+						declaration = GDScriptAnalyzer::find_trait_constant(base_type.trait_type, p_symbol);
+					}
+					if (declaration == nullptr) {
+						declaration = GDScriptAnalyzer::find_trait_signal(base_type.trait_type, p_symbol);
+					}
+					if (declaration != nullptr) {
+						r_result.type = EditorLanguage::LookupResult::Type::SCRIPT_LOCATION;
+						r_result.script_path = base_type.script_path;
+						r_result.location = declaration->start_line;
+						return OK;
 					}
 					for (const GDScriptParser::FunctionNode *method : base_type.trait_type->methods) {
 						if (method->identifier != nullptr && method->identifier->name == p_symbol) {

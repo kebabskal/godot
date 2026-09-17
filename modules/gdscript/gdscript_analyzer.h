@@ -209,8 +209,14 @@ public:
 
 	// Struct methods: index in the declaration order, which is also the index on the layout.
 	static GDScriptParser::FunctionNode *find_struct_method(const GDScriptParser::StructNode *p_struct, const StringName &p_name, int *r_index = nullptr);
+	// A trait and every trait it uses, directly or not. The trait itself comes first. Members are
+	// looked up across the whole closure.
+	static void collect_trait_closure(const GDScriptParser::TraitNode *p_trait, Vector<const GDScriptParser::TraitNode *> &r_closure);
+	static bool trait_closure_has(const GDScriptParser::TraitNode *p_trait, const StringName &p_qualified_name);
 	static GDScriptParser::FunctionNode *find_trait_method(const GDScriptParser::TraitNode *p_trait, const StringName &p_name);
 	static GDScriptParser::VariableNode *find_trait_property(const GDScriptParser::TraitNode *p_trait, const StringName &p_name);
+	static GDScriptParser::ConstantNode *find_trait_constant(const GDScriptParser::TraitNode *p_trait, const StringName &p_name);
+	static GDScriptParser::SignalNode *find_trait_signal(const GDScriptParser::TraitNode *p_trait, const StringName &p_name);
 	// Operator overloads are methods with reserved names (`_add`, `_lt`, `_neg`, ...).
 	static Variant::Operator struct_operator_from_method_name(const StringName &p_name);
 	static StringName struct_method_name_for_operator(Variant::Operator p_op);

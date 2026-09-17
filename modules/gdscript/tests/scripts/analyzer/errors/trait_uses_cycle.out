@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Trait "A" cannot use "B": that trait already includes "A".

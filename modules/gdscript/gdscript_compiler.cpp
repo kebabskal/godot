@@ -3391,7 +3391,17 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 	for (const GDScriptParser::DataType &used : p_class->used_trait_types) {
 		if (used.kind == GDScriptParser::DataType::TRAIT) {
 			p_script->traits.insert(used.trait_name);
+			// And every trait that one includes.
+			Vector<const GDScriptParser::TraitNode *> closure;
+			GDScriptAnalyzer::collect_trait_closure(used.trait_type, closure);
+			for (const GDScriptParser::TraitNode *trait : closure) {
+				p_script->traits.insert(trait->qualified_name);
+			}
 		}
+	}
+	// Signals this class gets from its traits.
+	for (const GDScriptParser::SignalNode *signal : p_class->trait_signals) {
+		p_script->_signals[signal->identifier->name] = signal->method_info;
 	}
 
 	// Compile member functions, getters, and setters.

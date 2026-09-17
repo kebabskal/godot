@@ -1807,12 +1807,25 @@ GDScriptParser::TraitNode *GDScriptParser::parse_trait(bool p_is_static) {
 			if (property != nullptr) {
 				trait_node->properties.push_back(property);
 			}
+		} else if (match(GDScriptTokenizer::Token::TK_CONST)) {
+			ConstantNode *constant = parse_constant(false);
+			if (constant != nullptr) {
+				trait_node->constants.push_back(constant);
+			}
+		} else if (match(GDScriptTokenizer::Token::SIGNAL)) {
+			SignalNode *signal = parse_signal(false);
+			if (signal != nullptr) {
+				trait_node->signals.push_back(signal);
+			}
+		} else if (check(GDScriptTokenizer::Token::IDENTIFIER) && current.get_identifier() == "uses") {
+			advance();
+			parse_uses(trait_node->used_traits);
 		} else if (match(GDScriptTokenizer::Token::PASS)) {
 			end_statement(R"("pass")");
 		} else if (match(GDScriptTokenizer::Token::NEWLINE)) {
 			// Blank line.
 		} else {
-			push_error(vformat(R"(Unexpected "%s" in a trait body: only "func" methods and "var" properties are allowed.)", current.get_name()));
+			push_error(vformat(R"(Unexpected "%s" in a trait body: only "func", "var", "const", "signal" and "uses" are allowed.)", current.get_name()));
 			advance();
 		}
 	}

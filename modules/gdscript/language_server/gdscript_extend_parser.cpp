@@ -414,6 +414,34 @@ void ExtendGDScriptParser::parse_trait_symbol(const GDScriptParser::TraitNode *p
 	r_symbol.uri = get_uri();
 	r_symbol.script_path = path;
 
+	for (const GDScriptParser::ConstantNode *constant : p_trait->constants) {
+		LSP::DocumentSymbol symbol;
+		symbol.name = constant->identifier->name;
+		symbol.kind = LSP::SymbolKind::Constant;
+		symbol.deprecated = false;
+		symbol.range = range_of_node(constant);
+		symbol.selectionRange = range_of_node(constant->identifier);
+		symbol.detail = "const " + String(constant->identifier->name);
+		symbol.documentation = constant->doc_data.description;
+		symbol.uri = get_uri();
+		symbol.script_path = path;
+		r_symbol.children.push_back(symbol);
+	}
+
+	for (const GDScriptParser::SignalNode *signal : p_trait->signals) {
+		LSP::DocumentSymbol symbol;
+		symbol.name = signal->identifier->name;
+		symbol.kind = LSP::SymbolKind::Event;
+		symbol.deprecated = false;
+		symbol.range = range_of_node(signal);
+		symbol.selectionRange = range_of_node(signal->identifier);
+		symbol.detail = "signal " + String(signal->identifier->name);
+		symbol.documentation = signal->doc_data.description;
+		symbol.uri = get_uri();
+		symbol.script_path = path;
+		r_symbol.children.push_back(symbol);
+	}
+
 	for (const GDScriptParser::VariableNode *property : p_trait->properties) {
 		LSP::DocumentSymbol symbol;
 		symbol.name = property->identifier->name;
