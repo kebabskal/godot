@@ -304,6 +304,18 @@ group are independent and can proceed in any order.
   dictionary (platform `get_memory_info` overrides). Next in (a):
   `Image.compute_image_metrics`, `Geometry2D.make_atlas`, the
   `GraphEdit` connection records, `ProjectSettings.get_global_class_list`.
+- 6, first part (typed Callables) landed; design in
+  `TYPED_CALLABLES_DESIGN.md`. `func(int, String) -> bool` is a type for
+  variables, parameters and returns. The signature lives only on the
+  analyzer's `DataType` (`has_callable_signature`, `callable_signature`);
+  at runtime it is a plain Callable. Lambdas, function references and
+  methods (through `MethodInfo`) carry signatures; assignment checks
+  argument count (optional and variadic parameters count), contravariant
+  parameters and a covariant return; a plain `Callable` fits unchecked.
+  `f.call()` checks its arguments and has the declared return type, which
+  the compiler validates where the call returns. Not done: lambda
+  parameter inference from the expected type, `f(1)` call syntax, and
+  generics, which need their own design.
 - 12 (`for` with two variables) landed: `for key, value in dictionary`
   and `for index, item in` anything else, with optional types on both.
   The VM still yields one value per step; the compiler fills the other
