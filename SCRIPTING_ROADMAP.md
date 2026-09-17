@@ -304,6 +304,14 @@ group are independent and can proceed in any order.
   dictionary (platform `get_memory_info` overrides). Next in (a):
   `Image.compute_image_metrics`, `Geometry2D.make_atlas`, the
   `GraphEdit` connection records, `ProjectSettings.get_global_class_list`.
+- 12 (`for` with two variables) landed: `for key, value in dictionary`
+  and `for index, item in` anything else, with optional types on both.
+  The VM still yields one value per step; the compiler fills the other
+  variable at the top of the body (so `continue` stays correct): a keyed
+  get from a hidden copy of the list for dictionaries, a hidden running
+  index otherwise. When the list's type is unknown the choice is made at
+  runtime with a type test per step. `range()` keeps its allocation-free
+  path. Tooling came for free: both variables are suite locals.
 - 7 (traits): design in `TRAITS_DESIGN.md`. Upstream closed the big
   mixin PR (#97657) and asked for a minimal version: inner traits,
   `uses`, required bodyless methods, overriding. This fork builds that
