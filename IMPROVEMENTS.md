@@ -548,9 +548,31 @@ class Pair[T]:
 Pair.new(1, "two")   # error: argument 2 should be "int" but is "String"
 ```
 
-What is not checked is the binding against the annotation: because
-`Tiles.new(...)` carries no arguments of its own, a
-`var t: Tiles[Other] = Tiles.new(() => Tile.new())` is accepted today.
+Because the constructor's arguments decide the binding, the class only has to
+be named once:
+
+```gdscript
+var tiles := Tiles.new(func() -> Tile: return Tile.new())   # Tiles[Tile]
+print(tiles.first().name)
+```
+
+and an annotation that contradicts what the constructor built is caught:
+
+```gdscript
+var tiles: Tiles[Other] = Tiles.new(func() -> Tile: return Tile.new())
+# error: Cannot assign a value of type Tiles[Tile] to variable "tiles" with specified type Tiles[Other].
+```
+
+The binding is read off a *declared* type, so the callable has to say what it
+returns. A short lambda, `() => Tile.new()`, infers its return type instead of
+declaring one, and inference does not bind a type parameter: the call is
+accepted but `T` stays unbound, exactly as if you had passed an untyped
+`Callable`. Write the `func() -> Tile:` form where the binding should come
+from the constructor.
+
+A constructor that binds nothing, `Pool.new()`, still carries no arguments and
+so fits whatever it is assigned to, which is what keeps `var ints: Pool[int] =
+Pool.new()` working with no extra syntax.
 
 A type parameter can be **bounded**, which is what lets the class do anything
 with the values it holds:

@@ -5636,6 +5636,26 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			// cannot know the binding. The call site can: it converts the result below.
 			const bool returns_generic_container = type_has_container_type_parameter(return_type);
 			return_type = substitute_type_parameters(return_type, bindings);
+
+			// `Tiles.new(func() -> Tile: ...)` binds `T` from its own arguments, so the value it
+			// makes really is a `Tiles[Tile]` and saying so is what catches a contradicting
+			// annotation. A constructor that binds nothing, `Pool.new()`, keeps no arguments and
+			// still fits any annotation, which is what lets construction need no new syntax.
+			if (is_constructor && return_type.kind == GDScriptParser::DataType::CLASS && return_type.class_type != nullptr && !return_type.class_type->type_parameters.is_empty() && return_type.get_container_element_type_count() == 0) {
+				bool every_parameter_bound = true;
+				for (const GDScriptParser::TypeParameter &class_type_parameter : return_type.class_type->type_parameters) {
+					if (!bindings.has(class_type_parameter.identifier->name)) {
+						every_parameter_bound = false;
+						break;
+					}
+				}
+				if (every_parameter_bound) {
+					int argument_index = 0;
+					for (const GDScriptParser::TypeParameter &class_type_parameter : return_type.class_type->type_parameters) {
+						return_type.set_container_element_type(argument_index++, bindings[class_type_parameter.identifier->name]);
+					}
+				}
+			}
 			if (returns_generic_container && return_type.kind == GDScriptParser::DataType::BUILTIN && (return_type.builtin_type == Variant::ARRAY || return_type.builtin_type == Variant::DICTIONARY) && return_type.has_container_element_types()) {
 				bool every_element_concrete = true;
 				for (int i = 0; i < return_type.get_container_element_type_count(); i++) {

@@ -649,6 +649,48 @@ group are independent and can proceed in any order.
   structs too, and is the smaller primitive that a named `Addable` could later
   be sugar for. Grammar updated for `|` inside the brackets and verified by
   tokenizing, as with the `:`.
+- Generic construction now carries its binding (feedback item 1, and the
+  soundness hole left by the constructor work). A constructor whose own
+  arguments decide every type parameter gives the call that binding, so
+  `var tiles := Tiles.new(func() -> Tile: ...)` is a `Tiles[Tile]` and the
+  class is named once, and an annotation that contradicts it is an error
+  instead of being quietly accepted. `Pool.new()`, which binds nothing, still
+  carries no arguments and fits any annotation, so the no-syntax construction
+  rule is intact.
+  Limit, and a correction to an earlier claim in this file: the binding is read
+  off a **declared** type, so `Tiles.new(func() -> Tile: ...)` binds and
+  `Tiles.new(() => Tile.new())` does not. An earlier commit message said short
+  lambdas bind; what it had actually shown was that they *fit* an annotated
+  target, where an unbound `T` substitutes to `Variant` and accepts anything.
+  Three ways to close that were tried against a build and all reverted: calling
+  `resolve_lambda_body_now()` before binding (a lambda's signature is built in
+  `reduce_lambda()` before its body, so the inferred return is not there yet --
+  true, but not sufficient on its own); letting an inferred return type into
+  `set_callable_signature_from_function()`; and dropping the `is_hard_type()`
+  guard in `bind_type_parameters()`. The third did change behaviour, for the
+  worse: the compile-time error became a runtime one, because `T` bound to
+  something that substituted back to an unsafe type. The real fix needs the
+  binding rule for inferred types thought through rather than the guard
+  removed, so it is left undone deliberately.
+  The requested spelling cannot be had: `var a: Pool[int] = new()` reads well,
+  but **bare `new()` is already valid GDScript** and constructs the enclosing
+  script. Verified by running it rather than by reading the grammar, since the
+  analyzer's error message ("Cannot assign a value of type res://n1.gd") was
+  the only hint. Taking it over would silently change existing code, so it is
+  refused. `Pool[int].new()` is the other option and stays open; besides the
+  subscript-versus-index ambiguity it needs the parser to accept
+  `Registry[K, V]`, a comma-separated subscript that is not currently syntax.
+- Feedback item 2, reified type parameters, is blocked on a design question
+  rather than on effort, and the construction work above is the half that was
+  missing. The instance can now be told its bindings at construction, but what
+  `T` should *evaluate to* has no uniform answer: a script class is a
+  `GDScript`, a native class is a `GDScriptNativeClass`, and a builtin like
+  `int` has no value at all in expression position. So `print(T)` and
+  `T is Something` work for object bindings and have nothing to denote for
+  `int | float`. The options are to allow `T` as a value only when every
+  binding is an object type, or to add a real type Variant, which is a much
+  larger change than this item looks. Not started; the question should be
+  settled before any code.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
@@ -670,7 +712,10 @@ work are recorded as such so they are not "fixed" twice.
    name on its own"). Both spellings are open; a bare `new()` needs the
    analyzer to take the constructed type from the assignment target, which is
    context the expression does not have today. Was already listed under "Not
-   done for generic classes" in `GENERICS_DESIGN.md`.
+   done for generic classes" in `GENERICS_DESIGN.md`. **Partly done**, see Progress:
+   the constructor's own arguments now bind the class, so the annotation can
+   be dropped where they decide it. The asked-for `new()` is refused because
+   that spelling already means "construct the enclosing script".
 2. **No access to the type parameter inside a generic class.** `print(T)` and
    `T is Something` are "Identifier not declared". This is reification, which
    the design rejected for generic *functions* on purpose. Generic classes are

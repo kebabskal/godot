@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 13: Cannot assign a value of type Tiles[Tile] to variable "tiles" with specified type Tiles[Other].

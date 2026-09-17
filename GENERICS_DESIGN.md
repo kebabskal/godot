@@ -225,8 +225,15 @@ var ints: Pool[int] = Pool.new()
 
 ## Not done for generic classes
 
-- `Pool[int].new()`. Construction infers the binding from the declared type
-  instead, which covers the same ground without new expression syntax.
+- `Pool[int].new()`. Construction takes the binding from the constructor's own
+  arguments when they decide it, and from the declared type otherwise, which
+  covers the same ground without new expression syntax. Writing it explicitly
+  would also need the parser to accept a comma-separated subscript
+  (`Registry[K, V]`), which it does not.
+- A target-typed bare `new()`, as in C# 9's `Pool<int> a = new()`. **This
+  spelling is not available**: `new()` with no base is already valid GDScript
+  and constructs the *enclosing script*, verified by running it, so
+  repurposing it would silently change what existing code means.
 - Generic global classes (`class_name`), and `extends Pool[int]`.
 
 ## Increments
