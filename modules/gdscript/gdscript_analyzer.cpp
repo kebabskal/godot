@@ -320,12 +320,40 @@ GDScriptParser::DataType GDScriptAnalyzer::substitute_type_parameters(const GDSc
 // Looking a member up on a value of type `T`. A bounded parameter answers with its bound, which is
 // the whole point of writing one: `T: Named` can call `get_name()`. Unbounded, it stays opaque.
 static GDScriptParser::DataType type_parameter_lookup_base(const GDScriptParser::DataType &p_type) {
-	if (p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_type.has_type_param_bound()) {
-		GDScriptParser::DataType bound = p_type.get_type_param_bound();
+	// Only a single bound names one thing to look members up in. A union says "one of these", and
+	// picking any of them would be a guess, so it stays opaque for member access; what a union
+	// buys is operators, which `get_operation_type()` works out across every member.
+	if (p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_type.get_type_param_bound_count() == 1) {
+		GDScriptParser::DataType bound = p_type.get_type_param_bound(0);
 		bound.is_meta_type = p_type.is_meta_type;
 		return bound;
 	}
 	return p_type;
+}
+
+// A binding satisfies a union bound by being one of its members; with a single bound this is the
+// ordinary "is a" check.
+bool GDScriptAnalyzer::binding_satisfies_bounds(const GDScriptParser::DataType &p_binding, const Vector<GDScriptParser::DataType> &p_bounds) {
+	for (const GDScriptParser::DataType &bound : p_bounds) {
+		if (check_type_compatibility(bound, p_binding)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+String GDScriptAnalyzer::bounds_to_string(const Vector<GDScriptParser::DataType> &p_bounds) {
+	if (p_bounds.size() == 1) {
+		return vformat(R"(a "%s")", p_bounds[0].to_string());
+	}
+	String result;
+	for (int i = 0; i < p_bounds.size(); i++) {
+		if (i > 0) {
+			result += i == p_bounds.size() - 1 ? " or " : ", ";
+		}
+		result += vformat(R"("%s")", p_bounds[i].to_string());
+	}
+	return "one of " + result;
 }
 
 GDScriptParser::TypeParameter *GDScriptAnalyzer::find_type_parameter(const StringName &p_name) {
@@ -347,15 +375,18 @@ GDScriptParser::TypeParameter *GDScriptAnalyzer::find_type_parameter(const Strin
 }
 
 void GDScriptAnalyzer::resolve_type_parameter_bound(GDScriptParser::TypeParameter &p_type_parameter) {
-	if (p_type_parameter.bound == nullptr || p_type_parameter.bound_type.is_set()) {
+	if (p_type_parameter.bounds.is_empty() || p_type_parameter.bounds_resolved) {
 		return;
 	}
-	GDScriptParser::DataType bound = type_from_metatype(resolve_datatype(p_type_parameter.bound));
-	if (bound.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
-		push_error(vformat(R"(Cannot bound the type parameter "%s" by another type parameter.)", p_type_parameter.identifier->name), p_type_parameter.bound);
-		return;
+	p_type_parameter.bounds_resolved = true;
+	for (GDScriptParser::TypeNode *bound_node : p_type_parameter.bounds) {
+		GDScriptParser::DataType bound = type_from_metatype(resolve_datatype(bound_node));
+		if (bound.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+			push_error(vformat(R"(Cannot bound the type parameter "%s" by another type parameter.)", p_type_parameter.identifier->name), bound_node);
+			continue;
+		}
+		p_type_parameter.bound_types.push_back(bound);
 	}
-	p_type_parameter.bound_type = bound;
 }
 
 void GDScriptAnalyzer::resolve_type_parameter_bounds(LocalVector<GDScriptParser::TypeParameter> &p_type_parameters) {
@@ -1274,9 +1305,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			result.kind = GDScriptParser::DataType::TYPE_PARAMETER;
 			result.type_param_name = name;
 			resolve_type_parameter_bound(*type_parameter);
-			if (type_parameter->bound_type.is_set()) {
-				result.set_type_param_bound(type_parameter->bound_type);
-			}
+			result.set_type_param_bounds(type_parameter->bound_types);
 			p_type->resolved_type = result;
 			return result;
 		}
@@ -1596,8 +1625,8 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				// `Registry[Rock]` rather than at the first use of a member inside the class.
 				GDScriptParser::TypeParameter &type_parameter = result.class_type->type_parameters[i];
 				resolve_type_parameter_bound(type_parameter);
-				if (type_parameter.bound_type.is_set() && argument.is_set() && !argument.is_variant() && !is_type_compatible(type_parameter.bound_type, argument)) {
-					push_error(vformat(R"(Type parameter "%s" of "%s" is bound to "%s", which is not a "%s".)", type_parameter.identifier->name, result.to_string(), argument.to_string(), type_parameter.bound_type.to_string()), p_type->get_container_type_or_null(i));
+				if (!type_parameter.bound_types.is_empty() && argument.is_set() && !argument.is_variant() && !binding_satisfies_bounds(argument, type_parameter.bound_types)) {
+					push_error(vformat(R"(Type parameter "%s" of "%s" is bound to "%s", which is not %s.)", type_parameter.identifier->name, result.to_string(), argument.to_string(), bounds_to_string(type_parameter.bound_types)), p_type->get_container_type_or_null(i));
 				}
 				result.set_container_element_type((int)i, argument);
 			}
@@ -5584,7 +5613,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			// A bound is a promise the body relies on, so a binding that breaks it is an error here
 			// rather than a pile of confusing ones inside the generic code.
 			for (const GDScriptParser::TypeParameter &type_parameter : type_parameters) {
-				if (!type_parameter.bound_type.is_set()) {
+				if (type_parameter.bound_types.is_empty()) {
 					continue;
 				}
 				const StringName &type_parameter_name = type_parameter.identifier->name;
@@ -5592,8 +5621,8 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 					continue;
 				}
 				const GDScriptParser::DataType &binding = bindings[type_parameter_name];
-				if (!is_type_compatible(type_parameter.bound_type, binding)) {
-					push_error(vformat(R"(Type parameter "%s" is bound to "%s", which is not a "%s".)", type_parameter_name, binding.to_string(), type_parameter.bound_type.to_string()), p_call);
+				if (!binding_satisfies_bounds(binding, type_parameter.bound_types)) {
+					push_error(vformat(R"(Type parameter "%s" is bound to "%s", which is not %s.)", type_parameter_name, binding.to_string(), bounds_to_string(type_parameter.bound_types)), p_call);
 				}
 			}
 
@@ -8803,6 +8832,64 @@ void GDScriptAnalyzer::warn_confusable_temporary_modification(GDScriptParser::Ex
 
 #endif // DEBUG_ENABLED
 
+// An operator on a value whose type is a bounded type parameter. The body has to work for every
+// binding, so the operator must be valid for every member of the bound, and the result is only
+// known when the members agree: either each member gives back itself, which makes the result `T`
+// (`T + T` on `T: int | float | Vector2`), or they all give the same concrete type
+// (`T < T` is always `bool`). Anything else is left to the caller's ordinary handling.
+bool GDScriptAnalyzer::operation_type_from_bounds(Variant::Operator p_operation, const GDScriptParser::DataType &p_a, const GDScriptParser::DataType &p_b, GDScriptParser::DataType &r_result, bool &r_valid) {
+	const bool a_bounded = p_a.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_a.has_type_param_bounds();
+	const bool b_bounded = p_b.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_b.has_type_param_bounds();
+	if (!a_bounded && !b_bounded) {
+		return false;
+	}
+	// Two different type parameters have no relation to work with.
+	if (a_bounded && b_bounded && p_a.type_param_name != p_b.type_param_name) {
+		return false;
+	}
+
+	const GDScriptParser::DataType &bounded = a_bounded ? p_a : p_b;
+	const int count = bounded.get_type_param_bound_count();
+	const bool same_parameter = a_bounded && b_bounded;
+
+	bool every_member_returns_itself = true;
+	bool every_member_returns_same = true;
+	GDScriptParser::DataType common;
+
+	for (int i = 0; i < count; i++) {
+		const GDScriptParser::DataType &member = bounded.get_type_param_bound(i);
+		GDScriptParser::DataType left = a_bounded ? member : p_a;
+		GDScriptParser::DataType right = same_parameter ? member : (b_bounded ? member : p_b);
+		bool member_valid = false;
+		GDScriptParser::DataType member_result = get_operation_type(p_operation, left, right, member_valid, nullptr);
+		if (!member_valid || member_result.kind == GDScriptParser::DataType::VARIANT) {
+			return false; // Not valid for every binding, so let the ordinary path report it.
+		}
+		if (!(member_result.kind == member.kind && member_result.builtin_type == member.builtin_type && member_result.native_type == member.native_type)) {
+			every_member_returns_itself = false;
+		}
+		if (i == 0) {
+			common = member_result;
+		} else if (!(common.kind == member_result.kind && common.builtin_type == member_result.builtin_type && common.native_type == member_result.native_type)) {
+			every_member_returns_same = false;
+		}
+	}
+
+	if (every_member_returns_itself && a_bounded) {
+		r_result = p_a; // Still `T`, whatever it binds to.
+		r_result.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
+		r_valid = true;
+		return true;
+	}
+	if (every_member_returns_same) {
+		r_result = common;
+		r_result.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
+		r_valid = true;
+		return true;
+	}
+	return false;
+}
+
 GDScriptParser::DataType GDScriptAnalyzer::get_operation_type(Variant::Operator p_operation, const GDScriptParser::DataType &p_a, bool &r_valid, const GDScriptParser::Node *p_source) {
 	// Unary version.
 	GDScriptParser::DataType nil_type;
@@ -8821,6 +8908,13 @@ GDScriptParser::DataType GDScriptAnalyzer::get_operation_type(Variant::Operator 
 		result.kind = GDScriptParser::DataType::BUILTIN;
 		result.builtin_type = Variant::BOOL;
 		return result;
+	}
+
+	if (p_a.kind == GDScriptParser::DataType::TYPE_PARAMETER || p_b.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		GDScriptParser::DataType bounded_result;
+		if (operation_type_from_bounds(p_operation, p_a, p_b, bounded_result, r_valid)) {
+			return bounded_result;
+		}
 	}
 
 	Variant::Type a_type = p_a.builtin_type;
@@ -8930,8 +9024,14 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 		// A bounded parameter is at least its bound, so it goes wherever the bound goes. The other
 		// direction stays closed: a `Node` is not a `T`, since `T` may be bound to something
 		// narrower. Unbounded, it is opaque and only the same parameter fits.
-		if (p_source.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_source.has_type_param_bound() && p_target.kind != GDScriptParser::DataType::TYPE_PARAMETER) {
-			return check_type_compatibility(p_target, p_source.get_type_param_bound(), p_allow_implicit_conversion, p_source_node);
+		if (p_source.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_source.has_type_param_bounds() && p_target.kind != GDScriptParser::DataType::TYPE_PARAMETER) {
+			// Every member has to fit, since the binding could be any one of them.
+			for (int i = 0; i < p_source.get_type_param_bound_count(); i++) {
+				if (!check_type_compatibility(p_target, p_source.get_type_param_bound(i), p_allow_implicit_conversion, p_source_node)) {
+					return false;
+				}
+			}
+			return true;
 		}
 		return false;
 	}

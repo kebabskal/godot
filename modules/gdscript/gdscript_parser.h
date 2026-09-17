@@ -146,15 +146,14 @@ public:
 		StructNode *struct_type = nullptr; // For `BUILTIN` with `builtin_type == Variant::STRUCT`.
 		Ref<StructLayout> struct_layout; // Same; the runtime identity of the struct type.
 		StringName type_param_name; // For `TYPE_PARAMETER`.
-		// `T: Node`. A Vector because a DataType cannot hold itself by value; at most one entry.
-		Vector<DataType> type_param_bound;
+		// The bounds of a `TYPE_PARAMETER`: one for `T: Node`, several for `T: int | float`.
+		// A Vector because a DataType cannot hold itself by value.
+		Vector<DataType> type_param_bounds;
 
-		bool has_type_param_bound() const { return !type_param_bound.is_empty(); }
-		const DataType &get_type_param_bound() const { return type_param_bound[0]; }
-		void set_type_param_bound(const DataType &p_bound) {
-			type_param_bound.clear();
-			type_param_bound.push_back(p_bound);
-		}
+		bool has_type_param_bounds() const { return !type_param_bounds.is_empty(); }
+		int get_type_param_bound_count() const { return type_param_bounds.size(); }
+		const DataType &get_type_param_bound(int p_index) const { return type_param_bounds[p_index]; }
+		void set_type_param_bounds(const Vector<DataType> &p_bounds) { type_param_bounds = p_bounds; }
 		TraitNode *trait_type = nullptr; // For `TRAIT`.
 		StringName trait_name; // Same; `script_path::Name`, the runtime identity of the trait.
 		// For `BUILTIN` with `builtin_type == Variant::CALLABLE`: a typed callable, `func(A, B) -> R`.
@@ -315,7 +314,7 @@ public:
 			struct_type = p_other.struct_type;
 			struct_layout = p_other.struct_layout;
 			type_param_name = p_other.type_param_name;
-			type_param_bound = p_other.type_param_bound;
+			type_param_bounds = p_other.type_param_bounds;
 			trait_type = p_other.trait_type;
 			trait_name = p_other.trait_name;
 			has_callable_signature = p_other.has_callable_signature;
@@ -340,8 +339,12 @@ public:
 	// parameter usable: without one it is opaque, so the body can only pass the value along.
 	struct TypeParameter {
 		IdentifierNode *identifier = nullptr;
-		TypeNode *bound = nullptr; // Null when the parameter is unbounded.
-		DataType bound_type; // Resolved by the analyzer; unset when there is no bound.
+		// `T: Named` has one bound, `T: int | float | Vector2` has several. Several means "any one
+		// of these", which is what lets arithmetic be written generically: the body may do what all
+		// of them can do. Empty when the parameter is unbounded.
+		LocalVector<TypeNode *> bounds;
+		Vector<DataType> bound_types; // Resolved by the analyzer, same order.
+		bool bounds_resolved = false;
 	};
 
 	struct ParserError {

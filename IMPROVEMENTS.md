@@ -583,6 +583,53 @@ reverse is not, because the binding may be narrower than the bound.
 
 Functions take bounds too: `func label[T: Named](item: T) -> String`.
 
+A bound can also list alternatives, which is how generic arithmetic is
+written: `int`, `float` and `Vector2` share no named type, but they all
+support `+`.
+
+```gdscript
+func total[T: int | float | Vector2](items: Array[T]) -> T:
+    var sum: T = items[0]
+    for i in range(1, items.size()):
+        sum = sum + items[i]
+    return sum
+
+func lerped[T: Vector2 | Vector3](a: T, b: T, weight: float) -> T:
+    return a + (b - a) * weight
+
+func _ready():
+    var ints: Array[int] = [1, 2, 3]
+    var vectors: Array[Vector2] = [Vector2(1, 1), Vector2(2, 3)]
+    print(total(ints))        # 6
+    print(total(vectors))     # (3.0, 4.0)
+    print(lerped(Vector2.ZERO, Vector2(10, 0), 0.5))   # (5.0, 0.0)
+```
+
+The body has to work for every member, so an operator is available only when
+all of them agree on it. `T + T` gives back a `T`; `T == T` gives a `bool`;
+mixing in a `float` still gives a `T` when every member says so, which is what
+makes `lerped` type. Something only some members support is refused:
+
+```gdscript
+func odd[T: int | Vector2](value: T) -> bool:
+    return value % 2 == 0   # error: Invalid operands "T" and "int" for "%" operator.
+```
+
+Calling with a type that is not in the list is refused at the call:
+
+```gdscript
+var words: Array[String] = ["a", "b"]
+total(words)
+# error: Type parameter "T" is bound to "String", which is not one of "int", "float" or "Vector2".
+```
+
+The element type has to be known for that to fire: a bare `["a", "b"]` is an
+untyped `Array`, so there is nothing to bind `T` to and the call is simply
+unchecked, as it is for any generic function.
+
+Listing alternatives opens up operators, not members: to call a *method* on a
+`T`, give it a single bound, where there is one type to look the name up in.
+
 A method returning `Array[T]` gives the caller a real `Array[T]`, built at
 the call, so it is a copy rather than a reference to the class's own array.
 A `var items: Array[T]` read from outside the class is a plain `Array`: the

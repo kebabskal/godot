@@ -1261,8 +1261,8 @@ static void _find_identifiers_in_suite(const GDScriptParser::SuiteNode *p_suite,
 // Same rule the analyzer uses: a value of type `T` offers what its bound offers, since that is
 // what the bound promises. An unbounded type parameter has nothing to show.
 static GDScriptParser::DataType _type_parameter_lookup_base(const GDScriptParser::DataType &p_type) {
-	if (p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_type.has_type_param_bound()) {
-		GDScriptParser::DataType bound = p_type.get_type_param_bound();
+	if (p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_type.get_type_param_bound_count() == 1) {
+		GDScriptParser::DataType bound = p_type.get_type_param_bound(0);
 		bound.is_meta_type = p_type.is_meta_type;
 		return bound;
 	}

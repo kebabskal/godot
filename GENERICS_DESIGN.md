@@ -1,6 +1,6 @@
 # Generics (roadmap item 6, second part)
 
-Status: all five increments landed: generic functions, containers of type parameters, the sound part of the built-in container methods, generic classes, and constraints.
+Status: all five increments landed: generic functions, containers of type parameters, the sound part of the built-in container methods, generic classes, and constraints (nominal and union).
 
 ## Goal
 
@@ -283,8 +283,63 @@ goes wherever the bound goes, so generic code can actually do something.
   assignment, so the new `type_param_bound` field had to be added there too or
   every copy would silently drop the bound.
 
+## As built (increment 5b, union bounds)
+
+A nominal bound answers "is a", which cannot express "supports `+`", because
+`int`, `float` and `Vector2` share no named type. A bound may therefore list
+alternatives:
+
+```
+func total[T: int | float | Vector2](items: Array[T]) -> T:
+    var sum: T = items[0]
+    for i in range(1, items.size()):
+        sum = sum + items[i]
+    return sum
+
+func lerped[T: Vector2 | Vector3](a: T, b: T, weight: float) -> T:
+    return a + (b - a) * weight
+```
+
+The rule for operators is that the body must work for *every* binding, so
+`get_operation_type()` asks the question once per member and only answers when
+the members agree:
+
+- every member gives back itself, so the result is `T` (`T + T`, and
+  `T * float` on `Vector2 | Vector3`);
+- every member gives the same concrete type, so that is the result (`T == T`
+  is `bool`; `T * float` on `int | float` is `float`);
+- otherwise the operator is simply not available, and the ordinary error
+  follows: `%` on `int | Vector2` reports invalid operands, because a
+  `Vector2` has no `%`.
+
+Members, as opposed to operators, stay closed for a union: picking one of the
+alternatives to look a name up in would be a guess. A single bound still
+opens up its members, so `[T: Named]` and `[T: Node2D]` behave as before.
+Assigning a union-bounded `T` somewhere requires *every* member to fit, since
+the binding could be any of them.
+
+### Why a union rather than C#'s spelling
+
+C# could not do this at all until .NET 7. Generic math needed `dynamic`,
+expression trees, or one overload per type. What C# 11 added was *static
+abstract interface members*, so `INumber<T>` can require
+`static abstract T operator +(T, T)` and every numeric type declares that it
+implements it; you then write `where T : INumber<T>`. That is a nominal
+answer, and it works because the standard library was able to go back and add
+conformances to the built-in types.
+
+Godot's builtins are `Variant` types in C++, not scripts, so the equivalent
+would be a table in the analyzer saying which of them satisfy an `Addable`
+trait, maintained by hand. The union needs no such table, works for any set
+including a user's own structs, and is the smaller primitive: a named
+`Addable` could later be sugar for one. The cost is that the set is written
+out at each use, which is the trade this took.
+
 ## Not doing
 
+- Bounding one type parameter by another (`[T, U: T]`), and intersection
+  bounds (`[T: Named & Damageable]`). Traits could express the second; nothing
+  has asked for either.
 - Explicit type arguments at the call site (`first[int](x)`). Inference
   covers the cases that motivated this, and the syntax collides with
   indexing.

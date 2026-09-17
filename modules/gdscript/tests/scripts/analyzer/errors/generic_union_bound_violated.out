@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: Type parameter "T" is bound to "String", which is not one of "int" or "float".

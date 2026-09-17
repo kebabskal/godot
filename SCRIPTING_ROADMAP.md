@@ -629,6 +629,26 @@ group are independent and can proceed in any order.
   VS Code grammar a type parameter *used* as a type (`item: T`) tokenizes as
   `variable.other.constant`, since it looks like a constant to a static
   grammar.
+- Union bounds landed, asked for as "constraints on addability or something,
+  like either float or int or vectors". A nominal bound cannot express
+  "supports `+`", since `int`, `float` and `Vector2` share no named type, so a
+  bound may list alternatives: `func total[T: int | float | Vector2]`. The rule
+  is that the body must work for every binding, so `get_operation_type()` asks
+  once per member and answers only when they agree: each member giving back
+  itself makes the result `T`, all members giving the same concrete type makes
+  it that type, and anything else leaves the operator unavailable, so
+  `%` on `int | Vector2` reports invalid operands. Member *lookup* stays closed
+  for a union (choosing one alternative would be a guess); a single bound is
+  unchanged. Assignment out of a union-bounded `T` needs every member to fit.
+  The alternative considered was C#'s spelling, which is worth recording: C#
+  could not do generic math at all until .NET 7, when static abstract interface
+  members let `INumber<T>` require `static abstract T operator +(T, T)` and the
+  standard library added conformances to every numeric type. Doing that here
+  would mean a hand-maintained table in the analyzer saying which `Variant`
+  types satisfy an `Addable` trait. The union needs no table, covers user
+  structs too, and is the smaller primitive that a named `Addable` could later
+  be sugar for. Grammar updated for `|` inside the brackets and verified by
+  tokenizing, as with the `:`.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

@@ -19,6 +19,7 @@ the TextMate grammar, which is bundled inside the extension, is static.
 | `uses Damageable`               | `uses` is a plain identifier                | keyword                           |
 | `class Pool[T]:`                | `T` reads as a constant                     | type parameter                    |
 | `class Pool[T: Named]:`         | the bound reads as a constant               | type parameter + bound            |
+| `func total[T: int \| float]`    | the bound reads as a constant               | type parameter + union bound      |
 | `func pick[T](...)`             | the function name is not highlighted at all | function name + type parameter    |
 | `items.map(item => item.name)`  | `=>` splits into `=` and `>`                | one operator, `item` a parameter  |
 | `var target: Node?`             | a stray `?`                                 | part of the type                  |

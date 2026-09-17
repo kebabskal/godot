@@ -243,6 +243,9 @@ public:
 
 	// Generic functions. Type parameters are erased at runtime; these only steer the analyzer.
 	// Binds the type parameters in `p_param` by matching it against an argument's type.
+	static bool binding_satisfies_bounds(const GDScriptParser::DataType &p_binding, const Vector<GDScriptParser::DataType> &p_bounds);
+	static String bounds_to_string(const Vector<GDScriptParser::DataType> &p_bounds);
+	bool operation_type_from_bounds(Variant::Operator p_operation, const GDScriptParser::DataType &p_a, const GDScriptParser::DataType &p_b, GDScriptParser::DataType &r_result, bool &r_valid);
 	GDScriptParser::TypeParameter *find_type_parameter(const StringName &p_name);
 	void resolve_type_parameter_bound(GDScriptParser::TypeParameter &p_type_parameter);
 	void resolve_type_parameter_bounds(LocalVector<GDScriptParser::TypeParameter> &p_type_parameters);

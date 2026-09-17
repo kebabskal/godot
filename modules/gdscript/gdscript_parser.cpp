@@ -1802,12 +1802,16 @@ bool GDScriptParser::parse_type_parameters(LocalVector<TypeParameter> &r_type_pa
 			}
 		}
 		if (match(GDScriptTokenizer::Token::COLON)) {
-			make_completion_context(COMPLETION_TYPE_NAME, type_parameter.identifier);
-			type_parameter.bound = parse_type();
-			if (type_parameter.bound == nullptr) {
-				push_error(vformat(R"(Expected a type after ":" to bound the type parameter "%s".)", type_parameter.identifier->name));
-				valid = false;
-			}
+			do {
+				make_completion_context(COMPLETION_TYPE_NAME, type_parameter.identifier);
+				TypeNode *bound = parse_type();
+				if (bound == nullptr) {
+					push_error(vformat(R"(Expected a type after ":" to bound the type parameter "%s".)", type_parameter.identifier->name));
+					valid = false;
+					break;
+				}
+				type_parameter.bounds.push_back(bound);
+			} while (match(GDScriptTokenizer::Token::PIPE));
 		}
 		r_type_parameters.push_back(type_parameter);
 	} while (match(GDScriptTokenizer::Token::COMMA));

@@ -96,11 +96,15 @@
 					"name": "punctuation.separator.type.gdscript"
 				},
 				{
+					"match": "\\|",
+					"name": "keyword.operator.type.gdscript"
+				},
+				{
 					"match": "\\b[A-Za-z_]\\w*\\b",
 					"name": "entity.name.type.gdscript"
 				}
 			],
-			"comment": "A type parameter and, after `:`, its bound. Both are type names."
+			"comment": "A type parameter and, after `:`, its bound; `|` separates the members of a union bound."
 		},
 		"struct_declaration": {
 			"match": "^\\s*(struct)\\s+([A-Za-z_]\\w*)",
