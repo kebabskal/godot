@@ -5444,6 +5444,16 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 	if (get_function_signature(p_call, is_constructor, base_type, p_call->function_name, return_type, par_types, default_arg_count, method_flags, nullptr, &type_parameters)) {
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
 
+		// A constructor of a generic class binds the class's type parameters from its own arguments:
+		// `Tiles.new(size, func() -> Tile: ...)` has to check `create` against `func() -> Tile`, not
+		// against the unbound `func() -> T`. The call's own type keeps no arguments, so `Tiles.new()`
+		// still fits any annotation, which is how construction is specified.
+		if (is_constructor && base_type.kind == GDScriptParser::DataType::CLASS && base_type.class_type != nullptr && base_type.get_container_element_type_count() == 0) {
+			for (const GDScriptParser::IdentifierNode *class_type_parameter : base_type.class_type->type_parameters) {
+				type_parameters.push_back(class_type_parameter->name);
+			}
+		}
+
 		// A lambda written as an argument takes its parameter types from what the callee expects,
 		// before its body is checked. Built-in container methods and signals describe their callable
 		// separately, since `MethodInfo` only says `Callable`.

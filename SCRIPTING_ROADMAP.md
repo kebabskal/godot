@@ -527,6 +527,21 @@ group are independent and can proceed in any order.
     about the expected-callable machinery, so `nums.map(n => n.➡)` offers
     nothing. Tests were written for both and removed again rather than left
     failing; they go back in with the fix.
+- Generic constructors bind the class's type parameters, reported from manual
+  use: `Tiles.new(size, func() -> Tile: return Tile.new())` on
+  `class Tiles[T]` with `_init(_size: Vector2i, create: func() -> T)` failed
+  with `argument 2 should be "func() -> T" but is "func() -> Tile"`. Only a
+  *function's* own type parameters were bindable, and a class's were only read
+  from an annotated base (`Pool[int].add()`), which a `new()` call does not
+  have, so `T` reached the argument check unbound. The class's type parameters
+  are now added to the bindable set for a constructor call. Binding is real,
+  not erasure: `Pair.new(1, "two")` on `class Pair[T]` now reports the second
+  argument. The call's own type still carries no arguments, so `Pool.new()`
+  keeps fitting any annotation, which is what makes construction need no new
+  syntax. Short lambdas bind too (`Tiles.new(() => Tile.new())`). Not done,
+  and the reason feedback item 1 is still open: since the result carries no
+  arguments, a binding that contradicts the annotation
+  (`var t: Tiles[Other] = Tiles.new(() => Tile.new())`) is not reported.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
