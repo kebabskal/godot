@@ -48,6 +48,7 @@
 #include "core/math/expression.h"
 #include "core/object/class_db.h"
 #include "core/variant/container_type_validate.h"
+#include "core/variant/struct_db.h"
 
 #ifdef TOOLS_ENABLED
 #include "core/config/project_settings.h"
@@ -2057,6 +2058,11 @@ static GDScriptCompletionIdentifier _type_from_property(const PropertyInfo &p_pr
 		}
 	} else {
 		ci.type.kind = GDScriptParser::DataType::BUILTIN;
+		if (p_property.type == Variant::STRUCT && p_property.hint == PROPERTY_HINT_STRUCT_TYPE) {
+			// Same as the analyzer: an engine layout name makes the value's fields and methods known.
+			// An unknown name leaves a plain struct type, which still completes through the generic path.
+			ci.type.struct_layout = StructDB::get_layout(p_property.hint_string);
+		}
 	}
 	return ci;
 }

@@ -488,6 +488,20 @@ group are independent and can proceed in any order.
   `is_nullable` alone, since a plain object type is only a promise where
   the promise is enforced. Not done: definite initialization, i.e. the
   `@export var n: Node` and uninitialized-member rules.
+- Struct returns from engine APIs now complete. Reported from manual use as
+  "the `_struct` API calls don't have a typed return type". The *analyzer* was
+  fine (`t.no_such_field` on a `Time`/physics struct result is a proper error),
+  so this was editor completion only: `gdscript_editor.cpp` has its own
+  `_type_from_property()`, separate from the analyzer's, and it dropped the
+  layout for `Variant::STRUCT`, leaving a plain struct type that the member
+  lister skips. It now reads `PROPERTY_HINT_STRUCT_TYPE` through `StructDB`
+  like the analyzer does. Tests: `completion/struct/engine_struct_members.gd`
+  and `engine_struct_physics.gd`. Still missing, and pre-existing for every
+  typed container rather than specific to structs: that same function drops
+  container element types, so `intersect_shape_struct()` completes as a plain
+  `Array` and its elements offer nothing. Resolving an element type needs an
+  analyzer instance (`type_from_property_hint_string()` is not static), which
+  is why it was not folded in here.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
@@ -495,6 +509,68 @@ group are independent and can proceed in any order.
   skips the completion and LSP suites, which are separate *suites*. Use
   `--test-suite="*GDScript*"`. Found by deliberately breaking a new
   completion test and watching the run stay green.
+
+## Feedback from manual testing (2026-09-17)
+
+First round of hands-on use of the landed features. Each item was reproduced
+against a build before being written down; the two that turned out to already
+work are recorded as such so they are not "fixed" twice.
+
+1. **Generic construction reads badly.** `var a: Pool[int] = Pool.new()`
+   repeats nothing useful, and naming the class twice looks wrong when the
+   annotation already fixes the binding. Asked for: `var a: Pool[int] = new()`.
+   `Pool[int].new()` is a parse error today ("Builtin type cannot be used as a
+   name on its own"). Both spellings are open; a bare `new()` needs the
+   analyzer to take the constructed type from the assignment target, which is
+   context the expression does not have today. Was already listed under "Not
+   done for generic classes" in `GENERICS_DESIGN.md`.
+2. **No access to the type parameter inside a generic class.** `print(T)` and
+   `T is Something` are "Identifier not declared". This is reification, which
+   the design rejected for generic *functions* on purpose. Generic classes are
+   the tractable case: an instance could carry its bindings, but only if
+   construction knows them, so this is blocked on item 1. Doing 1 without
+   thinking about 2 would pick the wrong spelling.
+3. **Constraints are necessary, not optional.** `class Pool[T: RefCounted]` is
+   a parse error. `GENERICS_DESIGN.md` said "worth having later"; use says
+   otherwise, since without a bound a type parameter is opaque and the body
+   can do nothing with a `T` but pass it along. Traits are the natural bound.
+4. **Signals in traits: already works.** Verified: a `signal` in a trait is
+   added to every using class, and it connects and emits both on the concrete
+   class and through a trait-typed value. Landed with the rest of trait
+   increment 3; no work needed. What traits cannot do is *require* a signal of
+   the using class, which is a different feature and has not been asked for.
+5. **Accessor defaults in traits.** Asked for `var is_alive: get(): return hp > 1`
+   in a trait, so a derived property does not have to be a method. Two separate
+   gaps: a trait may not declare a property with an accessor body at all
+   (traits hold no state, and required properties must be matched exactly by
+   the using class), and the one-line accessor spelling does not exist even in
+   a plain class ("Property with inline code must go to an indented block") --
+   that half is a mainline limitation and would apply to all code, not just
+   traits.
+6. **Signals do not feed typed Callables.** Verified precisely: passing
+   `d => d.whatever()` to a parameter declared `func(int) -> void` correctly
+   errors on the `int`, but `hit.connect(d => ...)` leaves `d` untyped, because
+   `connect` takes a plain `Callable` in `MethodInfo` and the signal's declared
+   parameters never reach the lambda. So short lambdas lose their inferred
+   types exactly where they are most used. The fix is the mechanism already
+   built for `Array[T].map()`: describe the callable parameter of `connect`
+   (and friends) from the signal's own signature rather than from `MethodInfo`.
+7. **`-> void` is noisy.** Under strict mode a function without a return type
+   is an error ("has no static return type"), so every handler and lambda
+   carries `-> void`. Asked whether it could be inferred. Worth splitting: for
+   a lambda the expected type or the body already determines it and inferring
+   is safe; for a named function a missing return type currently means
+   "untyped", so inferring `void` would change what existing code means and
+   needs a decision rather than a patch.
+8. **Struct-returning engine APIs did not complete.** Fixed, see Progress.
+9. **Generic global classes.** Asked for `class_name` on a generic class, so
+   generics can be used for components across files. Currently inner classes
+   only; `GENERICS_DESIGN.md` lists it under "Not done" together with
+   `extends Pool[int]`. Global classes are registered by name with no place to
+   put arguments, so this needs design, not just parsing.
+
+Order these imply: 6 (small, self-contained, high daily value), then 3, then
+1+2 together, then 9, then 5 and 7 which both need a decision first.
 
 ## Rough performance expectations (times slower than well-written C)
 
