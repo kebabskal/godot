@@ -3242,6 +3242,33 @@ void GDScriptAnalyzer::resolve_for(GDScriptParser::ForNode *p_for) {
 		}
 	}
 
+	// Two variables: `key, value` for a dictionary, `index, item` for everything else. `variable_type`
+	// is what a single variable would get: the key for a dictionary, the item otherwise.
+	GDScriptParser::DataType second_type;
+	if (p_for->second_variable != nullptr) {
+		if (list_type.is_hard_type() && list_type.kind == GDScriptParser::DataType::BUILTIN && list_type.builtin_type == Variant::DICTIONARY) {
+			p_for->iteration_kind = GDScriptParser::ForNode::ITERATE_KEY_VALUE;
+			if (list_type.has_container_element_type(1)) {
+				second_type = list_type.get_container_element_type(1);
+				second_type.type_source = list_type.type_source;
+			} else {
+				second_type.kind = GDScriptParser::DataType::VARIANT;
+			}
+		} else if (!list_type.is_set() || list_type.is_variant() || !list_type.is_hard_type()) {
+			p_for->iteration_kind = GDScriptParser::ForNode::ITERATE_DYNAMIC;
+			variable_type = GDScriptParser::DataType();
+			variable_type.kind = GDScriptParser::DataType::VARIANT;
+			second_type.kind = GDScriptParser::DataType::VARIANT;
+		} else {
+			p_for->iteration_kind = GDScriptParser::ForNode::ITERATE_INDEX_ITEM;
+			second_type = variable_type;
+			variable_type = GDScriptParser::DataType();
+			variable_type.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
+			variable_type.kind = GDScriptParser::DataType::BUILTIN;
+			variable_type.builtin_type = Variant::INT;
+		}
+	}
+
 	if (p_for->variable) {
 		if (p_for->datatype_specifier) {
 			GDScriptParser::DataType specified_type = type_from_metatype(resolve_datatype(p_for->datatype_specifier));
@@ -3259,7 +3286,7 @@ void GDScriptAnalyzer::resolve_for(GDScriptParser::ForNode *p_for) {
 				} else if (!is_type_compatible(specified_type, variable_type)) {
 					p_for->use_conversion_assign = true;
 				}
-				if (p_for->list) {
+				if (p_for->list && p_for->second_variable == nullptr) {
 					if (p_for->list->type == GDScriptParser::Node::ARRAY) {
 						update_array_literal_element_type(static_cast<GDScriptParser::ArrayNode *>(p_for->list), specified_type);
 					} else if (p_for->list->type == GDScriptParser::Node::DICTIONARY) {
@@ -3280,10 +3307,47 @@ void GDScriptAnalyzer::resolve_for(GDScriptParser::ForNode *p_for) {
 		}
 	}
 
+	if (p_for->second_variable) {
+		if (p_for->second_datatype_specifier) {
+			GDScriptParser::DataType specified_type = type_from_metatype(resolve_datatype(p_for->second_datatype_specifier));
+			if (!specified_type.is_variant()) {
+				if (!second_type.is_set() || second_type.is_variant() || !second_type.is_hard_type()) {
+					mark_node_unsafe(p_for->second_variable);
+					p_for->second_use_conversion_assign = true;
+				} else if (!is_type_compatible(specified_type, second_type, true, p_for->second_variable)) {
+					if (is_type_compatible(second_type, specified_type)) {
+						mark_node_unsafe(p_for->second_variable);
+						p_for->second_use_conversion_assign = true;
+					} else {
+						push_error(vformat(R"(Unable to iterate on value of type "%s" with variable of type "%s".)", list_type.to_string(), specified_type.to_string()), p_for->second_datatype_specifier);
+					}
+				} else if (!is_type_compatible(specified_type, second_type)) {
+					p_for->second_use_conversion_assign = true;
+				}
+			}
+			p_for->second_variable->type_constraint = specified_type;
+		} else {
+			if (!second_type.is_set()) {
+				second_type.kind = GDScriptParser::DataType::VARIANT;
+			}
+			p_for->second_variable->type_constraint = second_type;
+#ifdef DEBUG_ENABLED
+			if (second_type.is_hard_type()) {
+				parser->push_warning(p_for->second_variable, GDScriptWarning::INFERRED_DECLARATION, R"("for" iterator variable)", p_for->second_variable->name);
+			} else {
+				parser->push_warning(p_for->second_variable, GDScriptWarning::UNTYPED_DECLARATION, R"("for" iterator variable)", p_for->second_variable->name);
+			}
+#endif // DEBUG_ENABLED
+		}
+	}
+
 	resolve_suite(p_for->loop);
 #ifdef DEBUG_ENABLED
 	if (p_for->variable) {
 		is_shadowing(p_for->variable, R"("for" iterator variable)", true);
+	}
+	if (p_for->second_variable) {
+		is_shadowing(p_for->second_variable, R"("for" iterator variable)", true);
 	}
 #endif // DEBUG_ENABLED
 }

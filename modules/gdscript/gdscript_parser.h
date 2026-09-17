@@ -962,6 +962,17 @@ public:
 		IdentifierNode *variable = nullptr;
 		TypeNode *datatype_specifier = nullptr;
 		bool use_conversion_assign = false;
+		// `for key, value in dictionary` / `for index, item in array`.
+		IdentifierNode *second_variable = nullptr;
+		TypeNode *second_datatype_specifier = nullptr;
+		bool second_use_conversion_assign = false;
+		enum IterationKind {
+			ITERATE_SINGLE, // One variable.
+			ITERATE_KEY_VALUE, // The list is known to be a Dictionary.
+			ITERATE_INDEX_ITEM, // The list is known to be anything else: a running index and the item.
+			ITERATE_DYNAMIC, // Not known at compile time: decided per loop at runtime.
+		};
+		IterationKind iteration_kind = ITERATE_SINGLE;
 		ExpressionNode *list = nullptr;
 		SuiteNode *loop = nullptr;
 

@@ -2211,6 +2211,39 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 
 				GDScriptCodeGenerator::Address iterator = codegen.add_local(for_n->variable->name, _gdtype_from_datatype(for_n->variable->type_constraint, codegen.script));
 
+				// Two variables. The VM still produces one value per step: the key of a dictionary, the
+				// item of anything else. The other variable is filled at the top of the body.
+				const bool two_variables = for_n->second_variable != nullptr;
+				GDScriptCodeGenerator::Address second_variable;
+				GDScriptCodeGenerator::Address for_index; // Running index.
+				GDScriptCodeGenerator::Address for_container; // The list, for `value = list[key]`.
+				GDScriptCodeGenerator::Address for_item; // What the VM produces when the kind is decided at runtime.
+				GDScriptCodeGenerator::Address vm_iterator = iterator;
+				bool vm_use_conversion = for_n->use_conversion_assign;
+				if (two_variables) {
+					second_variable = codegen.add_local(for_n->second_variable->name, _gdtype_from_datatype(for_n->second_variable->type_constraint, codegen.script));
+					GDScriptDataType int_type;
+					int_type.kind = GDScriptDataType::BUILTIN;
+					int_type.builtin_type = Variant::INT;
+					switch (for_n->iteration_kind) {
+						case GDScriptParser::ForNode::ITERATE_KEY_VALUE:
+							for_container = codegen.add_local("@for_container", _gdtype_from_datatype(for_n->list->type_constraint, codegen.script));
+							break;
+						case GDScriptParser::ForNode::ITERATE_DYNAMIC:
+							for_container = codegen.add_local("@for_container", GDScriptDataType());
+							for_index = codegen.add_local("@for_index", int_type);
+							for_item = codegen.add_local("@for_item", GDScriptDataType());
+							vm_iterator = for_item;
+							vm_use_conversion = false;
+							break;
+						default:
+							for_index = codegen.add_local("@for_index", int_type);
+							vm_iterator = second_variable;
+							vm_use_conversion = for_n->second_use_conversion_assign;
+							break;
+					}
+				}
+
 				// Optimize `range()` call to not allocate an array.
 				GDScriptParser::CallNode *range_call = nullptr;
 				if (for_n->list && for_n->list->type == GDScriptParser::Node::CALL) {
@@ -2222,7 +2255,7 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 					}
 				}
 
-				gen->start_for(iterator.type, _gdtype_from_datatype(for_n->list->type_constraint, codegen.script), range_call != nullptr);
+				gen->start_for(vm_iterator.type, _gdtype_from_datatype(for_n->list->type_constraint, codegen.script), range_call != nullptr);
 
 				if (range_call != nullptr) {
 					Vector<GDScriptCodeGenerator::Address> args;
@@ -2261,6 +2294,10 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 						return err;
 					}
 
+					if (for_container.mode == GDScriptCodeGenerator::Address::LOCAL_VARIABLE) {
+						gen->write_assign(for_container, list);
+					}
+
 					gen->write_for_list_assignment(list);
 
 					if (list.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
@@ -2268,7 +2305,78 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 					}
 				}
 
-				gen->write_for(iterator, for_n->use_conversion_assign, range_call != nullptr);
+				if (for_index.mode == GDScriptCodeGenerator::Address::LOCAL_VARIABLE) {
+					gen->write_assign(for_index, codegen.add_constant(0));
+				}
+
+				gen->write_for(vm_iterator, vm_use_conversion, range_call != nullptr);
+
+				if (two_variables) {
+					// Top of the body: runs on every step, also after `continue`.
+					const GDScriptCodeGenerator::Address one = codegen.add_constant(1);
+					switch (for_n->iteration_kind) {
+						case GDScriptParser::ForNode::ITERATE_KEY_VALUE: {
+							if (for_n->second_use_conversion_assign) {
+								GDScriptCodeGenerator::Address value = codegen.add_temporary();
+								gen->write_get(value, iterator, for_container);
+								gen->write_assign_with_conversion(second_variable, value);
+								gen->pop_temporary();
+							} else {
+								gen->write_get(second_variable, iterator, for_container);
+							}
+						} break;
+						case GDScriptParser::ForNode::ITERATE_DYNAMIC: {
+							GDScriptDataType bool_type;
+							bool_type.kind = GDScriptDataType::BUILTIN;
+							bool_type.builtin_type = Variant::BOOL;
+							GDScriptDataType dictionary_type;
+							dictionary_type.kind = GDScriptDataType::BUILTIN;
+							dictionary_type.builtin_type = Variant::DICTIONARY;
+							GDScriptCodeGenerator::Address is_dictionary = codegen.add_temporary(bool_type);
+							gen->write_type_test(is_dictionary, for_container, dictionary_type);
+							gen->write_if(is_dictionary);
+							{
+								if (for_n->use_conversion_assign) {
+									gen->write_assign_with_conversion(iterator, for_item);
+								} else {
+									gen->write_assign(iterator, for_item);
+								}
+								GDScriptCodeGenerator::Address value = codegen.add_temporary();
+								gen->write_get(value, for_item, for_container);
+								if (for_n->second_use_conversion_assign) {
+									gen->write_assign_with_conversion(second_variable, value);
+								} else {
+									gen->write_assign(second_variable, value);
+								}
+								gen->pop_temporary();
+							}
+							gen->write_else();
+							{
+								if (for_n->use_conversion_assign) {
+									gen->write_assign_with_conversion(iterator, for_index);
+								} else {
+									gen->write_assign(iterator, for_index);
+								}
+								if (for_n->second_use_conversion_assign) {
+									gen->write_assign_with_conversion(second_variable, for_item);
+								} else {
+									gen->write_assign(second_variable, for_item);
+								}
+							}
+							gen->write_endif();
+							gen->pop_temporary(); // `is_dictionary`.
+							gen->write_binary_operator(for_index, Variant::OP_ADD, for_index, one);
+						} break;
+						default: {
+							if (for_n->use_conversion_assign) {
+								gen->write_assign_with_conversion(iterator, for_index);
+							} else {
+								gen->write_assign(iterator, for_index);
+							}
+							gen->write_binary_operator(for_index, Variant::OP_ADD, for_index, one);
+						} break;
+					}
+				}
 
 				// Loop variables must be cleared even when `break`/`continue` is used.
 				List<GDScriptCodeGenerator::Address> loop_locals = _add_block_locals(codegen, for_n->loop);
@@ -2281,6 +2389,14 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				}
 
 				gen->write_endfor(range_call != nullptr);
+
+				// Do not keep the list or the last item alive past the loop.
+				if (for_container.mode == GDScriptCodeGenerator::Address::LOCAL_VARIABLE) {
+					gen->clear_address(for_container);
+				}
+				if (for_item.mode == GDScriptCodeGenerator::Address::LOCAL_VARIABLE) {
+					gen->clear_address(for_item);
+				}
 
 				_clear_block_locals(codegen, loop_locals); // Outside loop, after block - for `break` and normal exit.
 
