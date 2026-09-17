@@ -56,6 +56,7 @@ class GDScriptAnalyzer {
 	HashMap<const GDScriptParser::ClassNode *, Ref<GDScriptParserRef>> external_class_parser_cache;
 	bool static_context = false;
 	GDScriptParser::StructNode *current_struct = nullptr; // Set while resolving a struct method: `self` is the struct value and bare field names are its fields.
+	GDScriptParser::TraitNode *current_trait = nullptr; // Set while resolving a trait's default method: `self` is the trait type, so only the trait's methods exist on it.
 
 	// Tests for detecting invalid overloading of script members
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_script_class(const StringName &p_name, const GDScriptParser::ClassNode *p_current_class_node, const GDScriptParser::Node *p_member);
@@ -85,6 +86,9 @@ class GDScriptAnalyzer {
 	void resolve_struct(GDScriptParser::StructNode *p_struct, GDScriptParser::ClassNode *p_class);
 	void resolve_struct_methods(GDScriptParser::StructNode *p_struct);
 	void resolve_trait(GDScriptParser::TraitNode *p_trait, GDScriptParser::ClassNode *p_class);
+	void resolve_trait_method_bodies(GDScriptParser::TraitNode *p_trait);
+	// A method declared by a class in the chain, a script base or the native base: not a trait default.
+	bool class_chain_has_real_method(GDScriptParser::ClassNode *p_class, const StringName &p_name);
 	// Resolves a `uses` list; entries that are not traits are reported and left unset.
 	void resolve_used_traits(const Vector<GDScriptParser::TypeNode *> &p_used_traits, Vector<GDScriptParser::DataType> &r_types);
 	void check_class_trait_conformance(GDScriptParser::ClassNode *p_class);
@@ -196,6 +200,7 @@ public:
 
 	// Struct methods: index in the declaration order, which is also the index on the layout.
 	static GDScriptParser::FunctionNode *find_struct_method(const GDScriptParser::StructNode *p_struct, const StringName &p_name, int *r_index = nullptr);
+	static GDScriptParser::FunctionNode *find_trait_method(const GDScriptParser::TraitNode *p_trait, const StringName &p_name);
 	// Operator overloads are methods with reserved names (`_add`, `_lt`, `_neg`, ...).
 	static Variant::Operator struct_operator_from_method_name(const StringName &p_name);
 	static StringName struct_method_name_for_operator(Variant::Operator p_op);

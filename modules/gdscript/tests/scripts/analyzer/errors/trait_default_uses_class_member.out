@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Cannot use "counter" in a method of trait "Counting": only the trait's own methods exist on every type that uses it.

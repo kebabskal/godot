@@ -539,6 +539,7 @@ public:
 		StringName function_name;
 		bool is_super = false;
 		bool is_static = false;
+		bool trait_self_call = false; // A bare call to another method of the trait, inside a trait's default method.
 		// Resolved struct method (`p.length()`, or a bare `length()` inside a struct method).
 		FunctionNode *struct_method = nullptr;
 		int struct_method_index = -1;
@@ -857,6 +858,7 @@ public:
 		bool extends_used = false;
 		Vector<TypeNode *> used_traits; // `uses A, B` statements.
 		Vector<DataType> used_trait_types; // Resolved by the analyzer, same order; unset entries failed.
+		Vector<FunctionNode *> trait_default_methods; // Default methods of used traits that no class in the chain implements; compiled into this class.
 		bool onready_used = false;
 		bool is_abstract = false;
 		bool has_static_data = false;

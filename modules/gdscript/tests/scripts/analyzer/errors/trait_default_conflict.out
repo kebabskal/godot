@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 10: Class "Both" gets "hello()" from both trait "A" and trait "B". Implement it in the class to choose.

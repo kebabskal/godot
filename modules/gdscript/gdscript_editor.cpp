@@ -1757,6 +1757,26 @@ static void _find_identifiers(const GDScriptParser::CompletionContext &p_context
 		_find_identifiers_in_suite(p_context.current_suite, r_result);
 	}
 
+	if (p_context.current_function != nullptr && p_context.current_function->trait_owner != nullptr) {
+		// Inside a trait's default method: the trait's other methods.
+		for (const GDScriptParser::FunctionNode *method : p_context.current_function->trait_owner->methods) {
+			if (method->identifier == nullptr) {
+				continue;
+			}
+			EditorLanguage::CompletionOption option(method->identifier->name, EditorLanguage::CompletionKind::FUNCTION, EditorLanguage::CompletionLocation::LOCAL);
+			if (p_add_braces) {
+				if (method->parameters.size() > 0 || method->is_vararg()) {
+					option.insert_text += "(";
+					option.display += U"(\u2026)";
+				} else {
+					option.insert_text += "()";
+					option.display += "()";
+				}
+			}
+			r_result.insert(option.display, option);
+		}
+	}
+
 	if (p_context.current_function != nullptr && p_context.current_function->struct_owner != nullptr) {
 		// Inside a struct method: the fields and the other methods, reached through the implicit `self`.
 		const GDScriptParser::StructNode *struct_node = p_context.current_function->struct_owner;
@@ -4702,6 +4722,18 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 						return OK;
 					}
 					suite = suite->parent_block;
+				}
+			}
+
+			if (context.current_function != nullptr && context.current_function->trait_owner != nullptr) {
+				// Inside a trait's default method: the trait's other methods come first.
+				GDScriptParser::DataType trait_type;
+				trait_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+				trait_type.kind = GDScriptParser::DataType::TRAIT;
+				trait_type.trait_type = context.current_function->trait_owner;
+				trait_type.trait_name = context.current_function->trait_owner->qualified_name;
+				if (_lookup_symbol_from_base(trait_type, p_symbol, r_result) == OK) {
+					return OK;
 				}
 			}
 

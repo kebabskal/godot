@@ -448,6 +448,9 @@ void GDScriptAnalyzer::compute_struct_mutation(GDScriptParser::StructNode *p_str
 	LocalVector<HashSet<StringName>> calls;
 	calls.resize(count);
 	for (int i = 0; i < count; i++) {
+		if (p_struct->methods[i]->trait_owner != nullptr) {
+			continue; // Shared with the trait and its other users: see `struct_method_may_mutate()`.
+		}
 		StructMutationWalker walker;
 		walker.struct_node = p_struct;
 		walker.walk(p_struct->methods[i]->body);
@@ -459,12 +462,12 @@ void GDScriptAnalyzer::compute_struct_mutation(GDScriptParser::StructNode *p_str
 	while (changed) {
 		changed = false;
 		for (int i = 0; i < count; i++) {
-			if (p_struct->methods[i]->mutates_self) {
+			if (p_struct->methods[i]->mutates_self || p_struct->methods[i]->trait_owner != nullptr) {
 				continue;
 			}
 			for (const StringName &name : calls[i]) {
 				const GDScriptParser::FunctionNode *callee = find_struct_method(p_struct, name);
-				if (callee != nullptr && callee->mutates_self) {
+				if (callee != nullptr && (callee->mutates_self || callee->trait_owner != nullptr)) {
 					p_struct->methods[i]->mutates_self = true;
 					changed = true;
 					break;
@@ -1711,6 +1714,8 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, co
 			resolve_function_body(member.function);
 		} else if (member.type == GDScriptParser::ClassNode::Member::STRUCT) {
 			resolve_struct_method_bodies(member.m_struct);
+		} else if (member.type == GDScriptParser::ClassNode::Member::TRAIT) {
+			resolve_trait_method_bodies(member.m_trait);
 		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->property != GDScriptParser::VariableNode::PROP_NONE) {
 			if (member.variable->property == GDScriptParser::VariableNode::PROP_INLINE) {
 				if (member.variable->getter != nullptr) {
@@ -2168,14 +2173,53 @@ void GDScriptAnalyzer::resolve_trait(GDScriptParser::TraitNode *p_trait, GDScrip
 			push_error(vformat(R"(Trait "%s" already has a method named "%s".)", p_trait->identifier->name, name), method->identifier);
 		}
 		seen.insert(name);
-		if (method->body != nullptr && !method->body->statements.is_empty()) {
-			push_error(vformat(R"*(Trait method "%s()" cannot have a body yet: default methods are not implemented. Remove the ":" and the body to make it a required method.)*", name), method);
-		}
 		if (method->is_static) {
 			push_error(vformat(R"*(Trait method "%s()" cannot be static.)*", name), method);
 		}
 		resolve_function_signature(method);
 	}
+}
+
+GDScriptParser::FunctionNode *GDScriptAnalyzer::find_trait_method(const GDScriptParser::TraitNode *p_trait, const StringName &p_name) {
+	for (GDScriptParser::FunctionNode *method : p_trait->methods) {
+		if (method->identifier != nullptr && method->identifier->name == p_name) {
+			return method;
+		}
+	}
+	return nullptr;
+}
+
+// Default methods are analyzed once, here, with `self` typed as the trait: they can call the
+// trait's methods and nothing else of the using type, which is what makes them valid for every user.
+void GDScriptAnalyzer::resolve_trait_method_bodies(GDScriptParser::TraitNode *p_trait) {
+	for (GDScriptParser::FunctionNode *method : p_trait->methods) {
+		if (method->body == nullptr || method->body->statements.is_empty()) {
+			continue; // Required method.
+		}
+		resolve_function_body(method);
+		if (method->is_coroutine) {
+			push_error(vformat(R"*(Trait method "%s()" cannot use "await": it may be compiled into a struct.)*", method->identifier->name), method);
+		}
+	}
+}
+
+bool GDScriptAnalyzer::class_chain_has_real_method(GDScriptParser::ClassNode *p_class, const StringName &p_name) {
+	GDScriptParser::ClassNode *c = p_class;
+	GDScriptParser::DataType base_type;
+	while (c != nullptr) {
+		if (c->has_member(p_name) && c->get_member(p_name).type == GDScriptParser::ClassNode::Member::FUNCTION) {
+			return true;
+		}
+		resolve_class_inheritance(c);
+		base_type = c->base_type;
+		c = base_type.kind == GDScriptParser::DataType::CLASS ? base_type.class_type : nullptr;
+	}
+	if (base_type.kind == GDScriptParser::DataType::SCRIPT && base_type.script_type.is_valid()) {
+		if (base_type.script_type->has_method(p_name)) {
+			return true;
+		}
+	}
+	return base_type.native_type != StringName() && class_exists(base_type.native_type) && ClassDB::has_method(base_type.native_type, p_name);
 }
 
 void GDScriptAnalyzer::resolve_used_traits(const Vector<GDScriptParser::TypeNode *> &p_used_traits, Vector<GDScriptParser::DataType> &r_types) {
@@ -2288,6 +2332,20 @@ void GDScriptAnalyzer::check_class_trait_conformance(GDScriptParser::ClassNode *
 			if (required->identifier == nullptr) {
 				continue;
 			}
+			const bool has_default = required->body != nullptr && !required->body->statements.is_empty();
+			if (has_default && !class_chain_has_real_method(p_class, required->identifier->name)) {
+				// Nothing implements it: the trait's body is compiled into this class.
+				for (const GDScriptParser::FunctionNode *other : p_class->trait_default_methods) {
+					if (other != required && other->identifier->name == required->identifier->name) {
+						push_error(vformat(R"*(%s gets "%s()" from both trait "%s" and trait "%s". Implement it in the class to choose.)*", who, required->identifier->name, other->trait_owner->identifier->name, used.to_string()), p_class->used_traits[t]);
+					}
+				}
+				if (!p_class->trait_default_methods.has(const_cast<GDScriptParser::FunctionNode *>(required))) {
+					p_class->trait_default_methods.push_back(const_cast<GDScriptParser::FunctionNode *>(required));
+				}
+				continue;
+			}
+
 			GDScriptParser::DataType return_type;
 			List<GDScriptParser::DataType> par_types;
 			int default_arg_count = 0;
@@ -2322,6 +2380,19 @@ void GDScriptAnalyzer::check_struct_trait_conformance(GDScriptParser::StructNode
 				continue;
 			}
 			const GDScriptParser::FunctionNode *own = find_struct_method(p_struct, required->identifier->name);
+			const bool has_default = required->body != nullptr && !required->body->statements.is_empty();
+			if (own == nullptr && has_default) {
+				// The trait's body is compiled as a method of this struct. The node is shared with the
+				// trait, so whether it mutates is not known per struct: it is treated as "may mutate".
+				p_struct->methods.push_back(const_cast<GDScriptParser::FunctionNode *>(required));
+				continue;
+			}
+			if (own != nullptr && own->trait_owner != nullptr) {
+				if (own != required) {
+					push_error(vformat(R"*(%s gets "%s()" from both trait "%s" and trait "%s". Implement it in the struct to choose.)*", who, required->identifier->name, own->trait_owner->identifier->name, used.to_string()), p_struct->used_traits[t]);
+				}
+				continue;
+			}
 			if (own == nullptr) {
 				push_error(vformat(R"*(%s uses trait "%s" but does not implement "%s()".)*", who, used.to_string(), required->identifier->name), p_struct->used_traits[t]);
 				continue;
@@ -2418,6 +2489,8 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	bool previous_static_context = static_context;
 	GDScriptParser::StructNode *previous_struct = current_struct;
 	current_struct = p_function->struct_owner; // A lambda inside a struct method sees no fields.
+	GDScriptParser::TraitNode *previous_trait = current_trait;
+	current_trait = p_function->trait_owner;
 	if (p_is_lambda) {
 		// For lambdas this is determined from the context, the `static` keyword is not allowed.
 		p_function->is_static = static_context;
@@ -2663,6 +2736,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	parser->current_function = previous_function;
 	static_context = previous_static_context;
 	current_struct = previous_struct;
+	current_trait = previous_trait;
 }
 
 void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_function, bool p_is_lambda) {
@@ -2691,9 +2765,13 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 	parser->current_function = p_function;
 
 	bool previous_static_context = static_context;
-	static_context = p_function->is_static;
+	// A trait's default method has an instance, but none of the enclosing class's members exist on
+	// it: the static-context rules are exactly the right restriction.
+	static_context = p_function->is_static || p_function->trait_owner != nullptr;
 	GDScriptParser::StructNode *previous_struct = current_struct;
 	current_struct = p_function->struct_owner;
+	GDScriptParser::TraitNode *previous_trait = current_trait;
+	current_trait = p_function->trait_owner;
 
 	resolve_suite(p_function->body);
 #ifdef DEBUG_ENABLED
@@ -2727,6 +2805,7 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 	parser->current_function = previous_function;
 	static_context = previous_static_context;
 	current_struct = previous_struct;
+	current_trait = previous_trait;
 }
 
 void GDScriptAnalyzer::resolve_suite(GDScriptParser::SuiteNode *p_suite, bool p_is_root) {
@@ -3997,7 +4076,7 @@ void GDScriptAnalyzer::reduce_struct_method_call(GDScriptParser::CallNode *p_cal
 	p_call->struct_method_index = p_method_index;
 	p_call->is_static = false;
 
-	if (p_method->mutates_self) {
+	if (p_method->mutates_self && p_method->trait_owner == nullptr) {
 		bool writable = false;
 		if (p_base == nullptr) {
 			writable = current_lambda == nullptr;
@@ -4063,6 +4142,30 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			push_error(R"*(Invalid constructor "Object()", use "Object.new()" instead.)*", p_call);
 			p_call->type_constraint = call_type;
 			return;
+		}
+
+		if (current_trait != nullptr) {
+			// Another method of the trait, called on the implicit `self`.
+			GDScriptParser::FunctionNode *method = find_trait_method(current_trait, function_name);
+			if (method != nullptr) {
+				List<GDScriptParser::DataType> par_types;
+				int default_arg_count = 0;
+				for (const GDScriptParser::ParameterNode *param : method->parameters) {
+					par_types.push_back(param->type_constraint);
+					if (param->initializer != nullptr) {
+						default_arg_count++;
+					}
+				}
+				validate_call_arg(par_types, default_arg_count, method->is_vararg(), p_call);
+				p_call->trait_self_call = true;
+				GDScriptParser::DataType return_type = method->return_type_constraint;
+				return_type.is_meta_type = false;
+				if (!p_is_root && !p_is_await && return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+					push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", function_name), p_call);
+				}
+				p_call->type_constraint = return_type;
+				return;
+			}
 		}
 
 		if (current_struct != nullptr) {
@@ -4539,7 +4642,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			base_type.is_meta_type = false;
 		}
 
-		if (is_self && static_context && !p_call->is_static) {
+		if (is_self && static_context && !p_call->is_static && current_trait == nullptr) {
 			// Get the parent function above any lambda.
 			GDScriptParser::FunctionNode *parent_function = parser->current_function;
 			while (parent_function && parent_function->source_lambda) {
@@ -5407,7 +5510,9 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 		const bool source_is_instance_function = p_identifier->source == GDScriptParser::IdentifierNode::MEMBER_FUNCTION && !p_identifier->function_source_is_static;
 		const bool source_is_signal = p_identifier->source == GDScriptParser::IdentifierNode::MEMBER_SIGNAL;
 
-		if (static_context && (source_is_instance_variable || source_is_instance_function || source_is_signal)) {
+		if (current_trait != nullptr && current_lambda == nullptr && (source_is_instance_variable || source_is_instance_function || source_is_signal || p_identifier->source == GDScriptParser::IdentifierNode::MEMBER_FUNCTION || p_identifier->source == GDScriptParser::IdentifierNode::STATIC_VARIABLE)) {
+			push_error(vformat(R"*(Cannot use "%s" in a method of trait "%s": only the trait's own methods exist on every type that uses it.)*", p_identifier->name, current_trait->identifier->name), p_identifier);
+		} else if (static_context && (source_is_instance_variable || source_is_instance_function || source_is_signal)) {
 			// Get the parent function above any lambda.
 			GDScriptParser::FunctionNode *parent_function = parser->current_function;
 			while (parent_function && parent_function->source_lambda) {
@@ -5716,6 +5821,10 @@ void GDScriptAnalyzer::reduce_self(GDScriptParser::SelfNode *p_self) {
 	p_self->is_constant = false;
 	if (current_struct != nullptr) {
 		p_self->type_constraint = type_from_metatype(current_struct->struct_type);
+		return;
+	}
+	if (current_trait != nullptr) {
+		p_self->type_constraint = type_from_metatype(current_trait->trait_type);
 		return;
 	}
 	p_self->type_constraint = type_from_metatype(parser->current_class->self_type);
@@ -6999,6 +7108,23 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 
 		resolve_class_inheritance(base_class, p_source);
 		base_class = base_class->base_type.class_type;
+	}
+
+	if (found_function == nullptr && !p_is_constructor) {
+		// Not declared anywhere in the chain: a default method of a used trait, which is compiled
+		// into the class that uses it.
+		for (GDScriptParser::ClassNode *c = p_base_type.class_type; c != nullptr && found_function == nullptr; c = c->base_type.class_type) {
+			for (const GDScriptParser::DataType &used : c->used_trait_types) {
+				if (used.kind != GDScriptParser::DataType::TRAIT || used.trait_type == nullptr) {
+					continue;
+				}
+				GDScriptParser::FunctionNode *method = find_trait_method(used.trait_type, function_name);
+				if (method != nullptr && method->body != nullptr && !method->body->statements.is_empty()) {
+					found_function = method;
+					break;
+				}
+			}
+		}
 	}
 
 	if (found_function != nullptr) {

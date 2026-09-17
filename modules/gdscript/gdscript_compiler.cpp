@@ -705,11 +705,15 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				if (call->is_super) {
 					// Super call.
 					gen->write_super_call(result, call->function_name, arguments);
+				} else if (call->trait_self_call && codegen.struct_self.mode == GDScriptCodeGenerator::Address::FUNCTION_PARAMETER) {
+					// A trait's default method compiled into a struct: the other trait methods are the
+					// struct's methods, reached by name through the value (with write-back into `self`).
+					gen->write_call(result, codegen.struct_self, call->function_name, arguments);
 				} else if (call->struct_method != nullptr && call->struct_method_index >= 0) {
 					// A struct method: the value is the implicit first argument. A mutating method writes
 					// its final `self` back into the address it was given (see `_struct_self_writeback`),
 					// so the base must be the caller's own slot, never a constant.
-					const bool mutating = call->struct_method->mutates_self;
+					const bool mutating = call->struct_method->mutates_self || call->struct_method->trait_owner != nullptr;
 					GDScriptCodeGenerator::Address base;
 					const GDScriptParser::IdentifierNode *base_id = nullptr;
 					if (callee->type == GDScriptParser::Node::IDENTIFIER) {
@@ -2443,8 +2447,11 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 	return OK;
 }
 
-GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_script, const GDScriptParser::ClassNode *p_class, const GDScriptParser::FunctionNode *p_func, bool p_for_ready, bool p_for_lambda) {
+GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_script, const GDScriptParser::ClassNode *p_class, const GDScriptParser::FunctionNode *p_func, bool p_for_ready, bool p_for_lambda, const GDScriptParser::StructNode *p_struct_context) {
 	r_error = OK;
+	// The struct this function is a method of: its own, or the struct a trait's default method is
+	// being compiled into.
+	const GDScriptParser::StructNode *struct_owner = p_struct_context != nullptr ? p_struct_context : (p_func != nullptr ? p_func->struct_owner : nullptr);
 	CodeGen codegen;
 	codegen.generator = memnew(GDScriptByteCodeGenerator);
 
@@ -2463,15 +2470,15 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	return_type.builtin_type = Variant::NIL;
 
 	if (p_func) {
-		if (p_func->struct_owner != nullptr) {
-			func_name = String(p_func->struct_owner->identifier->name) + "." + String(p_func->identifier->name);
+		if (struct_owner != nullptr) {
+			func_name = String(struct_owner->identifier->name) + "." + String(p_func->identifier->name);
 		} else if (p_func->identifier) {
 			func_name = p_func->identifier->name;
 		} else {
 			func_name = "<anonymous lambda>";
 		}
 		is_abstract = p_func->is_abstract;
-		is_static = p_func->is_static;
+		is_static = p_func->is_static || struct_owner != nullptr; // Struct methods have no instance.
 		rpc_config = p_func->rpc_config;
 
 		// TODO: `_gdtype_from_datatype()` always uses `Variant` for coroutines, so we compensate for that here.
@@ -2516,9 +2523,9 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 
 	int optional_parameters = 0;
 	GDScriptCodeGenerator::Address vararg_addr;
-	if (p_func && p_func->struct_owner != nullptr) {
+	if (struct_owner != nullptr) {
 		// The struct value the method was called on, as the first parameter.
-		GDScriptParser::DataType self_type = p_func->struct_owner->struct_type;
+		GDScriptParser::DataType self_type = struct_owner->struct_type;
 		self_type.is_meta_type = false;
 		self_type.is_constant = false;
 		const GDScriptDataType self_gdtype = _gdtype_from_datatype(self_type, p_script);
@@ -2550,7 +2557,7 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 
 	// Parse initializer if applies.
 	bool is_implicit_initializer = !p_for_ready && !p_func && !p_for_lambda;
-	bool is_initializer = p_func && !p_for_lambda && p_func->struct_owner == nullptr && p_func->identifier->name == GDScriptLanguage::get_singleton()->strings._init;
+	bool is_initializer = p_func && !p_for_lambda && struct_owner == nullptr && p_func->identifier->name == GDScriptLanguage::get_singleton()->strings._init;
 	bool is_implicit_ready = !p_func && p_for_ready;
 
 	if (!p_for_lambda && is_implicit_initializer) {
@@ -2708,8 +2715,9 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 
 	gd_function->method_info = method_info;
 
-	if (p_func && p_func->struct_owner != nullptr) {
-		gd_function->_struct_self_writeback = p_func->mutates_self;
+	if (struct_owner != nullptr) {
+		// A trait's default method may call a mutating method of this struct, so it always writes back.
+		gd_function->_struct_self_writeback = p_func->mutates_self || p_func->trait_owner != nullptr;
 		p_script->struct_functions[func_name] = gd_function;
 	} else if (!is_implicit_initializer && !is_implicit_ready && !p_for_lambda) {
 		p_script->member_functions[func_name] = gd_function;
@@ -3264,7 +3272,7 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 			struct_n->layout->clear_methods();
 			for (const GDScriptParser::FunctionNode *method : struct_n->methods) {
 				Error err = OK;
-				GDScriptFunction *function = _parse_function(err, p_script, p_class, method);
+				GDScriptFunction *function = _parse_function(err, p_script, p_class, method, false, false, struct_n);
 				if (err) {
 					return err;
 				}
@@ -3286,6 +3294,15 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 					RETURN_IF_ERROR(_parse_setter_getter(p_script, p_class, variable, false));
 				}
 			}
+		}
+	}
+
+	// Default methods of used traits that nothing in the class chain implements.
+	for (const GDScriptParser::FunctionNode *method : p_class->trait_default_methods) {
+		Error err = OK;
+		_parse_function(err, p_script, p_class, method);
+		if (err) {
+			return err;
 		}
 	}
 
