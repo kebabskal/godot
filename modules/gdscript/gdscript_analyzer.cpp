@@ -408,9 +408,28 @@ void GDScriptAnalyzer::bindings_from_class_type(const GDScriptParser::DataType &
 	}
 }
 
-GDScriptParser::DataType GDScriptAnalyzer::member_type_for_base(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base_type) {
+// The bindings in force for a member declared in `p_declared_in` and reached through
+// `p_base_type`. `Pool[int]` carries them itself; `IntPool extends Pool[int]` carries them on the
+// step up, so the chain between the two has to be walked.
+void GDScriptAnalyzer::bindings_from_class_chain(const GDScriptParser::DataType &p_base_type, const GDScriptParser::ClassNode *p_declared_in, HashMap<StringName, GDScriptParser::DataType> &r_bindings) {
+	bindings_from_class_type(p_base_type, r_bindings);
+	if (p_declared_in == nullptr) {
+		return;
+	}
+	for (const GDScriptParser::ClassNode *c = p_base_type.class_type; c != nullptr && c != p_declared_in; c = c->base_type.class_type) {
+		HashMap<StringName, GDScriptParser::DataType> step;
+		bindings_from_class_type(c->base_type, step);
+		for (const KeyValue<StringName, GDScriptParser::DataType> &binding : step) {
+			// `class A[T] extends B[T]`: what `B`'s parameter binds to may itself be `A`'s, so a
+			// binding learned lower down applies to the one learned here.
+			r_bindings[binding.key] = substitute_type_parameters(binding.value, r_bindings, true);
+		}
+	}
+}
+
+GDScriptParser::DataType GDScriptAnalyzer::member_type_for_base(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base_type, const GDScriptParser::ClassNode *p_declared_in) {
 	HashMap<StringName, GDScriptParser::DataType> bindings;
-	bindings_from_class_type(p_base_type, bindings);
+	bindings_from_class_chain(p_base_type, p_declared_in, bindings);
 	if (bindings.is_empty()) {
 		return p_member_type;
 	}
@@ -1234,6 +1253,27 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 			return ERR_PARSE_ERROR;
 		}
 		base_class = base_class->base_type.class_type;
+	}
+
+	// `extends Pool[int]` fixes the base's type parameters here, once, so everything the class
+	// inherits is already bound and the class itself needs no parameters.
+	if (!p_class->extends_type_arguments.is_empty()) {
+		if (result.kind != GDScriptParser::DataType::CLASS || result.class_type == nullptr || result.class_type->type_parameters.is_empty()) {
+			push_error(vformat(R"(Class "%s" is not generic, so it takes no type arguments.)", result.to_string()), p_class->extends_type_arguments[0]);
+		} else if (p_class->extends_type_arguments.size() != (int)result.class_type->type_parameters.size()) {
+			push_error(vformat(R"(Class "%s" takes %d type argument(s), but got %d.)", result.to_string(), result.class_type->type_parameters.size(), p_class->extends_type_arguments.size()), p_class->extends_type_arguments[0]);
+		} else {
+			for (int i = 0; i < p_class->extends_type_arguments.size(); i++) {
+				GDScriptParser::DataType argument = type_from_metatype(resolve_datatype(p_class->extends_type_arguments[i]));
+				argument.is_constant = false;
+				GDScriptParser::TypeParameter &type_parameter = result.class_type->type_parameters[i];
+				resolve_type_parameter_bound(type_parameter);
+				if (!type_parameter.bound_types.is_empty() && argument.is_set() && !argument.is_variant() && !binding_satisfies_bounds(argument, type_parameter.bound_types)) {
+					push_error(vformat(R"(Type parameter "%s" of "%s" is bound to "%s", which is not %s.)", type_parameter.identifier->name, result.to_string(), argument.to_string(), bounds_to_string(type_parameter.bound_types)), p_class->extends_type_arguments[i]);
+				}
+				result.set_container_element_type(i, argument);
+			}
+		}
 	}
 
 	p_class->base_type = result;
@@ -6333,7 +6373,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 
 				case GDScriptParser::ClassNode::Member::VARIABLE: {
 					if (is_base && (!base.is_meta_type || member.variable->is_static)) {
-						p_identifier->type_constraint = member_type_for_base(member.get_datatype(), base);
+						p_identifier->type_constraint = member_type_for_base(member.get_datatype(), base, script_class);
 						p_identifier->source = member.variable->is_static ? GDScriptParser::IdentifierNode::STATIC_VARIABLE : GDScriptParser::IdentifierNode::MEMBER_VARIABLE;
 						p_identifier->variable_source = member.variable;
 						member.variable->usages += 1;
@@ -8524,6 +8564,11 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 	GDScriptParser::ClassNode *base_class = p_base_type.class_type;
 	GDScriptParser::FunctionNode *found_function = nullptr;
 
+	// `class IntPool extends Pool[int]` fixes `T` on the *step up* to `Pool`, not on `IntPool`
+	// itself, so the bindings are collected while climbing. The caller already applies the
+	// arguments of `p_base_type`, which is why this does not start with them.
+	HashMap<StringName, GDScriptParser::DataType> chain_bindings;
+
 	while (found_function == nullptr && base_class != nullptr) {
 		if (base_class->has_member(function_name)) {
 			if (base_class->get_member(function_name).type != GDScriptParser::ClassNode::Member::FUNCTION) {
@@ -8537,6 +8582,15 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		}
 
 		resolve_class_inheritance(base_class, p_source);
+		if (found_function == nullptr) {
+			HashMap<StringName, GDScriptParser::DataType> step;
+			bindings_from_class_type(base_class->base_type, step);
+			for (const KeyValue<StringName, GDScriptParser::DataType> &binding : step) {
+				// `class A[T] extends B[T]` binds `B`'s parameter to `A`'s, so a binding learned
+				// further down has to be applied to the one learned here.
+				chain_bindings[binding.key] = substitute_type_parameters(binding.value, chain_bindings, true);
+			}
+		}
 		base_class = base_class->base_type.class_type;
 	}
 
@@ -8576,7 +8630,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 			r_method_flags.set_flag(METHOD_FLAG_STATIC);
 		}
 		for (GDScriptParser::ParameterNode *param : found_function->parameters) {
-			r_par_types.push_back(param->type_constraint);
+			r_par_types.push_back(chain_bindings.is_empty() ? param->type_constraint : substitute_type_parameters(param->type_constraint, chain_bindings, true));
 			if (param->initializer != nullptr) {
 				r_default_arg_count++;
 			}
@@ -8590,6 +8644,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 			}
 		}
 		r_return_type = p_is_constructor ? p_base_type : found_function->return_type_constraint;
+		if (!p_is_constructor && !chain_bindings.is_empty()) {
+			r_return_type = substitute_type_parameters(r_return_type, chain_bindings, true);
+		}
 		r_return_type.is_meta_type = false;
 		r_return_type.is_coroutine = found_function->is_coroutine;
 

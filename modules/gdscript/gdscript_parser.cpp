@@ -1064,6 +1064,23 @@ void GDScriptParser::parse_extends() {
 		current_class->extends.push_back(parse_identifier());
 	}
 
+	// `extends Pool[int]`: naming a specialisation, so the derived class has no type parameters of
+	// its own and behaves like any other class.
+	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		do {
+			if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+				break; // Trailing comma.
+			}
+			TypeNode *argument = parse_type(false);
+			if (argument == nullptr) {
+				push_error(R"(Expected a type argument for the superclass.)");
+				break;
+			}
+			current_class->extends_type_arguments.push_back(argument);
+		} while (match(GDScriptTokenizer::Token::COMMA));
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after the superclass type arguments.)");
+	}
+
 	current_class->extends_end_line = previous.end_line;
 	current_class->extends_end_column = previous.end_column;
 }

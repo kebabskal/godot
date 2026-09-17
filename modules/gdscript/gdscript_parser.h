@@ -938,6 +938,7 @@ public:
 		bool annotated_static_unload = false;
 		String extends_path;
 		Vector<IdentifierNode *> extends; // List for indexing: extends A.B.C
+		Vector<TypeNode *> extends_type_arguments; // `extends Pool[int]`: the base's type arguments.
 		DataType base_type;
 		// Metatype that represents this class. Always contains a hard-type.
 		DataType self_type;

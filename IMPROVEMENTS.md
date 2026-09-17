@@ -636,6 +636,30 @@ print(Lib.Element.ICE)
 `@abstract` keeps the file from being instantiated, which is what you want for
 one that exists only to hold declarations.
 
+### Naming a specialisation
+
+A generic class cannot have a `class_name`: the editor has no way to offer a
+node type that still needs its arguments. Name the *specialisation* instead,
+and you get an ordinary class that works in a node slot, an `@export` and
+anywhere else:
+
+```gdscript
+# certain_grid.gd
+class_name CertainGrid
+extends Lib.Grid[CertainTile]
+```
+
+```gdscript
+var grid := CertainGrid.new()
+grid.put(CertainTile.new())
+print(grid.at(0).label)      # at() gives a CertainTile here
+grid.put(3)                  # error: argument 1 should be "CertainTile" but is "int"
+```
+
+Everything inherited is already bound, including members, and it composes
+through several levels: `class Middle[U] extends Pool[U]` with
+`class StringStack extends Middle[String]` resolves the whole chain.
+
 A bound can also list alternatives, which is how generic arithmetic is
 written: `int`, `float` and `Vector2` share no named type, but they all
 support `+`.

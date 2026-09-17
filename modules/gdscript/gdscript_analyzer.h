@@ -261,7 +261,8 @@ public:
 	static void bindings_from_class_type(const GDScriptParser::DataType &p_type, HashMap<StringName, GDScriptParser::DataType> &r_bindings);
 	// A member's type as seen from outside the class. A container of a type parameter loses its
 	// element type: the value really is an untyped container, because the class was compiled once.
-	static GDScriptParser::DataType member_type_for_base(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base_type);
+	static void bindings_from_class_chain(const GDScriptParser::DataType &p_base_type, const GDScriptParser::ClassNode *p_declared_in, HashMap<StringName, GDScriptParser::DataType> &r_bindings);
+	GDScriptParser::DataType member_type_for_base(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base_type, const GDScriptParser::ClassNode *p_declared_in = nullptr);
 
 	// A lambda written as a call argument takes its parameter types from the callable the callee
 	// expects, so `items.map(item => item.name)` knows what `item` is.

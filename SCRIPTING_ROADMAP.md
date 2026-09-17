@@ -789,6 +789,28 @@ group are independent and can proceed in any order.
   - Either way the fork's tooling-parity rule applies: completion of the names
     as types and as identifiers, hover, go-to-definition, LSP document symbols,
     plus an error when two files export the same name.
+- `extends Pool[int]` landed, which closes feedback item 9 in the shape the
+  feedback itself proposed: a generic `class_name` is wrong because the editor
+  cannot offer a node type that still needs arguments, but naming a
+  *specialisation* gives an ordinary class that can take a `class_name`, sit in
+  a node slot and be exported. Verified end to end with
+  `class_name CertainGrid extends GridBase.Grid[CertainTile]` in a scanned
+  project, used from another script by its global name.
+  The parser part is small (arguments after the `extends` chain, applied once
+  where inheritance resolves, with the same bound check an annotation gets).
+  The work was in member lookup: `Pool[int]` carries its arguments on the type,
+  which `member_type_for_base()` already handled, but `IntPool` carries them on
+  the *step up* to `Pool`, so the chain from the value's class to the declaring
+  class has to be walked while accumulating bindings. `bindings_from_class_chain()`
+  does that and both lookups use it, methods through `get_function_signature()`
+  and members through `member_type_for_base()`. Bindings compose, so
+  `class Middle[U] extends Pool[U]` under `class StringStack extends Middle[String]`
+  resolves `T` through `U` to `String`.
+  Noted honestly and not reproduced: the very first cold-cache editor scan of
+  the throwaway test project segfaulted on quit. Four later runs, three of them
+  cold, exited 0 with no crash in the log, so it is recorded rather than
+  explained away. Worth watching if it recurs when several new `class_name`
+  files appear at once.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
@@ -861,7 +883,10 @@ work are recorded as such so they are not "fixed" twice.
    generics can be used for components across files. Currently inner classes
    only; `GENERICS_DESIGN.md` lists it under "Not done" together with
    `extends Pool[int]`. Global classes are registered by name with no place to
-   put arguments, so this needs design, not just parsing.
+   put arguments, so this needs design, not just parsing. **Done**, in a better
+   shape than asked: a generic `class_name` is not the answer, since the editor
+   cannot offer a node type that needs arguments. `class_name X extends Pool[int]`
+   names the specialisation instead, and that is an ordinary class.
 
 Order these imply: 6 (small, self-contained, high daily value), then 3, then
 1+2 together, then 9, then 5 and 7 which both need a decision first.

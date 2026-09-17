@@ -234,14 +234,9 @@ var ints: Pool[int] = Pool.new()
   spelling is not available**: `new()` with no base is already valid GDScript
   and constructs the *enclosing script*, verified by running it, so
   repurposing it would silently change what existing code means.
-- Generic global classes (`class_name`) and `extends Pool[int]`. Both are about
-  giving a *specialisation* a name the editor can handle, which is the better
-  shape than a generic `class_name`: `class_name IntPool extends Pool[int]` has
-  no type parameters of its own, so a node slot or an export can accept it like
-  any other class. `extends` does not take arguments yet, and inheriting them
-  also needs member lookup to carry the base's bindings along the class chain,
-  where today they are only applied to access through an annotated value
-  (`member_type_for_base()`).
+- A generic `class_name`. Naming a *specialisation* covers the ground instead
+  (see increment 6 below), and it is the better shape: the editor cannot offer
+  a node type that still needs arguments.
 - A qualified generic type (`Lib.Pool[int]`) **is** supported now; it was not,
   which quietly made generic classes usable only inside their own file.
 
@@ -350,6 +345,41 @@ trait, maintained by hand. The union needs no such table, works for any set
 including a user's own structs, and is the smaller primitive: a named
 `Addable` could later be sugar for one. The cost is that the set is written
 out at each use, which is the trade this took.
+
+## As built (increment 6, extending a specialisation)
+
+```
+class Pool[T]:
+    var last: T
+    func add(item: T) -> void: last = item
+    func first() -> T: return last
+
+class IntPool extends Pool[int]:
+    func doubled() -> int:
+        return first() * 2
+```
+
+`IntPool` has no type parameters of its own, so it is an ordinary class: it
+can take a `class_name`, sit in a node slot and be exported. That is why this
+replaces "generic global classes" rather than waiting for them.
+
+- The parser takes the arguments after the `extends` chain, so
+  `extends Lib.Grid[Tile]` works as well as `extends Pool[int]`.
+- They are applied once, where inheritance is resolved, onto the base
+  `DataType`'s element types, with the same bound check an annotation gets.
+- The work was in member lookup. `Pool[int]` carries its arguments on the type
+  itself, which `member_type_for_base()` already handled; `IntPool` carries
+  them on the *step up* to `Pool`, so the chain between the value's class and
+  the class that declares the member has to be walked, accumulating bindings.
+  `bindings_from_class_chain()` does that, and both lookups use it: methods in
+  `get_function_signature()`, members in `member_type_for_base()`.
+- Bindings compose, so `class Middle[U] extends Pool[U]` followed by
+  `class StringStack extends Middle[String]` resolves `T` through `U` to
+  `String`. Each step substitutes what is known so far into what it learns.
+- The container-erasure rule is untouched: a `var items: Array[T]` read from
+  outside is still a plain `Array`, since that is what the value is.
+- Nothing was needed for the VS Code grammar; the bundled one already
+  tokenises `extends Pool[int]` correctly. Checked rather than assumed.
 
 ## Not doing
 
