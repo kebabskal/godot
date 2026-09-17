@@ -680,17 +680,35 @@ group are independent and can proceed in any order.
   refused. `Pool[int].new()` is the other option and stays open; besides the
   subscript-versus-index ambiguity it needs the parser to accept
   `Registry[K, V]`, a comma-separated subscript that is not currently syntax.
-- Feedback item 2, reified type parameters, is blocked on a design question
-  rather than on effort, and the construction work above is the half that was
-  missing. The instance can now be told its bindings at construction, but what
-  `T` should *evaluate to* has no uniform answer: a script class is a
-  `GDScript`, a native class is a `GDScriptNativeClass`, and a builtin like
-  `int` has no value at all in expression position. So `print(T)` and
-  `T is Something` work for object bindings and have nothing to denote for
-  `int | float`. The options are to allow `T` as a value only when every
-  binding is an object type, or to add a real type Variant, which is a much
-  larger change than this item looks. Not started; the question should be
-  settled before any code.
+- Feedback item 2, reified type parameters: **pinned**, design explored and not
+  started. What is settled, each point checked against a build rather than
+  assumed:
+  - A type is a value in GDScript for classes (`GDScript`), native classes
+    (`GDScriptNativeClass`) and **structs** (`StructLayout`, so
+    `var x = Tile` already works and prints one). It is *not* a value for
+    builtins: `var t = int` is "Builtin type cannot be used as a name on its
+    own". So reification can never be uniform, and the honest gate is "bounded
+    by anything except a builtin", which is wider than the first reading of
+    "object bound only".
+  - A struct already works as a bound today: `class Tiles[T: Tile]` with a
+    struct `Tile` types `item.x` correctly. Nothing was needed for that.
+  - `StructLayout::instantiate()` exists in C++ but is not bound to script, so
+    a layout can be inspected and not built from. That is the one missing piece
+    for constructing a struct-bound `T`.
+  - Spelling: `T.new()` for a class bound and `T(...)` for a struct bound,
+    matching how each kind is already constructed. `T.new()` cannot serve both,
+    because a `StructLayout` is itself a RefCounted and `new()` on it already
+    means "make another layout".
+  - `default`, the C# answer, was considered and is not enough on its own: it
+    dodges the builtin problem because it denotes a value rather than a type,
+    but for a class binding it is `null`, so a grid filled with `default` is a
+    grid of nulls. It also needs a new keyword, and `default` is a plausible
+    identifier in existing code.
+  - `x is T` is not the spelling to aim for even reified: `is` tests an
+    instance against a type, and `T` would be the type. `T == Other` is.
+  - Cost, the reason this is the largest item on the list: instances must carry
+    their bindings at runtime, which is new compiler *and* runtime work and the
+    first place "generics are fully erased" stops being true.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
