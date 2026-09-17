@@ -1351,10 +1351,11 @@ GDScriptParser::VariableNode *GDScriptParser::parse_property(VariableNode *p_var
 	if (check(GDScriptTokenizer::Token::EQUAL)) {
 		p_variable->property = VariableNode::PROP_SETGET;
 	} else {
+		// An inline accessor may stay on the declaration's own line: `var alive: bool: get: return hp > 0`.
+		// The body is parsed by `parse_suite()`, which already accepts a single-line form, the same
+		// way `func f(): return 1` does. Only one accessor fits on a line, since the loop below
+		// stops at the newline.
 		p_variable->property = VariableNode::PROP_INLINE;
-		if (!p_need_indent) {
-			push_error("Property with inline code must go to an indented block.");
-		}
 	}
 
 	bool getter_used = false;

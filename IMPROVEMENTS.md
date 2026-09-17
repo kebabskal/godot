@@ -742,6 +742,24 @@ The array literal matters: a handler that knows the element type rejects a
 plain `Array` at runtime, so `emit` builds the typed one, the same way a call
 to an ordinary function does.
 
+## One-line property accessors
+
+An inline getter or setter had to go in an indented block, which turns a
+one-expression property into four lines. It can now stay on the declaration's
+own line, the same way `func f(): return 1` already does:
+
+```gdscript
+var hp: int = 5
+
+var alive: bool: get: return hp > 0
+var doubled: int: get(): return hp * 2
+var clamped: int: set(value): hp = maxi(0, value)
+```
+
+The indented form is unchanged, and both `get:` and `get():` are accepted.
+One accessor fits on a line: a property with both a getter and a setter still
+uses the block form.
+
 ## `for` loops with two variables
 
 Iterating a dictionary no longer needs a lookup inside the loop, and

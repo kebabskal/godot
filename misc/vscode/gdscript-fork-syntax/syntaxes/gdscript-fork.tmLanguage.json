@@ -5,6 +5,9 @@
 	"injectionSelector": "L:source.gdscript -comment -string",
 	"patterns": [
 		{
+			"include": "#inline_accessor"
+		},
+		{
 			"include": "#generic_function"
 		},
 		{
@@ -156,6 +159,24 @@
 			"comment": "Short lambdas. Without this, `=>` reads as assignment followed by greater-than.",
 			"match": "=>",
 			"name": "keyword.operator.arrow.gdscript"
+		},
+		"inline_accessor": {
+			"comment": "`var alive: bool: get: return hp > 0`. The bundled grammar reads everything after a `:` in a declaration as a type annotation, so `get` and the whole body came out as type names. The rule has to start at the `:`, not at `get`: injection priority only wins ties, and the bundled annotation rule matches from the colon.",
+			"begin": "(:)\\s*\\b(get|set)\\b",
+			"beginCaptures": {
+				"1": {
+					"name": "punctuation.separator.annotation.gdscript"
+				},
+				"2": {
+					"name": "keyword.language.gdscript"
+				}
+			},
+			"end": "$",
+			"patterns": [
+				{
+					"include": "source.gdscript"
+				}
+			]
 		}
 	}
 }

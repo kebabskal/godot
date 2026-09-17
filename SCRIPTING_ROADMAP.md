@@ -709,6 +709,32 @@ group are independent and can proceed in any order.
   - Cost, the reason this is the largest item on the list: instances must carry
     their bindings at runtime, which is new compiler *and* runtime work and the
     first place "generics are fully erased" stops being true.
+- One-line property accessors landed, the first half of feedback item 5
+  (`var is_alive: get(): return hp > 1`). It turned out to be one guard: the
+  parser already understood `get():` and `parse_suite()` already accepts a
+  single-line body, exactly as `func f(): return 1` does, so the only thing
+  stopping it was "Property with inline code must go to an indented block".
+  Removing that check makes `var alive: bool: get: return hp > 0` work in any
+  class, not just in traits. The whole suite passes unchanged, which is the
+  evidence that the guard was protecting nothing. Both `get:` and `get():` are
+  accepted; only one accessor fits on a line, since the accessor loop stops at
+  the newline.
+  Grammar: the bundled VS Code grammar reads everything after a `:` in a
+  declaration as a type annotation, so `get` *and the whole body* came out as
+  type names -- `return` highlighted as a class. The injection now re-scopes
+  from the colon and includes `source.gdscript` for the body. Two traps, both
+  caught by tokenizing rather than by eye: the rule has to begin at the `:`
+  and not at `get`, because injection priority only wins ties and the bundled
+  annotation rule starts at the colon (the same lesson `=>` taught); and the
+  first attempt silently could not match because a heredoc turned `\b` into a
+  literal backspace (0x08) in the JSON. Write grammar edits from a script file,
+  as the memory note about heredocs says.
+  Still open, the second half of item 5: a trait *providing* a property with an
+  accessor body. Traits parse `var` with properties disabled on purpose, since
+  a trait property is a requirement; providing one means a `trait_default_properties`
+  list next to `trait_default_methods`, resolved in the trait's context and
+  compiled into every using class that does not define it, plus an error for
+  structs, which have fields rather than properties.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
@@ -749,7 +775,8 @@ work are recorded as such so they are not "fixed" twice.
    class and through a trait-typed value. Landed with the rest of trait
    increment 3; no work needed. What traits cannot do is *require* a signal of
    the using class, which is a different feature and has not been asked for.
-5. **Accessor defaults in traits.** Asked for `var is_alive: get(): return hp > 1`
+5. **Accessor defaults in traits.** *(First half done: the one-line accessor
+   form, see Progress. The trait half is still open.)* Asked for `var is_alive: get(): return hp > 1`
    in a trait, so a derived property does not have to be a method. Two separate
    gaps: a trait may not declare a property with an accessor body at all
    (traits hold no state, and required properties must be matched exactly by
