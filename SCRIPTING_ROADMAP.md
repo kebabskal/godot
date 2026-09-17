@@ -356,9 +356,16 @@ group are independent and can proceed in any order.
   native property (classes) or a field (structs); trait-typed values
   expose it, and default methods use it by bare name
   (`IdentifierNode::TRAIT_PROPERTY`, a named access on `self`). Traits
-  still hold no state. Open: signals and constants in traits, traits
-  using traits, global `trait_name` files. Next: typed Callables
-  (item 6), unless trait composition is needed first.
+  still hold no state.
+  Rest of increment 3 landed: constants (`Trait.NAME`, folded), signals
+  (added to every using class; structs cannot use such a trait), and
+  traits using traits. Everything works on the closure of included
+  traits: lookup, conformance, the runtime trait set and assignability;
+  a default in one trait can satisfy a requirement of another. Other
+  scripts' traits work as `Lib.Trait` through the normal member lookup.
+  Global `trait_name` files are deliberately not done (see the design).
+  Item 7 is complete for now; an interface method table for direct
+  dispatch stays as a possible optimization.
 - Tooling parity is part of "done" for every language feature from
   here on. Checklist: parser/analyzer/compiler; class reference docs;
   editor completion (`gdscript_editor.cpp`: type names, class members,

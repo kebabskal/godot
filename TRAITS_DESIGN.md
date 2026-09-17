@@ -1,6 +1,6 @@
 # Traits (roadmap item 7)
 
-Status: increments 1 (interfaces), 2 (default methods) and the required-properties part of 3 landed.
+Status: increments 1 (interfaces), 2 (default methods) and 3 (properties, constants, signals, traits using traits) landed. Global `trait_name` files are deliberately not done.
 
 ## Goal
 
@@ -181,8 +181,41 @@ traits (`trait_name` files) are out of scope for now.
   identifier source and compiles to a named access on `self`: the instance
   in a class (so setters and getters run), the value in a struct (where
   the typed address turns it into the struct field opcodes).
-- Still open in increment 3: signals, constants, traits using traits,
-  global `trait_name` files.
+
+## As built (increment 3, constants, signals, composition)
+
+- `const NAME = value` in a trait is reached as `Trait.NAME` and by bare
+  name in the trait's default methods. It is folded at compile time;
+  nothing exists at runtime.
+- `signal name(params)` in a trait is added to every class that uses the
+  trait (`ClassNode::trait_signals`, registered by the compiler next to the
+  class's own signals), unless a class of the chain or the native base
+  already declares it. A class's own signal must have the same number of
+  parameters. Default methods emit it by bare name, trait-typed values
+  expose it, and lookups on the class type find it through the `uses` list
+  rather than through the conformance result, so resolution order does not
+  matter. Structs cannot use a trait that has signals.
+- `uses A, B` inside a trait includes those traits. Everything works on the
+  closure (`collect_trait_closure()`): member lookup, conformance, the
+  runtime trait set of a script or struct layout (so `x is A` holds for a
+  user of the including trait), and assignability (a value of the including
+  trait fits the included one). A trait that would include itself is an
+  error at the `uses` line.
+- Defaults are collected per method name across the closure. A default in
+  one trait can satisfy a requirement of another (checked against the
+  required signature); two different defaults for one name is a conflict the
+  using type settles by implementing the method.
+- Another script's traits are reached like its other members:
+  `const Lib = preload("lib.gd")`, then `uses Lib.Greeter` and
+  `var g: Lib.Greeter`. This already worked through the normal member
+  lookup and is covered by a test.
+
+## Global traits
+
+Upstream's closed PR had `.gdt` files with `trait_name`. Not done here: it
+needs a resource format, a loader and a global registry, and upstream has
+not settled any of it. A script with `class_name` holding traits gives
+`Combat.Damageable` today with no new machinery.
 
 ## Not doing
 
