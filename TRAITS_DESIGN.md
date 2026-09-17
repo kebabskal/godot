@@ -1,6 +1,6 @@
 # Traits (roadmap item 7)
 
-Status: increments 1 (interfaces) and 2 (default methods) landed. Required properties are next.
+Status: increments 1 (interfaces), 2 (default methods) and the required-properties part of 3 landed.
 
 ## Goal
 
@@ -164,6 +164,25 @@ traits (`trait_name` files) are out of scope for now.
   and the analyzer does not demand a writable receiver.
 - Not possible in a default body: `await` (it may be compiled into a
   struct), instance members or static functions of the enclosing class.
+
+## As built (increment 3, required properties)
+
+- `var name: Type` in a trait body is a required property. It must be
+  typed and cannot have a value, a setter or a getter: traits hold no
+  state, the using type provides the variable.
+- Conformance: a class needs an instance property of that name (a member
+  variable anywhere in the chain, a property of a script base, or a native
+  property); a struct needs a field. The type must match exactly, since
+  the property is read and written through the trait.
+- On a trait-typed value, `value.name` is typed from the trait and
+  compiled as a named get/set on the Variant slot, which works for objects
+  and structs alike. Anything the trait does not declare is an error.
+- In a default method, a bare property name has the `TRAIT_PROPERTY`
+  identifier source and compiles to a named access on `self`: the instance
+  in a class (so setters and getters run), the value in a struct (where
+  the typed address turns it into the struct field opcodes).
+- Still open in increment 3: signals, constants, traits using traits,
+  global `trait_name` files.
 
 ## Not doing
 

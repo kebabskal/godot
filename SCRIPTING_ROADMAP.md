@@ -330,8 +330,15 @@ group are independent and can proceed in any order.
   overrides are seen because the body calls through `self` by name. In
   structs a default becomes a struct method that always writes back,
   since the shared node cannot carry a per-struct "mutates" flag. Two
-  traits providing the same default is an error. Next: required
-  properties (increment 3), then typed Callables (item 6).
+  traits providing the same default is an error.
+  Required properties landed (first part of increment 3): `var hp: int`
+  in a trait must be matched exactly by a member variable, script or
+  native property (classes) or a field (structs); trait-typed values
+  expose it, and default methods use it by bare name
+  (`IdentifierNode::TRAIT_PROPERTY`, a named access on `self`). Traits
+  still hold no state. Open: signals and constants in traits, traits
+  using traits, global `trait_name` files. Next: typed Callables
+  (item 6), unless trait composition is needed first.
 - Tooling parity is part of "done" for every language feature from
   here on. Checklist: parser/analyzer/compiler; class reference docs;
   editor completion (`gdscript_editor.cpp`: type names, class members,
