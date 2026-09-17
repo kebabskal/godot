@@ -99,6 +99,7 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 
 	switch (p_datatype.kind) {
 		case GDScriptParser::DataType::TRAIT: // An object or a struct: a Variant slot. The analyzer checks conformance.
+		case GDScriptParser::DataType::TYPE_PARAMETER: // Erased: one compiled function serves every binding.
 		case GDScriptParser::DataType::VARIANT: {
 			result.kind = GDScriptDataType::VARIANT;
 		} break;
@@ -204,8 +205,13 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 		}
 	}
 
-	for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
-		result.set_container_element_type(i, _gdtype_from_datatype(p_datatype.get_container_element_type_or_variant(i), p_owner, false));
+	// A container whose element type is a type parameter erases to a plain container: the element
+	// type is not known at runtime, and claiming "container of Variant" would reject the caller's
+	// `Array[int]` instead of accepting it.
+	if (!GDScriptAnalyzer::type_has_container_type_parameter(p_datatype)) {
+		for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
+			result.set_container_element_type(i, _gdtype_from_datatype(p_datatype.get_container_element_type_or_variant(i), p_owner, false));
+		}
 	}
 
 	return result;

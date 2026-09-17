@@ -1138,6 +1138,14 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 	// Built-in Variant Types
 	_find_built_in_variants(r_result);
 
+	// The type parameters of the generic function being written.
+	if (!p_inherit_only && p_context.current_function != nullptr) {
+		for (const GDScriptParser::IdentifierNode *type_parameter : p_context.current_function->type_parameters) {
+			EditorLanguage::CompletionOption option(type_parameter->name, EditorLanguage::CompletionKind::CLASS, EditorLanguage::CompletionLocation::LOCAL);
+			r_result.insert(option.display, option);
+		}
+	}
+
 	// Variant meta-type
 	if (!p_inherit_only) {
 		EditorLanguage::CompletionOption variant_option("Variant", EditorLanguage::CompletionKind::CLASS);
@@ -2081,6 +2089,7 @@ struct RecursionCheck {
 static bool _guess_identifier_type(GDScriptParser::CompletionContext &p_context, const GDScriptParser::IdentifierNode *p_identifier, GDScriptCompletionIdentifier &r_type);
 static bool _guess_identifier_type_from_base(GDScriptParser::CompletionContext &p_context, const GDScriptCompletionIdentifier &p_base, const StringName &p_identifier, GDScriptCompletionIdentifier &r_type);
 static bool _guess_method_return_type_from_base(GDScriptParser::CompletionContext &p_context, const GDScriptCompletionIdentifier &p_base, const StringName &p_method, GDScriptCompletionIdentifier &r_type);
+static GDScriptParser::DataType _substitute_generic_return(GDScriptParser::CompletionContext &p_context, const GDScriptCompletionIdentifier &p_base, const GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_return_type);
 
 static bool _is_expression_named_identifier(const GDScriptParser::ExpressionNode *p_expression, const StringName &p_name) {
 	if (p_expression) {
@@ -2389,6 +2398,9 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 
 				if (!found) {
 					found = _guess_method_return_type_from_base(c, base, call->function_name, r_type);
+					if (found) {
+						r_type.type = _substitute_generic_return(c, base, call, r_type.type);
+					}
 				}
 			} break;
 			case GDScriptParser::Node::SUBSCRIPT: {
@@ -3123,6 +3135,33 @@ static void _find_last_return_in_block(GDScriptParser::CompletionContext &p_cont
 				break;
 		}
 	}
+}
+
+// A call to a generic function: bind its type parameters from the argument types, so completion on
+// the result sees the bound type (`first(words)` offers String's members). Completion cannot use the
+// analyzer's own binding, since the line under the cursor usually does not parse.
+static GDScriptParser::DataType _substitute_generic_return(GDScriptParser::CompletionContext &p_context, const GDScriptCompletionIdentifier &p_base, const GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_return_type) {
+	GDScriptParser::DataType base_type = p_base.type;
+	const GDScriptParser::FunctionNode *method = nullptr;
+	while (base_type.is_set() && base_type.kind == GDScriptParser::DataType::CLASS && base_type.class_type != nullptr) {
+		if (base_type.class_type->has_function(p_call->function_name)) {
+			method = base_type.class_type->get_member(p_call->function_name).function;
+			break;
+		}
+		base_type = base_type.class_type->base_type;
+	}
+	if (method == nullptr || method->type_parameters.is_empty()) {
+		return p_return_type;
+	}
+
+	HashMap<StringName, GDScriptParser::DataType> bindings;
+	for (uint32_t i = 0; i < p_call->arguments.size() && i < method->parameters.size(); i++) {
+		GDScriptCompletionIdentifier argument;
+		if (_guess_expression_type(p_context, p_call->arguments[i], argument)) {
+			GDScriptAnalyzer::bind_type_parameters(method->parameters[i]->type_constraint, argument.type, bindings);
+		}
+	}
+	return GDScriptAnalyzer::substitute_type_parameters(p_return_type, bindings);
 }
 
 static bool _guess_method_return_type_from_base(GDScriptParser::CompletionContext &p_context, const GDScriptCompletionIdentifier &p_base, const StringName &p_method, GDScriptCompletionIdentifier &r_type) {

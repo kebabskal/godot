@@ -1,0 +1,3 @@
+GDTEST_OK
+~~ WARNING at line 4: (UNSAFE_METHOD_ACCESS) The method "to_upper()" is not present on the inferred type "T" (but may be present on a subtype).
+HI

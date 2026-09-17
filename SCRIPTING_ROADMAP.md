@@ -316,6 +316,17 @@ group are independent and can proceed in any order.
   the compiler validates where the call returns. Not done: lambda
   parameter inference from the expected type, `f(1)` call syntax, and
   generics, which need their own design.
+- 6, second part (generic functions) landed; design in
+  `GENERICS_DESIGN.md`. `func first[T](items: Array[T]) -> T` binds its type
+  parameters from the argument types at each call, checks the arguments
+  against the bindings and gives the call the bound return type. Type
+  parameters are erased: `TYPE_PARAMETER` compiles to an untyped slot and a
+  container that mentions one compiles to a plain container, because the
+  runtime compares element types exactly. That erasure is why a type
+  parameter may not appear inside a *return* container type (`-> Array[U]`
+  would have to build a typed array it cannot name); the error says so and
+  points at reification. Next in item 6: reified type parameters, then the
+  built-in container methods, then generic classes.
 - 12 (`for` with two variables) landed: `for key, value in dictionary`
   and `for index, item in` anything else, with optional types on both.
   The VM still yields one value per step; the compiler fills the other

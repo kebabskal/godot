@@ -112,6 +112,7 @@ public:
 			CLASS, // GDScript.
 			ENUM, // Enumeration.
 			TRAIT, // A `trait`: any object or struct whose type `uses` it. A Variant at runtime.
+			TYPE_PARAMETER, // `T` of a generic function: opaque inside it, bound at each call site.
 			VARIANT, // Can be any type.
 			RESOLVING, // Currently resolving.
 			UNRESOLVED,
@@ -140,6 +141,7 @@ public:
 		ClassNode *class_type = nullptr;
 		StructNode *struct_type = nullptr; // For `BUILTIN` with `builtin_type == Variant::STRUCT`.
 		Ref<StructLayout> struct_layout; // Same; the runtime identity of the struct type.
+		StringName type_param_name; // For `TYPE_PARAMETER`.
 		TraitNode *trait_type = nullptr; // For `TRAIT`.
 		StringName trait_name; // Same; `script_path::Name`, the runtime identity of the trait.
 		// For `BUILTIN` with `builtin_type == Variant::CALLABLE`: a typed callable, `func(A, B) -> R`.
@@ -246,6 +248,8 @@ public:
 					return class_type == p_other.class_type || class_type->fqcn == p_other.class_type->fqcn;
 				case TRAIT:
 					return trait_name == p_other.trait_name;
+				case TYPE_PARAMETER:
+					return type_param_name == p_other.type_param_name;
 				case RESOLVING:
 				case UNRESOLVED:
 					break;
@@ -274,6 +278,7 @@ public:
 			class_type = p_other.class_type;
 			struct_type = p_other.struct_type;
 			struct_layout = p_other.struct_layout;
+			type_param_name = p_other.type_param_name;
 			trait_type = p_other.trait_type;
 			trait_name = p_other.trait_name;
 			has_callable_signature = p_other.has_callable_signature;
@@ -1003,6 +1008,7 @@ public:
 		HashMap<StringName, uint32_t> parameters_indices;
 		ParameterNode *rest_parameter = nullptr;
 
+		LocalVector<IdentifierNode *> type_parameters; // `func name[T, U](...)`: erased at runtime.
 		TypeNode *return_type = nullptr;
 		DataType return_type_constraint;
 

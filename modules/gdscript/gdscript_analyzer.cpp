@@ -160,6 +160,62 @@ bool GDScriptAnalyzer::callable_signatures_compatible(const GDScriptParser::Data
 	return check_type_compatibility(wanted, given, false);
 }
 
+void GDScriptAnalyzer::bind_type_parameters(const GDScriptParser::DataType &p_param, const GDScriptParser::DataType &p_arg, HashMap<StringName, GDScriptParser::DataType> &r_bindings) {
+	if (p_param.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		if (!p_arg.is_set() || p_arg.is_variant() || !p_arg.is_hard_type() || r_bindings.has(p_param.type_param_name)) {
+			return; // Nothing to learn, or already bound: the first binding is the one checked against.
+		}
+		GDScriptParser::DataType bound = p_arg;
+		bound.is_constant = false;
+		bound.is_meta_type = false;
+		r_bindings[p_param.type_param_name] = bound;
+		return;
+	}
+	for (int i = 0; i < p_param.get_container_element_type_count(); i++) {
+		if (p_arg.has_container_element_type(i)) {
+			bind_type_parameters(p_param.get_container_element_type(i), p_arg.get_container_element_type(i), r_bindings);
+		}
+	}
+	if (p_param.has_callable_signature && p_arg.has_callable_signature) {
+		const int count = MIN(p_param.callable_signature.size(), p_arg.callable_signature.size());
+		for (int i = 0; i < count; i++) {
+			bind_type_parameters(p_param.callable_signature[i], p_arg.callable_signature[i], r_bindings);
+		}
+	}
+}
+
+GDScriptParser::DataType GDScriptAnalyzer::substitute_type_parameters(const GDScriptParser::DataType &p_type, const HashMap<StringName, GDScriptParser::DataType> &p_bindings) {
+	if (p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		const GDScriptParser::DataType *bound = p_bindings.getptr(p_type.type_param_name);
+		if (bound != nullptr) {
+			return *bound;
+		}
+		GDScriptParser::DataType variant_type;
+		variant_type.kind = GDScriptParser::DataType::VARIANT;
+		return variant_type;
+	}
+	GDScriptParser::DataType result = p_type;
+	for (int i = 0; i < p_type.get_container_element_type_count(); i++) {
+		result.set_container_element_type(i, substitute_type_parameters(p_type.get_container_element_type(i), p_bindings));
+	}
+	if (p_type.has_callable_signature) {
+		for (int i = 0; i < p_type.callable_signature.size(); i++) {
+			result.callable_signature.write[i] = substitute_type_parameters(p_type.callable_signature[i], p_bindings);
+		}
+	}
+	return result;
+}
+
+bool GDScriptAnalyzer::type_has_container_type_parameter(const GDScriptParser::DataType &p_type) {
+	for (int i = 0; i < p_type.get_container_element_type_count(); i++) {
+		const GDScriptParser::DataType element = p_type.get_container_element_type(i);
+		if (element.kind == GDScriptParser::DataType::TYPE_PARAMETER || type_has_container_type_parameter(element)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static GDScriptParser::DataType make_signal_type(const MethodInfo &p_info) {
 	GDScriptParser::DataType type;
 	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -1021,6 +1077,17 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 
 	GDScriptParser::DataType result;
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+
+	if (p_type->type_chain.size() == 1 && p_type->container_types.is_empty() && parser->current_function != nullptr) {
+		for (const GDScriptParser::IdentifierNode *type_parameter : parser->current_function->type_parameters) {
+			if (type_parameter->name == p_type->type_chain[0]->name) {
+				result.kind = GDScriptParser::DataType::TYPE_PARAMETER;
+				result.type_param_name = type_parameter->name;
+				p_type->resolved_type = result;
+				return result;
+			}
+		}
+	}
 
 	if (p_type->is_callable_signature) {
 		GDScriptParser::DataType variant_type;
@@ -3118,6 +3185,10 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	}
 #endif // DEBUG_ENABLED
 
+	if (!p_function->type_parameters.is_empty() && type_has_container_type_parameter(p_function->return_type_constraint)) {
+		push_error(vformat(R"*(A generic function cannot return "%s": the type parameter is erased at runtime, so "%s()" cannot build a container of it. Return the element type, or take the container as a parameter.)*", p_function->return_type_constraint.to_string(), function_name), p_function->return_type != nullptr ? static_cast<GDScriptParser::Node *>(p_function->return_type) : static_cast<GDScriptParser::Node *>(p_function));
+	}
+
 	method_info.default_arguments.append_array(p_function->default_arg_values);
 	method_info.return_val = p_function->return_type_constraint.to_property_info("");
 	p_function->info = method_info;
@@ -5097,8 +5168,38 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		}
 	}
 
-	if (get_function_signature(p_call, is_constructor, base_type, p_call->function_name, return_type, par_types, default_arg_count, method_flags)) {
+	Vector<StringName> type_parameters;
+	if (get_function_signature(p_call, is_constructor, base_type, p_call->function_name, return_type, par_types, default_arg_count, method_flags, nullptr, &type_parameters)) {
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
+
+		if (!type_parameters.is_empty()) {
+			// A generic function: bind its type parameters from the arguments, then check the call
+			// against the bound types and give it the bound return type.
+			HashMap<StringName, GDScriptParser::DataType> bindings;
+			{
+				uint32_t i = 0;
+				for (const GDScriptParser::DataType &par_type : par_types) {
+					if (i >= p_call->arguments.size()) {
+						break;
+					}
+					bind_type_parameters(par_type, p_call->arguments[i]->type_constraint, bindings);
+					i++;
+				}
+			}
+			List<GDScriptParser::DataType> bound_par_types;
+			for (const GDScriptParser::DataType &par_type : par_types) {
+				bound_par_types.push_back(substitute_type_parameters(par_type, bindings));
+			}
+			par_types = bound_par_types;
+			return_type = substitute_type_parameters(return_type, bindings);
+#ifdef DEBUG_ENABLED
+			for (const StringName &type_parameter : type_parameters) {
+				if (!bindings.has(type_parameter)) {
+					mark_node_unsafe(p_call);
+				}
+			}
+#endif // DEBUG_ENABLED
+		}
 		// If the method is implemented in the class hierarchy, the virtual/abstract flag will not be set for that `MethodInfo` and the search stops there.
 		// Virtual/abstract check only possible for super calls because class hierarchy is known. Objects may have scripts attached we don't know of at compile-time.
 		if (p_call->is_super) {
@@ -5296,7 +5397,10 @@ void GDScriptAnalyzer::reduce_cast(GDScriptParser::CastNode *p_cast) {
 #endif // DEBUG_ENABLED
 		} else {
 			bool valid = false;
-			if (cast_type.kind == GDScriptParser::DataType::TRAIT || op_type.kind == GDScriptParser::DataType::TRAIT) {
+			if (cast_type.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+				push_error(vformat(R"(Cannot use the type parameter "%s" with "as": it does not exist at runtime.)", cast_type.to_string()), p_cast->cast_type);
+				valid = true; // Already reported.
+			} else if (cast_type.kind == GDScriptParser::DataType::TRAIT || op_type.kind == GDScriptParser::DataType::TRAIT) {
 				// Decided at runtime: any object or struct may use a trait. Plain built-in values cannot.
 				const GDScriptParser::DataType &other = cast_type.kind == GDScriptParser::DataType::TRAIT ? op_type : cast_type;
 				valid = other.kind != GDScriptParser::DataType::BUILTIN || other.builtin_type == Variant::STRUCT;
@@ -6640,7 +6744,10 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 							case Variant::DICTIONARY:
 								if (base_type.has_container_element_type(0)) {
 									GDScriptParser::DataType key_type = base_type.get_container_element_type(0);
-									if (!key_type.is_variant() && key_type.is_hard_type()) {
+									if (key_type.kind == GDScriptParser::DataType::TYPE_PARAMETER || index_type.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+										// Opaque inside a generic function: only the same type parameter indexes it.
+										error = !is_type_compatible(key_type, index_type);
+									} else if (!key_type.is_variant() && key_type.is_hard_type()) {
 										switch (index_type.builtin_type) {
 											// Null value will be treated as an empty object, allow.
 											case Variant::NIL:
@@ -6877,6 +6984,11 @@ void GDScriptAnalyzer::reduce_type_test(GDScriptParser::TypeTestNode *p_type_tes
 			p_type_test->reduced_value = test_type.builtin_type != Variant::OBJECT || !p_type_test->operand->reduced_value.is_null();
 		}
 
+		return;
+	}
+
+	if (test_type.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		push_error(vformat(R"(Cannot use the type parameter "%s" with "is": it does not exist at runtime.)", test_type.to_string()), p_type_test->test_type);
 		return;
 	}
 
@@ -7569,7 +7681,7 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 	return result;
 }
 
-bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor, GDScriptParser::DataType p_base_type, const StringName &p_function, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, StringName *r_native_class) {
+bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor, GDScriptParser::DataType p_base_type, const StringName &p_function, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, StringName *r_native_class, Vector<StringName> *r_type_parameters) {
 	r_method_flags = METHOD_FLAGS_DEFAULT;
 	r_default_arg_count = 0;
 	if (r_native_class) {
@@ -7723,6 +7835,11 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		}
 		if (found_function->is_vararg()) {
 			r_method_flags.set_flag(METHOD_FLAG_VARARG);
+		}
+		if (r_type_parameters != nullptr) {
+			for (const GDScriptParser::IdentifierNode *type_parameter : found_function->type_parameters) {
+				r_type_parameters->push_back(type_parameter->name);
+			}
 		}
 		r_return_type = p_is_constructor ? p_base_type : found_function->return_type_constraint;
 		r_return_type.is_meta_type = false;
@@ -8098,6 +8215,11 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 	if (p_source.kind == GDScriptParser::DataType::VARIANT) {
 		// TODO: This is acceptable but unsafe. Make sure unsafe line is set.
 		return true;
+	}
+
+	if (p_target.kind == GDScriptParser::DataType::TYPE_PARAMETER || p_source.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+		// Opaque inside the generic function: only the same type parameter fits.
+		return p_target.kind == p_source.kind && p_target.type_param_name == p_source.type_param_name;
 	}
 
 	if (p_target.kind == GDScriptParser::DataType::TRAIT) {

@@ -16,6 +16,7 @@ Contents:
 - [Engine APIs that return structs instead of dictionaries](#engine-apis-that-return-structs-instead-of-dictionaries)
 - [Traits](#traits)
 - [Typed Callables](#typed-callables)
+- [Generic functions](#generic-functions)
 - [`for` loops with two variables](#for-loops-with-two-variables)
 - [Editor support](#editor-support)
 - [Roadmap](#roadmap)
@@ -383,6 +384,70 @@ accepted where a typed callable is expected.
 
 ---
 
+## Generic functions
+
+A function can take type parameters, so one helper works for every element
+type and the caller keeps theirs:
+
+```gdscript
+func first[T](items: Array[T]) -> T:
+    return items[0]
+
+func get_or[K, V](dict: Dictionary[K, V], key: K, fallback: V) -> V:
+    return dict[key] if dict.has(key) else fallback
+
+func _ready():
+    var scores: Array[int] = [3, 1, 2]
+    var n := first(scores)          # n is an int, not a Variant
+    print(n + 1)
+
+    var names: Array[String] = ["ada"]
+    print(first(names).to_upper())  # String's members, no cast
+
+    var stock: Dictionary[String, int] = {"apple": 3}
+    print(get_or(stock, "pear", 0) + 1)
+```
+
+The type parameters are worked out from the arguments at each call, and the
+result carries the type through, so `first(names)` really is a `String`.
+Mixing them up is caught:
+
+```gdscript
+func pick[T](a: T, b: T) -> T:
+    return a
+
+pick(1, "two")     # error: argument 2 should be "int" but is "String"
+```
+
+Typed callables combine with this, which is where it earns its keep:
+
+```gdscript
+func count_where[T](items: Array[T], pred: func(T) -> bool) -> int:
+    var total := 0
+    for item in items:
+        if pred.call(item):
+            total += 1
+    return total
+
+count_where(scores, func(x: int) -> bool: return x > 1)
+```
+
+Inside the function the type parameter is opaque: the body has to work for
+every possible `T`, so `T` has no members of its own. Reaching into one is
+an unsafe access, which strict mode turns into an error.
+
+**One limit for now.** A generic function cannot *return* a container of a
+type parameter:
+
+```gdscript
+func map[T, U](items: Array[T], f: func(T) -> U) -> Array[U]:   # error
+```
+
+Type parameters do not exist at runtime, so the function would have to build
+an `Array[U]` without knowing what `U` is. Returning the element type, or
+taking the container as a parameter, both work. Lifting this is the next
+step on the roadmap.
+
 ## `for` loops with two variables
 
 Iterating a dictionary no longer needs a lookup inside the loop, and
@@ -429,9 +494,11 @@ structs is still to come.
 
 Next, in order:
 
-1. **Generics.** `Array[T].map()` inferring `Array[U]`, generic functions,
-   then generic classes. Typed Callables were the groundwork; this needs a
-   design pass first.
+1. **Generic functions that build containers.** Today a generic function
+   cannot return `Array[T]`, because type parameters are erased. Passing the
+   bound types to the function at runtime lifts that, and unlocks `map` and
+   `filter` written in GDScript. After that: inference for the built-in
+   `Array.map()`, then generic classes.
 2. **Typed `PackedScene` exports.** `@export var enemy: PackedScene[Enemy]`,
    with the scene picker filtered to scenes whose root matches, so dropping
    the wrong scene into a slot is caught in the editor.

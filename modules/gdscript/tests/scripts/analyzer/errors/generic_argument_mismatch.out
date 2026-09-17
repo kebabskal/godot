@@ -1,0 +1,3 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Cannot pass a value of type "String" as "int".
+>> ERROR at line 5: Invalid argument for "pick()" function: argument 2 should be "int" but is "String".

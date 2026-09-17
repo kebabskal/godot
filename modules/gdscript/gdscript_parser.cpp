@@ -1960,6 +1960,29 @@ GDScriptParser::FunctionNode *GDScriptParser::parse_function(bool p_is_static) {
 
 	function->identifier = parse_identifier();
 
+	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		// Type parameters: `func first[T](...)`.
+		do {
+			if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+				break; // Trailing comma.
+			}
+			if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected a type parameter name.)")) {
+				break;
+			}
+			IdentifierNode *type_parameter = parse_identifier();
+			if (get_builtin_type(type_parameter->name) < Variant::VARIANT_MAX) {
+				push_error(vformat(R"(Cannot use "%s" as a type parameter name: it is a built-in type.)", type_parameter->name), type_parameter);
+			}
+			for (const IdentifierNode *other : function->type_parameters) {
+				if (other->name == type_parameter->name) {
+					push_error(vformat(R"(Type parameter "%s" was already declared for this function.)", type_parameter->name), type_parameter);
+				}
+			}
+			function->type_parameters.push_back(type_parameter);
+		} while (match(GDScriptTokenizer::Token::COMMA));
+		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after the type parameters.)");
+	}
+
 	SuiteNode *body = alloc_node<SuiteNode>();
 
 	SuiteNode *previous_suite = current_suite;
@@ -5576,6 +5599,8 @@ String GDScriptParser::DataType::to_string() const {
 			return class_type->fqcn;
 		case TRAIT:
 			return String(trait_name).get_slice("::", String(trait_name).get_slice_count("::") - 1);
+		case TYPE_PARAMETER:
+			return String(type_param_name);
 		case SCRIPT: {
 			if (is_meta_type) {
 				return script_type.is_valid() ? script_type->get_class_name().string() : "";
@@ -5624,6 +5649,7 @@ String GDScriptParser::DataType::to_property_info_hint_string() const {
 		case ENUM:
 			return String(native_type).replace("::", ".");
 		case TRAIT: // No class reference page; a Variant as far as the API is concerned.
+		case TYPE_PARAMETER:
 		case VARIANT:
 			return "Variant";
 		case RESOLVING:
@@ -5703,6 +5729,7 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 			}
 			break;
 		case TRAIT:
+		case TYPE_PARAMETER:
 		case VARIANT:
 		case RESOLVING:
 		case UNRESOLVED:
