@@ -321,8 +321,17 @@ group are independent and can proceed in any order.
   strict mode makes all code typed). Tooling done per the checklist
   except the class reference, which has nowhere to document a script
   keyword. Trap: `check_type_compatibility()` is static, so anything it
-  consults (`uses` lists) must be resolved eagerly with the type. Next:
-  default method bodies, then required properties.
+  consults (`uses` lists) must be resolved eagerly with the type.
+  Increment 2 landed: default methods. A trait function with a body is
+  analyzed once in the trait's context (`self` is the trait type, bare
+  calls reach the trait's other methods, the enclosing class's instance
+  members are an error) and compiled into every class that uses the
+  trait unless the class chain already has the method; subclass
+  overrides are seen because the body calls through `self` by name. In
+  structs a default becomes a struct method that always writes back,
+  since the shared node cannot carry a per-struct "mutates" flag. Two
+  traits providing the same default is an error. Next: required
+  properties (increment 3), then typed Callables (item 6).
 - Tooling parity is part of "done" for every language feature from
   here on. Checklist: parser/analyzer/compiler; class reference docs;
   editor completion (`gdscript_editor.cpp`: type names, class members,

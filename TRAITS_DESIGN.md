@@ -1,6 +1,6 @@
 # Traits (roadmap item 7)
 
-Status: increment 1 landed (interfaces). Default methods are next.
+Status: increments 1 (interfaces) and 2 (default methods) landed. Required properties are next.
 
 ## Goal
 
@@ -138,6 +138,32 @@ traits (`trait_name` files) are out of scope for now.
   completes the trait's methods only, lookup goes to the signature, the
   language server reports `Interface` symbols and a `traits` / `uses`
   section in the script API.
+
+## As built (increment 2, default methods)
+
+- A trait function with a body is a default. Its body is analyzed once, in
+  the trait's context: `self` is the trait type and a bare call resolves to
+  the trait's other methods (`CallNode::trait_self_call`). Nothing of the
+  enclosing class is reachable except constants and types, because the
+  trait may be used by any class; the analyzer runs these bodies under the
+  static-context rules and reports a trait-specific error.
+- Classes: conformance collects the defaults that no class in the chain
+  implements (`ClassNode::trait_default_methods`; own, inherited, script
+  base and native methods all win over a default) and the compiler emits
+  each one into the using class as an ordinary method. Calls inside the
+  body go through `self` by name, so a subclass override is seen. Two used
+  traits providing the same default is an error at the `uses` line.
+  `get_function_signature()` finds defaults after the real methods, so
+  `enemy.describe()` type-checks on the class type too.
+- Structs: an unimplemented default is appended to the struct's method
+  list and compiled as a struct method (`_parse_function` takes the struct
+  as context, since the node belongs to the trait). Calls to the trait's
+  other methods go by name through the value, with write-back. The node
+  is shared between users, so whether it mutates is not known per struct:
+  it always writes back, the compiler copies a constant receiver first,
+  and the analyzer does not demand a writable receiver.
+- Not possible in a default body: `await` (it may be compiled into a
+  struct), instance members or static functions of the enclosing class.
 
 ## Not doing
 
