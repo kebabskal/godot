@@ -516,13 +516,8 @@ group are independent and can proceed in any order.
   A third thing, found by running it on real code, turned out to be a defect in
   `emit` rather than in the inference; it is the entry above. Two more, both
   pre-existing and both bigger than this change:
-  - Inferred lambda parameters do not survive strict mode. The untyped
-    declaration check runs when the lambda's signature is resolved, which is
-    before the call site applies the expected types, so
-    `nums.map(n => n * 2)` is "Parameter "n" has no static type" under strict
-    mode today. That means the whole short-lambda feature is off in the mode
-    this fork pushes. The fix is to defer the check for lambda parameters
-    until after the expectation has been applied.
+  - Inferred lambda parameters do not survive strict mode. **Fixed**, see the
+    entry above; the same deferral also covers the inferred return type.
   - Completion does not see an inferred lambda parameter, for signals or for
     `map()`. The guesser rebuilds types from the parse tree and knows nothing
     about the expected-callable machinery, so `nums.map(n => n.➡)` offers
@@ -565,6 +560,26 @@ group are independent and can proceed in any order.
   the inference and the conversion at the producing end have to land together.
   Still not done in item 9: rejecting a connected callable whose signature does
   not fit the signal.
+- Inferred lambda parameters now survive strict mode, which is what made the
+  short-lambda and typed-signal work usable in the mode this fork pushes.
+  Reported against real code:
+  `test_signal.connect(a => print(a.filter(b => b.begins_with("k"))))` under
+  strict mode produced four errors -- `a` and `b` "has no static type" and two
+  "has no static return type" -- even though every one of those types is
+  inferred. The untyped-declaration checks ran while the lambda's *signature*
+  was resolved, which is before the call site applies the expected parameter
+  types and before the body determines the return type, so they were asking
+  for types that did not exist yet. Both checks are now deferred for lambdas
+  to the end of `resolve_function_body()` and warn only about what is still
+  genuinely unknown. `nums.map(n => n * 2)` was equally broken and is equally
+  fixed. Deliberately unchanged: a *named* function without a return type is
+  still an error under strict mode, since there a missing annotation means
+  "untyped" rather than "work it out", and inferring `void` would change what
+  existing code means. That is the answer to feedback item 7: the noise was
+  never really `-> void`, it was strict mode discarding inference it already
+  had. Test: `analyzer/warnings/untyped_declaration_lambda.gd`, which enables
+  the warning and pins both halves -- inferred parameters silent, a standalone
+  `func(x)` still reported.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
@@ -621,11 +636,13 @@ work are recorded as such so they are not "fixed" twice.
    one. Both apply to `map()` as much as to signals.
 7. **`-> void` is noisy.** Under strict mode a function without a return type
    is an error ("has no static return type"), so every handler and lambda
-   carries `-> void`. Asked whether it could be inferred. Worth splitting: for
-   a lambda the expected type or the body already determines it and inferring
-   is safe; for a named function a missing return type currently means
-   "untyped", so inferring `void` would change what existing code means and
-   needs a decision rather than a patch.
+   carries `-> void`. **Answered and half done.** For lambdas the real problem
+   was not the annotation but that strict mode threw away the inference it
+   already had; both the parameter and the return-type checks now run after
+   the body, so `n => n * 2` and `a => print(a)` need nothing written out.
+   For a *named* function the decision is to leave it alone: a missing return
+   type there means "untyped", and inferring `void` would silently change what
+   existing code means.
 8. **Struct-returning engine APIs did not complete.** Fixed, see Progress.
 9. **Generic global classes.** Asked for `class_name` on a generic class, so
    generics can be used for components across files. Currently inner classes

@@ -1,0 +1,7 @@
+GDTEST_OK
+~~ WARNING at line 11: (RETURN_VALUE_DISCARDED) The function "connect()" returns a value that will be discarded if not used.
+~~ WARNING at line 15: (UNTYPED_DECLARATION) Parameter "x" has no static type.
+~~ WARNING at line 15: (UNTYPED_DECLARATION) Function "<anonymous lambda>()" has no static return type.
+[2, 4, 6]
+["kebab"]
+1

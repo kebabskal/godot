@@ -3353,7 +3353,9 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	if (function_name == StringName()) {
 		function_visible_name = p_is_lambda ? "<anonymous lambda>" : "<unknown function>";
 	}
-	if (p_function->return_type == nullptr) {
+	// A lambda's return type is inferred from its own body, which has not been resolved yet, so
+	// this check moves to the end of the body too.
+	if (p_function->return_type == nullptr && !p_is_lambda) {
 		parser->push_warning(p_function->start_line, p_function->start_column, p_function->header_end_line, p_function->header_end_column, GDScriptWarning::UNTYPED_DECLARATION, "Function", function_visible_name);
 	}
 #endif // DEBUG_ENABLED
@@ -3434,6 +3436,23 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 			push_error(R"(Not all code paths return a value.)", p_function);
 		}
 	}
+
+#ifdef DEBUG_ENABLED
+	if (p_is_lambda) {
+		// Deferred from the signature. A lambda's parameter types come from the call it is written
+		// in and its return type from its own body, so neither is known until here. Warn only about
+		// what is still genuinely unknown, which is what keeps `nums.map(n => n * 2)` legal under
+		// strict mode instead of demanding types the compiler already worked out.
+		for (const GDScriptParser::ParameterNode *const param : p_function->parameters) {
+			if (param->datatype_specifier == nullptr && !param->infer_datatype && (!param->type_constraint.is_set() || param->type_constraint.is_variant())) {
+				parser->push_warning(param, GDScriptWarning::UNTYPED_DECLARATION, "Parameter", param->identifier->name);
+			}
+		}
+		if (p_function->return_type == nullptr && (!p_function->return_type_constraint.is_set() || p_function->return_type_constraint.is_variant())) {
+			parser->push_warning(p_function->start_line, p_function->start_column, p_function->header_end_line, p_function->header_end_column, GDScriptWarning::UNTYPED_DECLARATION, "Function", function_visible_name);
+		}
+	}
+#endif // DEBUG_ENABLED
 
 	parser->current_function = previous_function;
 	static_context = previous_static_context;
@@ -3641,6 +3660,10 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 			if (!is_type_import) {
 				parser->push_warning(p_assignable, GDScriptWarning::INFERRED_DECLARATION, declaration_type, p_assignable->identifier->name);
 			}
+		} else if (is_parameter && parser->current_function != nullptr && parser->current_function->source_lambda != nullptr) {
+			// A lambda's parameter can still take its type from the call the lambda is written in,
+			// which happens after its signature is resolved. The check moves to the end of the body,
+			// by which time the expected types have been applied.
 		} else {
 			parser->push_warning(p_assignable, GDScriptWarning::UNTYPED_DECLARATION, declaration_type, p_assignable->identifier->name);
 		}

@@ -575,6 +575,11 @@ captures and everything else behave as before. One parameter needs no
 parentheses; zero or several do. A body that returns nothing, such as a
 `print()`, is fine: the lambda simply returns nothing too.
 
+This holds under strict mode too. A lambda's parameters and return type are
+inferred, so strict mode asks for nothing that the compiler already worked
+out; a lambda with nothing to infer from is still reported, and a named
+function still needs its return type written out.
+
 The parameter types come from the call, so they are known without writing
 them out:
 
