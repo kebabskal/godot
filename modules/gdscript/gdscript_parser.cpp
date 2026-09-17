@@ -968,6 +968,7 @@ GDScriptParser::ClassNode *GDScriptParser::parse_class(bool p_is_static) {
 		} else {
 			n_class->fqcn = n_class->identifier->name;
 		}
+		parse_type_parameters(n_class->type_parameters);
 	}
 
 	if (match(GDScriptTokenizer::Token::EXTENDS)) {
@@ -1776,6 +1777,35 @@ GDScriptParser::StructNode *GDScriptParser::parse_struct(bool p_is_static) {
 	return struct_node;
 }
 
+// `[T, U]` after a class or function name.
+bool GDScriptParser::parse_type_parameters(LocalVector<IdentifierNode *> &r_type_parameters) {
+	if (!match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
+		return true;
+	}
+	bool valid = true;
+	do {
+		if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
+			break; // Trailing comma.
+		}
+		if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected a type parameter name.)")) {
+			valid = false;
+			break;
+		}
+		IdentifierNode *type_parameter = parse_identifier();
+		if (get_builtin_type(type_parameter->name) < Variant::VARIANT_MAX) {
+			push_error(vformat(R"(Cannot use "%s" as a type parameter name: it is a built-in type.)", type_parameter->name), type_parameter);
+		}
+		for (const IdentifierNode *other : r_type_parameters) {
+			if (other->name == type_parameter->name) {
+				push_error(vformat(R"(Type parameter "%s" was already declared here.)", type_parameter->name), type_parameter);
+			}
+		}
+		r_type_parameters.push_back(type_parameter);
+	} while (match(GDScriptTokenizer::Token::COMMA));
+	consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after the type parameters.)");
+	return valid;
+}
+
 GDScriptParser::TraitNode *GDScriptParser::parse_trait(bool p_is_static) {
 	TraitNode *trait_node = alloc_node<TraitNode>();
 	make_completion_context(COMPLETION_DECLARATION, trait_node);
@@ -1960,28 +1990,7 @@ GDScriptParser::FunctionNode *GDScriptParser::parse_function(bool p_is_static) {
 
 	function->identifier = parse_identifier();
 
-	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
-		// Type parameters: `func first[T](...)`.
-		do {
-			if (check(GDScriptTokenizer::Token::BRACKET_CLOSE)) {
-				break; // Trailing comma.
-			}
-			if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected a type parameter name.)")) {
-				break;
-			}
-			IdentifierNode *type_parameter = parse_identifier();
-			if (get_builtin_type(type_parameter->name) < Variant::VARIANT_MAX) {
-				push_error(vformat(R"(Cannot use "%s" as a type parameter name: it is a built-in type.)", type_parameter->name), type_parameter);
-			}
-			for (const IdentifierNode *other : function->type_parameters) {
-				if (other->name == type_parameter->name) {
-					push_error(vformat(R"(Type parameter "%s" was already declared for this function.)", type_parameter->name), type_parameter);
-				}
-			}
-			function->type_parameters.push_back(type_parameter);
-		} while (match(GDScriptTokenizer::Token::COMMA));
-		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after the type parameters.)");
-	}
+	parse_type_parameters(function->type_parameters);
 
 	SuiteNode *body = alloc_node<SuiteNode>();
 
@@ -5724,11 +5733,20 @@ String GDScriptParser::DataType::to_string() const {
 				return GDScriptNativeClass::get_class_static();
 			}
 			return native_type.string();
-		case CLASS:
-			if (class_type->identifier != nullptr) {
-				return class_type->identifier->name.string();
+		case CLASS: {
+			String class_name = class_type->identifier != nullptr ? class_type->identifier->name.string() : class_type->fqcn;
+			if (!class_type->type_parameters.is_empty() && has_container_element_types()) {
+				class_name += "[";
+				for (int i = 0; i < get_container_element_type_count(); i++) {
+					if (i > 0) {
+						class_name += ", ";
+					}
+					class_name += get_container_element_type(i).to_string();
+				}
+				class_name += "]";
 			}
-			return class_type->fqcn;
+			return class_name;
+		}
 		case TRAIT:
 			return String(trait_name).get_slice("::", String(trait_name).get_slice_count("::") - 1);
 		case TYPE_PARAMETER:

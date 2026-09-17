@@ -878,6 +878,7 @@ public:
 		HashMap<StringName, uint32_t> members_indices;
 		ClassNode *outer = nullptr;
 		bool extends_used = false;
+		LocalVector<IdentifierNode *> type_parameters; // `class Pool[T]:`, erased at runtime like a generic function's.
 		Vector<TypeNode *> used_traits; // `uses A, B` statements.
 		Vector<DataType> used_trait_types; // Resolved by the analyzer, same order; unset entries failed.
 		Vector<FunctionNode *> trait_default_methods; // Default methods of used traits that no class in the chain implements; compiled into this class.
@@ -1812,6 +1813,8 @@ private:
 	ExpressionNode *parse_attribute(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
+	// `[T, U]` after a class or function name. Returns false if the list is malformed.
+	bool parse_type_parameters(LocalVector<IdentifierNode *> &r_type_parameters);
 	// `item => item.name`: a lambda whose body is one expression.
 	ExpressionNode *parse_arrow_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
 	// Builds the lambda once the parameters are known and `=>` has been consumed.

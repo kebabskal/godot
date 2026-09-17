@@ -269,11 +269,14 @@ void GDScriptAnalyzer::bind_type_parameters(const GDScriptParser::DataType &p_pa
 	}
 }
 
-GDScriptParser::DataType GDScriptAnalyzer::substitute_type_parameters(const GDScriptParser::DataType &p_type, const HashMap<StringName, GDScriptParser::DataType> &p_bindings) {
+GDScriptParser::DataType GDScriptAnalyzer::substitute_type_parameters(const GDScriptParser::DataType &p_type, const HashMap<StringName, GDScriptParser::DataType> &p_bindings, bool p_keep_unbound) {
 	if (p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
 		const GDScriptParser::DataType *bound = p_bindings.getptr(p_type.type_param_name);
 		if (bound != nullptr) {
 			return *bound;
+		}
+		if (p_keep_unbound) {
+			return p_type;
 		}
 		GDScriptParser::DataType variant_type;
 		variant_type.kind = GDScriptParser::DataType::VARIANT;
@@ -281,14 +284,43 @@ GDScriptParser::DataType GDScriptAnalyzer::substitute_type_parameters(const GDSc
 	}
 	GDScriptParser::DataType result = p_type;
 	for (int i = 0; i < p_type.get_container_element_type_count(); i++) {
-		result.set_container_element_type(i, substitute_type_parameters(p_type.get_container_element_type(i), p_bindings));
+		result.set_container_element_type(i, substitute_type_parameters(p_type.get_container_element_type(i), p_bindings, p_keep_unbound));
 	}
 	if (p_type.has_callable_signature) {
 		for (int i = 0; i < p_type.callable_signature.size(); i++) {
-			result.callable_signature.write[i] = substitute_type_parameters(p_type.callable_signature[i], p_bindings);
+			result.callable_signature.write[i] = substitute_type_parameters(p_type.callable_signature[i], p_bindings, p_keep_unbound);
 		}
 	}
 	return result;
+}
+
+void GDScriptAnalyzer::bindings_from_class_type(const GDScriptParser::DataType &p_type, HashMap<StringName, GDScriptParser::DataType> &r_bindings) {
+	if (p_type.kind != GDScriptParser::DataType::CLASS || p_type.class_type == nullptr) {
+		return;
+	}
+	const LocalVector<GDScriptParser::IdentifierNode *> &type_parameters = p_type.class_type->type_parameters;
+	for (uint32_t i = 0; i < type_parameters.size() && (int)i < p_type.get_container_element_type_count(); i++) {
+		const GDScriptParser::DataType argument = p_type.get_container_element_type(i);
+		if (argument.is_set() && !argument.is_variant()) {
+			r_bindings[type_parameters[i]->name] = argument;
+		}
+	}
+}
+
+GDScriptParser::DataType GDScriptAnalyzer::member_type_for_base(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base_type) {
+	HashMap<StringName, GDScriptParser::DataType> bindings;
+	bindings_from_class_type(p_base_type, bindings);
+	if (bindings.is_empty()) {
+		return p_member_type;
+	}
+	if (type_has_container_type_parameter(p_member_type)) {
+		// `var items: Array[T]` is an untyped array at runtime, so saying `Array[int]` here would be
+		// a claim the value cannot back up. The container type without its element type is honest.
+		GDScriptParser::DataType erased = p_member_type;
+		erased.container_element_types.clear();
+		return erased;
+	}
+	return substitute_type_parameters(p_member_type, bindings);
 }
 
 bool GDScriptAnalyzer::type_has_container_type_parameter(const GDScriptParser::DataType &p_type) {
@@ -1163,14 +1195,24 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 	GDScriptParser::DataType result;
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 
-	if (p_type->type_chain.size() == 1 && p_type->container_types.is_empty() && parser->current_function != nullptr) {
-		for (const GDScriptParser::IdentifierNode *type_parameter : parser->current_function->type_parameters) {
-			if (type_parameter->name == p_type->type_chain[0]->name) {
-				result.kind = GDScriptParser::DataType::TYPE_PARAMETER;
-				result.type_param_name = type_parameter->name;
-				p_type->resolved_type = result;
-				return result;
+	if (p_type->type_chain.size() == 1 && p_type->container_types.is_empty()) {
+		const StringName &name = p_type->type_chain[0]->name;
+		bool is_type_parameter = false;
+		if (parser->current_function != nullptr) {
+			for (const GDScriptParser::IdentifierNode *type_parameter : parser->current_function->type_parameters) {
+				is_type_parameter = is_type_parameter || type_parameter->name == name;
 			}
+		}
+		for (const GDScriptParser::ClassNode *c = parser->current_class; c != nullptr && !is_type_parameter; c = c->outer) {
+			for (const GDScriptParser::IdentifierNode *type_parameter : c->type_parameters) {
+				is_type_parameter = is_type_parameter || type_parameter->name == name;
+			}
+		}
+		if (is_type_parameter) {
+			result.kind = GDScriptParser::DataType::TYPE_PARAMETER;
+			result.type_param_name = name;
+			p_type->resolved_type = result;
+			return result;
 		}
 	}
 
@@ -1469,6 +1511,18 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			if (p_type->container_types.size() != 2) {
 				push_error(R"(Typed dictionaries require exactly two collection element types.)", p_type);
 				return bad_type;
+			}
+		} else if (result.kind == GDScriptParser::DataType::CLASS && result.class_type != nullptr && !result.class_type->type_parameters.is_empty()) {
+			// `Pool[int]`: the type arguments of a generic class, kept in the same place as a
+			// container's element types.
+			if (p_type->container_types.size() != (int)result.class_type->type_parameters.size()) {
+				push_error(vformat(R"(Class "%s" takes %d type argument(s), but got %d.)", result.to_string(), result.class_type->type_parameters.size(), p_type->container_types.size()), p_type);
+				return bad_type;
+			}
+			for (int i = 0; i < p_type->container_types.size(); i++) {
+				GDScriptParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
+				argument.is_constant = false;
+				result.set_container_element_type(i, argument);
 			}
 		} else {
 			push_error(R"(Only arrays and dictionaries can specify collection element types.)", p_type);
@@ -5282,17 +5336,22 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			}
 		}
 
-		if (!type_parameters.is_empty()) {
-			// A generic function: bind its type parameters from the arguments, then check the call
-			// against the bound types and give it the bound return type.
+		// Type parameters come from two places: the class the method belongs to (`Pool[int]`), and the
+		// function's own (`first[T]`). Both are substituted the same way.
+		HashMap<StringName, GDScriptParser::DataType> class_bindings;
+		bindings_from_class_type(base_type, class_bindings);
+		if (!type_parameters.is_empty() || !class_bindings.is_empty()) {
 			HashMap<StringName, GDScriptParser::DataType> bindings;
+			for (const KeyValue<StringName, GDScriptParser::DataType> &binding : class_bindings) {
+				bindings[binding.key] = binding.value;
+			}
 			{
 				uint32_t i = 0;
 				for (const GDScriptParser::DataType &par_type : par_types) {
 					if (i >= p_call->arguments.size()) {
 						break;
 					}
-					bind_type_parameters(par_type, p_call->arguments[i]->type_constraint, bindings);
+					bind_type_parameters(substitute_type_parameters(par_type, class_bindings, true), p_call->arguments[i]->type_constraint, bindings);
 					i++;
 				}
 			}
@@ -5983,7 +6042,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 
 				case GDScriptParser::ClassNode::Member::VARIABLE: {
 					if (is_base && (!base.is_meta_type || member.variable->is_static)) {
-						p_identifier->type_constraint = member.get_datatype();
+						p_identifier->type_constraint = member_type_for_base(member.get_datatype(), base);
 						p_identifier->source = member.variable->is_static ? GDScriptParser::IdentifierNode::STATIC_VARIABLE : GDScriptParser::IdentifierNode::MEMBER_VARIABLE;
 						p_identifier->variable_source = member.variable;
 						member.variable->usages += 1;
@@ -8544,6 +8603,21 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 		case GDScriptParser::DataType::RESOLVING:
 		case GDScriptParser::DataType::UNRESOLVED:
 			break; // Already solved before.
+	}
+
+	// A generic class is invariant in its type arguments: a `Pool[String]` is not a `Pool[int]`.
+	// A value with no arguments (`Pool.new()`) still fits, so it can initialise either.
+	if (p_target.kind == GDScriptParser::DataType::CLASS && p_source.kind == GDScriptParser::DataType::CLASS &&
+			p_target.class_type != nullptr && !p_target.class_type->type_parameters.is_empty() &&
+			p_target.has_container_element_types() && p_source.has_container_element_types()) {
+		if (p_target.get_container_element_type_count() != p_source.get_container_element_type_count()) {
+			return false;
+		}
+		for (int i = 0; i < p_target.get_container_element_type_count(); i++) {
+			if (!(p_target.get_container_element_type(i) == p_source.get_container_element_type(i))) {
+				return false;
+			}
+		}
 	}
 
 	switch (p_target.kind) {

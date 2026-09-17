@@ -208,9 +208,17 @@ public:
 	// Binds the type parameters in `p_param` by matching it against an argument's type.
 	static void bind_type_parameters(const GDScriptParser::DataType &p_param, const GDScriptParser::DataType &p_arg, HashMap<StringName, GDScriptParser::DataType> &r_bindings);
 	// Replaces every type parameter in `p_type` with its binding (unbound ones become `Variant`).
-	static GDScriptParser::DataType substitute_type_parameters(const GDScriptParser::DataType &p_type, const HashMap<StringName, GDScriptParser::DataType> &p_bindings);
+	// With `p_keep_unbound`, a type parameter with no binding is left alone instead of becoming
+	// `Variant`, so a partial substitution (the class's arguments, before the function's own are
+	// worked out) does not erase what it has not bound yet.
+	static GDScriptParser::DataType substitute_type_parameters(const GDScriptParser::DataType &p_type, const HashMap<StringName, GDScriptParser::DataType> &p_bindings, bool p_keep_unbound = false);
 	// Whether a type parameter appears inside a container type, which cannot survive erasure.
 	static bool type_has_container_type_parameter(const GDScriptParser::DataType &p_type);
+	// The type arguments of a generic class type (`Pool[int]`), keyed by type parameter name.
+	static void bindings_from_class_type(const GDScriptParser::DataType &p_type, HashMap<StringName, GDScriptParser::DataType> &r_bindings);
+	// A member's type as seen from outside the class. A container of a type parameter loses its
+	// element type: the value really is an untyped container, because the class was compiled once.
+	static GDScriptParser::DataType member_type_for_base(const GDScriptParser::DataType &p_member_type, const GDScriptParser::DataType &p_base_type);
 
 	// A lambda written as a call argument takes its parameter types from the callable the callee
 	// expects, so `items.map(item => item.name)` knows what `item` is.

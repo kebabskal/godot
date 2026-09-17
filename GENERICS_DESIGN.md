@@ -1,6 +1,6 @@
 # Generics (roadmap item 6, second part)
 
-Status: increments 1 (generic functions), 2 (containers of type parameters) and the sound part of 3 (built-in container methods) landed.
+Status: all four increments landed: generic functions, containers of type parameters, the sound part of the built-in container methods, and generic classes.
 
 ## Goal
 
@@ -186,6 +186,47 @@ Two families are deliberately left as `Variant`:
   queue runs dry. `front()`, `back()` and `pick_random()` already raise an
   error when empty, so those are safe to sharpen.
 
+## As built (increment 4, generic classes)
+
+```
+class Pool[T]:
+    var items: Array[T] = []
+    func add(item: T) -> void: items.append(item)
+    func first() -> T: return items[0]
+
+var ints: Pool[int] = Pool.new()
+```
+
+- `class Name[T]:` shares the type parameter parsing with functions. Inside
+  the class, `T` resolves through the enclosing *class* chain as well as the
+  enclosing function.
+- `Pool[int]` as a type annotation keeps its arguments in the same storage a
+  container's element types use, so nothing new is needed to carry them.
+- Member access substitutes the arguments: `ints.add(x)` wants an `int`,
+  `ints.first()` gives one, and `ints.last` is one. Method calls go through
+  the same binding code as generic functions, which now merges the class's
+  arguments with the function's own.
+- Generic classes are **invariant**: a `Pool[String]` is not a `Pool[int]`.
+  A value with no arguments, which is what `Pool.new()` is, still fits
+  either, so construction needs no new syntax.
+- A method returning `Array[T]` is converted at the call site like a generic
+  function's, so `ints.all()` really is an `Array[int]`. That conversion
+  copies, so the caller does not get a reference to the class's own array.
+- A **member variable** of type `Array[T]` is different: there is no call to
+  convert at, and converting on every read would be worse than the problem.
+  Read from outside, `ints.items` is a plain `Array`, which is what the
+  value actually is. Scalar members like `var last: T` substitute normally.
+- Trap: the shared substitution helper turns an unbound type parameter into
+  `Variant`. Using it to apply the *class's* arguments before the function's
+  own were worked out therefore erased `T` and silently broke every generic
+  function. It now has a mode that leaves unbound parameters alone.
+
+## Not done for generic classes
+
+- `Pool[int].new()`. Construction infers the binding from the declared type
+  instead, which covers the same ground without new expression syntax.
+- Generic global classes (`class_name`), and `extends Pool[int]`.
+
 ## Increments
 
 1. Generic functions: binding, checking, substitution, the restriction.
@@ -194,7 +235,7 @@ Two families are deliberately left as `Variant`:
    itself infers its result. Their signatures come from `MethodInfo`, which
    has no notion of type parameters, so this needs a table of the known
    generic built-ins.
-4. Generic classes.
+4. Generic classes. Done.
 
 ## Not doing
 

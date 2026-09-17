@@ -345,6 +345,15 @@ group are independent and can proceed in any order.
   ordinary function. A body that produces the wrong element type is reported
   at the call line. Reification by hidden arguments and monomorphisation
   were both considered and rejected; the reasons are in the design.
+- 6, generic classes, landed: `class Pool[T]:`, `Pool[int]` annotations,
+  and per-instance substitution of members and method signatures. Invariant
+  in the arguments; `Pool.new()` has none and fits any binding, so
+  construction needs no new syntax. Container-returning methods convert at
+  the call site (and so copy); a container *member* read from outside is a
+  plain container, which is what erasure really leaves. Trap: applying the
+  class's arguments with the shared substitution helper erased the
+  function's own type parameters to `Variant` and silently broke generic
+  functions, caught only because their tests were in place.
 - Short lambdas landed (not previously on the list; asked for because
   block lambdas read badly inside a call). `params => expression` is a new
   token `=>` plus a parser that desugars to `func(params): return expr`;

@@ -17,6 +17,7 @@ Contents:
 - [Traits](#traits)
 - [Typed Callables](#typed-callables)
 - [Generic functions](#generic-functions)
+- [Generic classes](#generic-classes)
 - [Short lambdas](#short-lambdas)
 - [`for` loops with two variables](#for-loops-with-two-variables)
 - [Editor support](#editor-support)
@@ -484,6 +485,46 @@ changes. And `pop_back()`, `pop_front()`, `min()` and `max()` return `null`
 when the container is empty, so they stay `Variant` and the familiar
 pop-until-empty loop keeps working.
 
+## Generic classes
+
+A class can take type parameters too, so a container or service is written
+once and each instance keeps its own element type:
+
+```gdscript
+class Pool[T]:
+    var items: Array[T] = []
+    var last: T
+
+    func add(item: T) -> void:
+        items.append(item)
+        last = item
+
+    func first() -> T:
+        return items[0]
+
+func _ready():
+    var ints: Pool[int] = Pool.new()
+    ints.add(3)
+    print(ints.first() + 1)        # first() is an int here
+    print(ints.last + 1)
+
+    var words: Pool[String] = Pool.new()
+    words.add("hi")
+    print(words.first().to_upper())   # and a String here
+
+    ints.add("oops")   # error: argument 1 should be "int" but is "String"
+```
+
+`Pool.new()` takes its binding from the variable it is assigned to, so there
+is no separate construction syntax. The bindings are exact: a `Pool[String]`
+is not a `Pool[int]`, and mixing them is an error that names both.
+
+A method returning `Array[T]` gives the caller a real `Array[T]`, built at
+the call, so it is a copy rather than a reference to the class's own array.
+A `var items: Array[T]` read from outside the class is a plain `Array`: the
+class is compiled once, so the array it holds has no element type at
+runtime, and saying otherwise would be a promise the value cannot keep.
+
 ## Short lambdas
 
 GDScript's lambdas are blocks, which reads badly inside a call. There is now
@@ -570,18 +611,16 @@ structs is still to come.
 
 Next, in order:
 
-1. **Generic classes.** `class Pool[T]`, so a container or service can be
-   written once and keep its element type. Generic functions are done; this
-   is the remaining half of the feature.
+1. **Nullable types.** `?.` and `??`, meaningful now that strict mode
+   exists.
 2. **Typed `PackedScene` exports.** `@export var enemy: PackedScene[Enemy]`,
    with the scene picker filtered to scenes whose root matches, so dropping
    the wrong scene into a slot is caught in the editor.
-3. **Nullable types.** `?.` and `??`, meaningful now that strict mode exists.
-4. **Typed signals**, checked at `emit` and `connect`.
-5. **Enums as real types**, with methods and exhaustive `match`.
-6. **Multiple return values**, including `if var ok, value := parse(text):`
+3. **Typed signals**, checked at `emit` and `connect`.
+4. **Enums as real types**, with methods and exhaustive `match`.
+5. **Multiple return values**, including `if var ok, value := parse(text):`
    for error handling.
-7. **String interpolation**, `f"{name} has {hp} HP"`.
+6. **String interpolation**, `f"{name} has {hp} HP"`.
 
 Further out: fixed multidimensional arrays of real numbers, a formatter,
 and direct dispatch for trait methods if profiling asks for it.
