@@ -518,11 +518,10 @@ group are independent and can proceed in any order.
   pre-existing and both bigger than this change:
   - Inferred lambda parameters do not survive strict mode. **Fixed**, see the
     entry above; the same deferral also covers the inferred return type.
-  - Completion does not see an inferred lambda parameter, for signals or for
-    `map()`. The guesser rebuilds types from the parse tree and knows nothing
-    about the expected-callable machinery, so `nums.map(n => n.➡)` offers
-    nothing. Tests were written for both and removed again rather than left
-    failing; they go back in with the fix.
+  - Completion inside an arrow lambda offered members without parentheses.
+    **Corrected and fixed**, see the entry above: the first reading of this,
+    that completion could not see an inferred lambda parameter at all, was
+    wrong and came from a bad test.
 - Generic constructors bind the class's type parameters, reported from manual
   use: `Tiles.new(size, func() -> Tile: return Tile.new())` on
   `class Tiles[T]` with `_init(_size: Vector2i, create: func() -> T)` failed
@@ -580,6 +579,36 @@ group are independent and can proceed in any order.
   had. Test: `analyzer/warnings/untyped_declaration_lambda.gd`, which enables
   the warning and pins both halves -- inferred parameters silent, a standalone
   `func(x)` still reported.
+- Completion inside an arrow lambda now offers members with parentheses.
+  Chasing "the intellisense can't pick up the values" turned up three separate
+  things, only the last of which was real, and the first two are worth
+  recording because they cost the most time:
+  1. The first tests were invalid. They completed `n.to_` on an `int` and
+     expected `to_char()`. **`int` has no methods in Godot** -- there is no
+     `bind_method` for `Variant::INT` in `variant_call.cpp` -- so completion
+     was right to offer nothing. Any completion test for a builtin has to pick
+     a type that actually has methods; `String` is the safe one.
+  2. On the corrected tests, completion inside a lambda body works fine,
+     including for a parameter whose type was *inferred* from the call. The
+     guesser resolves it through the ordinary local lookup, so no new
+     machinery was needed. `func(w): return w.to_➡` inside `map()` already
+     passed.
+  3. What was actually broken: inside an **arrow** lambda the members came
+     back without parentheses (`to_upper`, not `to_upper()`), because the
+     parser leaves the enclosing call on `completion_call_stack` while parsing
+     the body, so `_guess_expecting_callable()` still saw "this argument wants
+     a `Callable`" and suppressed them. Inside the body that is the wrong
+     question: the call wants the lambda, not what the lambda computes.
+     Upstream already asserts the intended behaviour for block lambdas
+     (`completion/no_parenthesis_when_callable_is_expected/lambda_body.gd`);
+     the arrow path simply never got it. Parsing an arrow body now hides the
+     stack and restores it afterwards, so a call written inside the body still
+     pushes its own entry.
+  Tests: `completion/lambda/`, a matrix of explicit and inferred parameters in
+  block and arrow lambdas, standalone and as a call argument.
+  Method for next time: when a completion test fails, check what the guesser
+  resolved before assuming the type is missing. Both wrong turns here would
+  have been caught by asking "does this method even exist on that type".
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

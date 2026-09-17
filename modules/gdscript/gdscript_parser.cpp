@@ -3695,7 +3695,15 @@ GDScriptParser::ExpressionNode *GDScriptParser::complete_arrow_lambda(const Vect
 
 	// The body is a single expression, which the lambda returns.
 	ReturnNode *return_node = alloc_node<ReturnNode>();
+	// Inside the body we are no longer in the enclosing call's argument position: the call expects
+	// the lambda, not what the lambda computes. Without this, completing `a => a.to_` inside
+	// `connect(...)` offers the members without parentheses, since the argument wants a `Callable`.
+	// A call written inside the body pushes its own entry, so nested calls still work.
+	List<CompletionCall> previous_completion_call_stack;
+	previous_completion_call_stack = completion_call_stack;
+	completion_call_stack.clear();
 	return_node->return_value = parse_expression(false);
+	completion_call_stack = previous_completion_call_stack;
 	if (return_node->return_value == nullptr) {
 		push_error(R"*(Expected an expression after "=>".)*");
 	}
