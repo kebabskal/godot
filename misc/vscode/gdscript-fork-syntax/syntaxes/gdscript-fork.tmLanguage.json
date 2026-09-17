@@ -1,0 +1,88 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "GDScript fork syntax",
+	"scopeName": "source.gdscript.fork",
+	"injectionSelector": "L:source.gdscript -comment -string",
+	"patterns": [
+		{ "include": "#generic_function" },
+		{ "include": "#generic_class" },
+		{ "include": "#struct_declaration" },
+		{ "include": "#uses_statement" },
+		{ "include": "#struct_keyword" },
+		{ "include": "#arrow_parameter" },
+		{ "include": "#arrow" }
+	],
+	"repository": {
+		"generic_function": {
+			"comment": "`func first[T](...)`. The bundled grammar wants `(` right after the name, so it gives up here.",
+			"begin": "\\b(func)\\s+([A-Za-z_]\\w*)\\s*(\\[)",
+			"beginCaptures": {
+				"1": { "name": "keyword.language.gdscript storage.type.function.gdscript" },
+				"2": { "name": "entity.name.function.gdscript" },
+				"3": { "name": "punctuation.definition.typeparameters.begin.gdscript" }
+			},
+			"end": "(\\])|$",
+			"endCaptures": {
+				"1": { "name": "punctuation.definition.typeparameters.end.gdscript" }
+			},
+			"patterns": [{ "include": "#type_parameter" }]
+		},
+		"generic_class": {
+			"comment": "`class Pool[T]:`. Same story: the bundled grammar wants `:` right after the name.",
+			"begin": "\\b(class)\\s+([A-Za-z_]\\w*)\\s*(\\[)",
+			"beginCaptures": {
+				"1": { "name": "keyword.language.gdscript" },
+				"2": { "name": "entity.name.type.class.gdscript" },
+				"3": { "name": "punctuation.definition.typeparameters.begin.gdscript" }
+			},
+			"end": "(\\])|$",
+			"endCaptures": {
+				"1": { "name": "punctuation.definition.typeparameters.end.gdscript" }
+			},
+			"patterns": [{ "include": "#type_parameter" }]
+		},
+		"type_parameter": {
+			"patterns": [
+				{
+					"match": ",",
+					"name": "punctuation.separator.typeparameters.gdscript"
+				},
+				{
+					"match": "\\b[A-Za-z_]\\w*\\b",
+					"name": "entity.name.type.gdscript"
+				}
+			]
+		},
+		"struct_declaration": {
+			"match": "^\\s*(struct)\\s+([A-Za-z_]\\w*)",
+			"captures": {
+				"1": { "name": "keyword.language.gdscript storage.type.struct.gdscript" },
+				"2": { "name": "entity.name.type.struct.gdscript" }
+			}
+		},
+		"uses_statement": {
+			"comment": "`uses Damageable, Named`. Guarded so a variable called `uses` is left alone.",
+			"match": "^\\s*(uses)\\s+(?=[A-Za-z_])",
+			"captures": {
+				"1": { "name": "keyword.language.gdscript" }
+			}
+		},
+		"struct_keyword": {
+			"match": "\\b(struct)\\b",
+			"name": "keyword.language.gdscript"
+		},
+		"arrow_parameter": {
+			"comment": "`item => ...`. This has to start at the parameter, not at the arrow: inside a call the bundled grammar reads `item =` as a named argument and gets there first.",
+			"match": "\\b([A-Za-z_]\\w*)\\s*(=>)",
+			"captures": {
+				"1": { "name": "variable.parameter.gdscript" },
+				"2": { "name": "keyword.operator.arrow.gdscript" }
+			}
+		},
+		"arrow": {
+			"comment": "Short lambdas. Without this, `=>` reads as assignment followed by greater-than.",
+			"match": "=>",
+			"name": "keyword.operator.arrow.gdscript"
+		}
+	}
+}

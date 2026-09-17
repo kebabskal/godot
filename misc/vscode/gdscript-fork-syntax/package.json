@@ -1,0 +1,21 @@
+{
+	"name": "gdscript-fork-syntax",
+	"displayName": "GDScript fork syntax",
+	"description": "Syntax highlighting for the GDScript additions in this fork: structs, traits, generics and short lambdas.",
+	"version": "0.1.0",
+	"publisher": "local",
+	"private": true,
+	"engines": {
+		"vscode": "^1.75.0"
+	},
+	"categories": ["Programming Languages"],
+	"contributes": {
+		"grammars": [
+			{
+				"scopeName": "source.gdscript.fork",
+				"path": "./syntaxes/gdscript-fork.tmLanguage.json",
+				"injectTo": ["source.gdscript"]
+			}
+		]
+	}
+}

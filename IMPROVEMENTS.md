@@ -605,6 +605,22 @@ the debug adapter, such as VS Code. In the built-in remote inspector they
 show their type with the fields in the tooltip; a full inspector editor for
 structs is still to come.
 
+### VS Code
+
+Keep using the official **godot-tools** extension — there is no forked
+version to install, and you should not need one. Everything the extension
+shows you about your code it asks this fork's editor for over the language
+server, so completion, hovers, go-to-definition and errors already know
+about structs, traits and generics.
+
+The one thing the extension answers by itself is syntax colouring, from a
+grammar file baked into it. That grammar predates these features, so
+`struct`, `uses`, `=>` and type parameters come out looking like ordinary
+identifiers. [`misc/vscode/gdscript-fork-syntax`](misc/vscode/gdscript-fork-syntax)
+fixes that: copy it into `~/.vscode/extensions/` and restart. It layers on
+top of godot-tools rather than replacing it, so the extension still updates
+from the marketplace as usual.
+
 ---
 
 ## Roadmap

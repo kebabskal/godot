@@ -447,8 +447,23 @@ group are independent and can proceed in any order.
   struct value back to its declaration by layout. Also: the completion
   test harness cannot complete after a bare space (`var p: ➡` yields
   nothing, a pre-existing limit), so tests use a partial identifier. Not
-  done: an editable struct property editor, and `struct`/`trait` in the
-  VS Code grammar.
+  done: an editable struct property editor.
+- VS Code needs no forked extension. Decided by inspecting the installed
+  geequlim.godot-tools 2.7.1: everything it knows about the code it asks
+  our editor for over LSP/DAP, so completion, hovers, definitions,
+  diagnostics and the debugger were already correct. The single static
+  piece is its bundled TextMate grammar, and it contributes
+  `source.gdscript` without `injectTo`, so an injection grammar can
+  extend it from outside. `misc/vscode/gdscript-fork-syntax` is that
+  injection: `struct`, `uses`, `=>`, and the type parameters in
+  `class Pool[T]` / `func pick[T](...)`. (`trait` already highlights:
+  mainline reserves the word and the grammar lists it.) Two lessons, both
+  found by tokenizing a sample with vscode-textmate rather than by eye:
+  the bundled `func`/`class` declaration rules require `(` or `:`
+  immediately after the name, so a type parameter list silently drops the
+  name's highlighting; and `L:` injection priority only wins *ties*, so
+  `item => x` needed a rule starting at `item`, because inside a call the
+  bundled named-argument rule matches `item =` from one token earlier.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
