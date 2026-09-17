@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Cannot assign a value of type func(int, int) -> int to variable "f" with specified type func(int) -> int.

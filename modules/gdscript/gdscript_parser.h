@@ -142,6 +142,12 @@ public:
 		Ref<StructLayout> struct_layout; // Same; the runtime identity of the struct type.
 		TraitNode *trait_type = nullptr; // For `TRAIT`.
 		StringName trait_name; // Same; `script_path::Name`, the runtime identity of the trait.
+		// For `BUILTIN` with `builtin_type == Variant::CALLABLE`: a typed callable, `func(A, B) -> R`.
+		// Analyzer-only; a typed callable is a plain Callable at runtime.
+		bool has_callable_signature = false;
+		Vector<DataType> callable_signature; // The return type first, then the parameter types.
+		int callable_optional_params = 0; // How many trailing parameters may be left out.
+		bool callable_is_vararg = false;
 
 		MethodInfo method_info; // For callable/signals.
 		HashMap<StringName, int64_t> enum_values; // For enums.
@@ -270,6 +276,10 @@ public:
 			struct_layout = p_other.struct_layout;
 			trait_type = p_other.trait_type;
 			trait_name = p_other.trait_name;
+			has_callable_signature = p_other.has_callable_signature;
+			callable_signature = p_other.callable_signature;
+			callable_optional_params = p_other.callable_optional_params;
+			callable_is_vararg = p_other.callable_is_vararg;
 			method_info = p_other.method_info;
 			enum_values = p_other.enum_values;
 			container_element_types = p_other.container_element_types;
@@ -540,6 +550,7 @@ public:
 		bool is_super = false;
 		bool is_static = false;
 		bool trait_self_call = false; // A bare call to another method of the trait, inside a trait's default method.
+		bool validate_callable_result = false; // `f.call()` on a typed callable: the declared return type is checked where the call returns.
 		// Resolved struct method (`p.length()`, or a bare `length()` inside a struct method).
 		FunctionNode *struct_method = nullptr;
 		int struct_method_index = -1;
@@ -1358,6 +1369,10 @@ public:
 	struct TypeNode : public Node {
 		LocalVector<IdentifierNode *> type_chain;
 		LocalVector<TypeNode *> container_types;
+		// `func(A, B) -> R`: a typed callable. `type_chain` is empty, like for `void`.
+		bool is_callable_signature = false;
+		LocalVector<TypeNode *> callable_params;
+		TypeNode *callable_return = nullptr; // Null: not given, so unknown (Variant).
 
 		DataType resolved_type;
 

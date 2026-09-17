@@ -4002,6 +4002,33 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_invalid_token(ExpressionNo
 GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 	TypeNode *type = alloc_node<TypeNode>();
 	make_completion_context(p_allow_void ? COMPLETION_TYPE_NAME_OR_VOID : COMPLETION_TYPE_NAME, type);
+	if (match(GDScriptTokenizer::Token::FUNC)) {
+		// A typed callable: `func(int, String) -> bool`.
+		type->is_callable_signature = true;
+		consume(GDScriptTokenizer::Token::PARENTHESIS_OPEN, R"*(Expected "(" after "func" in a callable type.)*");
+		if (!check(GDScriptTokenizer::Token::PARENTHESIS_CLOSE)) {
+			do {
+				if (check(GDScriptTokenizer::Token::PARENTHESIS_CLOSE)) {
+					break; // Trailing comma.
+				}
+				TypeNode *param_type = parse_type(false);
+				if (param_type == nullptr) {
+					push_error(R"(Expected a parameter type in the callable type.)");
+					break;
+				}
+				type->callable_params.push_back(param_type);
+			} while (match(GDScriptTokenizer::Token::COMMA));
+		}
+		consume(GDScriptTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected ")" after the parameter types of a callable type.)*");
+		if (match(GDScriptTokenizer::Token::FORWARD_ARROW)) {
+			type->callable_return = parse_type(true);
+			if (type->callable_return == nullptr) {
+				push_error(R"(Expected a return type after "->" in the callable type.)");
+			}
+		}
+		complete_extents(type);
+		return type;
+	}
 	if (!match(GDScriptTokenizer::Token::IDENTIFIER)) {
 		if (match(GDScriptTokenizer::Token::TK_VOID)) {
 			if (p_allow_void) {
@@ -5493,6 +5520,26 @@ String GDScriptParser::DataType::to_string() const {
 		case BUILTIN:
 			if (builtin_type == Variant::STRUCT && struct_layout.is_valid()) {
 				return struct_layout->get_name();
+			}
+			if (builtin_type == Variant::CALLABLE && has_callable_signature && !callable_signature.is_empty()) {
+				String text = "func(";
+				for (int i = 1; i < callable_signature.size(); i++) {
+					if (i > 1) {
+						text += ", ";
+					}
+					text += callable_signature[i].to_string();
+				}
+				if (callable_is_vararg) {
+					text += callable_signature.size() > 1 ? ", ..." : "...";
+				}
+				text += ")";
+				const DataType &return_type = callable_signature[0];
+				if (return_type.kind == BUILTIN && return_type.builtin_type == Variant::NIL) {
+					text += " -> void";
+				} else if (return_type.is_set() && !return_type.is_variant()) {
+					text += " -> " + return_type.to_string();
+				}
+				return text;
 			}
 			if (builtin_type == Variant::NIL) {
 				return "null";

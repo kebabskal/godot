@@ -96,6 +96,70 @@ static GDScriptParser::DataType make_callable_type(const MethodInfo &p_info) {
 	return type;
 }
 
+void GDScriptAnalyzer::set_callable_signature_from_function(GDScriptParser::DataType &r_type, const GDScriptParser::FunctionNode *p_function) {
+	if (p_function == nullptr) {
+		return;
+	}
+	GDScriptParser::DataType variant_type;
+	variant_type.kind = GDScriptParser::DataType::VARIANT;
+
+	r_type.has_callable_signature = true;
+	r_type.callable_signature.clear();
+	GDScriptParser::DataType return_type = p_function->return_type_constraint;
+	return_type.is_meta_type = false;
+	r_type.callable_signature.push_back(return_type.is_hard_type() ? return_type : variant_type);
+	r_type.callable_optional_params = 0;
+	for (const GDScriptParser::ParameterNode *param : p_function->parameters) {
+		r_type.callable_signature.push_back(param->type_constraint.is_hard_type() ? param->type_constraint : variant_type);
+		if (param->initializer != nullptr) {
+			r_type.callable_optional_params++;
+		}
+	}
+	r_type.callable_is_vararg = p_function->is_vararg();
+}
+
+void GDScriptAnalyzer::set_callable_signature_from_info(GDScriptParser::DataType &r_type, const MethodInfo &p_info) const {
+	r_type.has_callable_signature = true;
+	r_type.callable_signature.clear();
+	r_type.callable_signature.push_back(type_from_property(p_info.return_val, false, nullptr));
+	for (const PropertyInfo &argument : p_info.arguments) {
+		r_type.callable_signature.push_back(type_from_property(argument, true, nullptr));
+	}
+	r_type.callable_optional_params = p_info.default_arguments.size();
+	r_type.callable_is_vararg = p_info.flags & METHOD_FLAG_VARARG;
+}
+
+// Whether a callable with the source signature can stand in for one with the target signature:
+// it must accept the target's arguments (contravariant) and its result must fit (covariant).
+bool GDScriptAnalyzer::callable_signatures_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source) {
+	if (p_target.callable_signature.is_empty() || p_source.callable_signature.is_empty()) {
+		return true;
+	}
+	const int target_count = p_target.callable_signature.size() - 1;
+	const int source_max = p_source.callable_signature.size() - 1;
+	const int source_min = source_max - p_source.callable_optional_params;
+	if (target_count < source_min || (target_count > source_max && !p_source.callable_is_vararg)) {
+		return false;
+	}
+	for (int i = 1; i <= MIN(target_count, source_max); i++) {
+		const GDScriptParser::DataType &passed = p_target.callable_signature[i];
+		const GDScriptParser::DataType &accepted = p_source.callable_signature[i];
+		if (!accepted.is_set() || accepted.is_variant() || !accepted.is_hard_type() || !passed.is_set()) {
+			continue;
+		}
+		if (!check_type_compatibility(accepted, passed, true)) {
+			return false;
+		}
+	}
+	const GDScriptParser::DataType &wanted = p_target.callable_signature[0];
+	const GDScriptParser::DataType &given = p_source.callable_signature[0];
+	const bool wanted_void = wanted.kind == GDScriptParser::DataType::BUILTIN && wanted.builtin_type == Variant::NIL && wanted.is_hard_type();
+	if (!wanted.is_set() || wanted.is_variant() || wanted_void || !given.is_set() || given.is_variant() || !given.is_hard_type()) {
+		return true;
+	}
+	return check_type_compatibility(wanted, given, false);
+}
+
 static GDScriptParser::DataType make_signal_type(const MethodInfo &p_info) {
 	GDScriptParser::DataType type;
 	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
@@ -958,6 +1022,24 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 	GDScriptParser::DataType result;
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 
+	if (p_type->is_callable_signature) {
+		GDScriptParser::DataType variant_type;
+		variant_type.kind = GDScriptParser::DataType::VARIANT;
+
+		result.kind = GDScriptParser::DataType::BUILTIN;
+		result.builtin_type = Variant::CALLABLE;
+		result.has_callable_signature = true;
+		if (p_type->callable_return != nullptr) {
+			result.callable_signature.push_back(type_from_metatype(resolve_datatype(p_type->callable_return)));
+		} else {
+			result.callable_signature.push_back(variant_type);
+		}
+		for (GDScriptParser::TypeNode *param : p_type->callable_params) {
+			result.callable_signature.push_back(type_from_metatype(resolve_datatype(param)));
+		}
+		p_type->resolved_type = result;
+		return result;
+	}
 	if (p_type->type_chain.is_empty()) {
 		// void.
 		result.kind = GDScriptParser::DataType::BUILTIN;
@@ -4740,6 +4822,38 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		warn_confusable_temporary_modification(subscript);
 #endif // DEBUG_ENABLED
 
+		if (base_type.kind == GDScriptParser::DataType::BUILTIN && base_type.builtin_type == Variant::CALLABLE && base_type.has_callable_signature && !base_type.callable_signature.is_empty() && !base_type.is_meta_type && p_call->function_name == SNAME("call") && !p_is_await) {
+			// A typed callable: check the arguments against its signature and type the result. Not under
+			// `await`: any callable may turn out to be a coroutine.
+			List<GDScriptParser::DataType> par_types;
+			for (int i = 1; i < base_type.callable_signature.size(); i++) {
+				par_types.push_back(base_type.callable_signature[i]);
+			}
+			validate_call_arg(par_types, base_type.callable_optional_params, base_type.callable_is_vararg, p_call);
+
+			GDScriptParser::DataType return_type = base_type.callable_signature[0];
+			const bool returns_void = return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL;
+			if (return_type.is_set() && return_type.is_hard_type() && !return_type.is_variant() && !returns_void) {
+				// The callable may have come from an unchecked source (a plain `Callable`), so the
+				// compiler validates the value where the call returns; after that the type holds.
+				return_type.is_constant = false;
+				return_type.is_meta_type = false;
+				p_call->type_constraint = return_type;
+				p_call->validate_callable_result = true;
+			} else if (returns_void) {
+				// `.call()` on a void callable yields null, as it does for a plain Callable.
+				GDScriptParser::DataType variant_type;
+				variant_type.kind = GDScriptParser::DataType::VARIANT;
+				p_call->type_constraint = variant_type;
+			} else {
+				GDScriptParser::DataType variant_type;
+				variant_type.kind = GDScriptParser::DataType::VARIANT;
+				p_call->type_constraint = variant_type;
+				mark_node_unsafe(p_call);
+			}
+			return;
+		}
+
 		if (base_type.kind == GDScriptParser::DataType::BUILTIN && base_type.builtin_type == Variant::STRUCT && !base_type.is_meta_type && base_type.struct_type != nullptr) {
 			int method_index = -1;
 			GDScriptParser::FunctionNode *method = find_struct_method(base_type.struct_type, p_call->function_name, &method_index);
@@ -5417,6 +5531,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 				case GDScriptParser::ClassNode::Member::FUNCTION: {
 					if (is_base && (!base.is_meta_type || member.function->is_static || is_constructor)) {
 						p_identifier->type_constraint = make_callable_type(member.function->info);
+						set_callable_signature_from_function(p_identifier->type_constraint, member.function);
 						p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_FUNCTION;
 						p_identifier->function_source = member.function;
 						p_identifier->function_source_is_static = member.function->is_static;
@@ -5467,6 +5582,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 
 		if (method_info.name == p_identifier->name) {
 			p_identifier->type_constraint = make_callable_type(method_info);
+			set_callable_signature_from_info(p_identifier->type_constraint, method_info);
 			p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_FUNCTION;
 			p_identifier->function_source_is_static = method_info.flags & METHOD_FLAG_STATIC;
 			return;
@@ -5523,6 +5639,7 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 		if (ClassDB::get_method_info(native, name, &method_info)) {
 			// Method is callable.
 			p_identifier->type_constraint = make_callable_type(method_info);
+			set_callable_signature_from_info(p_identifier->type_constraint, method_info);
 			p_identifier->source = GDScriptParser::IdentifierNode::INHERITED_VARIABLE;
 			return;
 		}
@@ -5920,6 +6037,7 @@ void GDScriptAnalyzer::reduce_lambda(GDScriptParser::LambdaNode *p_lambda) {
 	current_lambda = p_lambda;
 	resolve_function_signature(p_lambda->function, p_lambda, true);
 	current_lambda = previous_lambda;
+	set_callable_signature_from_function(p_lambda->type_constraint, p_lambda->function);
 
 	pending_body_resolution_lambdas.push_back(p_lambda);
 }
@@ -7754,6 +7872,9 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 			if (valid && p_target.has_container_element_type(1) && p_source.has_container_element_type(1)) {
 				valid = p_target.get_container_element_type(1) == p_source.get_container_element_type(1);
 			}
+		}
+		if (valid && p_target.builtin_type == Variant::CALLABLE && p_source.builtin_type == Variant::CALLABLE && p_target.has_callable_signature && p_source.has_callable_signature) {
+			valid = callable_signatures_compatible(p_target, p_source);
 		}
 		return valid;
 	}

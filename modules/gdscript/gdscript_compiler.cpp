@@ -687,6 +687,14 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				result = codegen.add_temporary(_gdtype_from_datatype(call->type_constraint, codegen.script));
 			}
 
+			// `f.call()` on a typed callable: nothing checked the callable itself, so the call lands in
+			// an untyped temporary and is converted into the typed result, which validates it.
+			GDScriptCodeGenerator::Address typed_result;
+			if (call->validate_callable_result && result.mode == GDScriptCodeGenerator::Address::TEMPORARY && result.type.has_type()) {
+				typed_result = result;
+				result = codegen.add_temporary();
+			}
+
 			Vector<GDScriptCodeGenerator::Address> arguments;
 			for (uint32_t i = 0; i < call->arguments.size(); i++) {
 				GDScriptCodeGenerator::Address arg = _parse_expression(codegen, r_error, call->arguments[i]);
@@ -867,6 +875,11 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				if (arguments[i].mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 					gen->pop_temporary();
 				}
+			}
+			if (typed_result.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+				gen->write_assign_with_conversion(typed_result, result);
+				gen->pop_temporary(); // The untyped call result.
+				return typed_result;
 			}
 			return result;
 		} break;

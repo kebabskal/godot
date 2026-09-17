@@ -202,6 +202,11 @@ public:
 	static GDScriptParser::DataType type_from_metatype(const GDScriptParser::DataType &p_meta_type);
 	static bool class_exists(const StringName &p_class);
 
+	// Typed callables: `func(A, B) -> R`. The signature is analyzer-only.
+	static void set_callable_signature_from_function(GDScriptParser::DataType &r_type, const GDScriptParser::FunctionNode *p_function);
+	void set_callable_signature_from_info(GDScriptParser::DataType &r_type, const MethodInfo &p_info) const;
+	static bool callable_signatures_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
+
 	// Struct methods: index in the declaration order, which is also the index on the layout.
 	static GDScriptParser::FunctionNode *find_struct_method(const GDScriptParser::StructNode *p_struct, const StringName &p_name, int *r_index = nullptr);
 	static GDScriptParser::FunctionNode *find_trait_method(const GDScriptParser::TraitNode *p_trait, const StringName &p_name);
