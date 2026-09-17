@@ -1,6 +1,6 @@
 # Generics (roadmap item 6, second part)
 
-Status: increment 1 (generic functions) landed.
+Status: increment 1 (generic functions) landed, plus the sound part of increment 3 (built-in container methods).
 
 ## Goal
 
@@ -133,6 +133,29 @@ drops the declared element type of a local initialised with an array literal
 (`var words: Array[String] = ["a"]` is guessed as plain `Array`), so
 completion on a generic call's result is only precise when the argument's
 element type survives. The analyzer itself is unaffected.
+
+## As built (increment 3, the sound part)
+
+The built-in container methods now keep their element types in the analyzer,
+because the runtime already keeps them. Checked against a running build
+rather than assumed:
+
+| Method | Runtime result | Inferred |
+|---|---|---|
+| `Array[T].filter/slice/duplicate/duplicate_deep` | still `Array[T]` | `Array[T]` |
+| `Array[T].front/back/pick_random/get` | the element | `T` |
+| `Dictionary[K, V].duplicate/duplicate_deep` | still `Dictionary[K, V]` | same |
+| `Dictionary[K, V].keys` / `.values` | `Array[K]` / `Array[V]` | same |
+
+Two families are deliberately left as `Variant`:
+
+- `map()` really does return an untyped array, since the element type
+  changes. Claiming `Array[U]` would be a lie; this needs increment 2.
+- `pop_back()`, `pop_front()`, `min()` and `max()` return `null` on an empty
+  container *silently*. Sharpening them would turn the ordinary
+  `var item := queue.pop_back()` loop into a runtime error the first time the
+  queue runs dry. `front()`, `back()` and `pick_random()` already raise an
+  error when empty, so those are safe to sharpen.
 
 ## Increments
 

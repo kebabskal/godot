@@ -448,6 +448,30 @@ an `Array[U]` without knowing what `U` is. Returning the element type, or
 taking the container as a parameter, both work. Lifting this is the next
 step on the roadmap.
 
+### Built-in container methods keep their types
+
+Filtering or copying a typed collection used to lose the element type,
+forcing a cast. Now the types come through:
+
+```gdscript
+var nums: Array[int] = [3, 1, 2]
+
+var big: Array[int] = nums.filter(func(x: int) -> bool: return x > 1)
+var part: Array[int] = nums.slice(0, 2)
+var copy: Array[int] = nums.duplicate()
+var n := nums.front()          # an int
+
+var scores: Dictionary[String, int] = {"a": 1}
+var names: Array[String] = scores.keys()
+var values: Array[int] = scores.values()
+```
+
+Two groups deliberately stay untyped, because sharpening them would be
+wrong. `map()` really does return an untyped array, since the element type
+changes. And `pop_back()`, `pop_front()`, `min()` and `max()` return `null`
+when the container is empty, so they stay `Variant` and the familiar
+pop-until-empty loop keeps working.
+
 ## `for` loops with two variables
 
 Iterating a dictionary no longer needs a lookup inside the loop, and

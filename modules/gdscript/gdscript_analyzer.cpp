@@ -7681,6 +7681,52 @@ GDScriptParser::DataType GDScriptAnalyzer::type_from_property(const PropertyInfo
 	return result;
 }
 
+// Built-in container methods whose result keeps the container's element types. The runtime really
+// does preserve them, so the analyzer says so too instead of degrading to `Variant`:
+// `Array[int].filter()` is an `Array[int]`, `Dictionary[String, int].values()` is an `Array[int]`.
+//
+// Only methods that are safe to sharpen are listed. `map()` genuinely returns an untyped array,
+// since the element type changes. `pop_back()`, `pop_front()`, `min()` and `max()` return `null`
+// on an empty container by design, so claiming the element type would turn the common
+// "pop until empty" loop into a runtime error; they stay `Variant`. `front()`, `back()` and
+// `pick_random()` already raise an error on an empty container, so nothing silently breaks there.
+static void sharpen_builtin_container_return(const GDScriptParser::DataType &p_base_type, const StringName &p_method, GDScriptParser::DataType &r_return_type) {
+	if (p_base_type.is_meta_type || !p_base_type.has_container_element_types() || p_base_type.kind != GDScriptParser::DataType::BUILTIN) {
+		return;
+	}
+
+	GDScriptParser::DataType result;
+	if (p_base_type.builtin_type == Variant::ARRAY) {
+		if (p_method == SNAME("duplicate") || p_method == SNAME("duplicate_deep") || p_method == SNAME("slice") || p_method == SNAME("filter")) {
+			result = p_base_type; // Same array type.
+		} else if (p_method == SNAME("front") || p_method == SNAME("back") || p_method == SNAME("pick_random") || p_method == SNAME("get")) {
+			result = p_base_type.get_container_element_type_or_variant(0);
+		} else {
+			return;
+		}
+	} else if (p_base_type.builtin_type == Variant::DICTIONARY) {
+		if (p_method == SNAME("duplicate") || p_method == SNAME("duplicate_deep")) {
+			result = p_base_type; // Same dictionary type.
+		} else if (p_method == SNAME("keys") || p_method == SNAME("values")) {
+			result.kind = GDScriptParser::DataType::BUILTIN;
+			result.builtin_type = Variant::ARRAY;
+			result.set_container_element_type(0, p_base_type.get_container_element_type_or_variant(p_method == SNAME("keys") ? 0 : 1));
+		} else {
+			return;
+		}
+	} else {
+		return;
+	}
+
+	if (!result.is_set() || result.is_variant()) {
+		return; // Nothing gained.
+	}
+	result.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
+	result.is_constant = false;
+	result.is_meta_type = false;
+	r_return_type = result;
+}
+
 bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor, GDScriptParser::DataType p_base_type, const StringName &p_function, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, StringName *r_native_class, Vector<StringName> *r_type_parameters) {
 	r_method_flags = METHOD_FLAGS_DEFAULT;
 	r_default_arg_count = 0;
@@ -7738,6 +7784,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		for (const MethodInfo &E : methods) {
 			if (E.name == p_function) {
 				function_signature_from_info(E, r_return_type, r_par_types, r_default_arg_count, r_method_flags, p_source);
+				sharpen_builtin_container_return(p_base_type, p_function, r_return_type);
 				// Cannot use non-const methods on enums.
 				if (!r_method_flags.has_flag(METHOD_FLAG_STATIC) && was_enum && !(E.flags & METHOD_FLAG_CONST)) {
 					push_error(vformat(R"*(Cannot call non-const Dictionary function "%s()" on enum "%s".)*", p_function, p_base_type.enum_type), p_source);

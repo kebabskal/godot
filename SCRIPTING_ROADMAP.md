@@ -327,6 +327,15 @@ group are independent and can proceed in any order.
   would have to build a typed array it cannot name); the error says so and
   points at reification. Next in item 6: reified type parameters, then the
   built-in container methods, then generic classes.
+- 6, the sound part of the built-in container methods, landed: the analyzer
+  now keeps element types through `Array[T].filter/slice/duplicate/front/
+  back/pick_random/get` and `Dictionary[K, V].duplicate/keys/values`,
+  matching what the runtime already does (verified against a build, not
+  assumed). `map()` stays untyped because it genuinely is; `pop_back()`,
+  `pop_front()`, `min()` and `max()` stay `Variant` because they return
+  `null` on an empty container, and sharpening them would break the
+  pop-until-empty loop. The same knowledge existed only in the completion
+  guesser before.
 - 12 (`for` with two variables) landed: `for key, value in dictionary`
   and `for index, item in` anything else, with optional types on both.
   The VM still yields one value per step; the compiler fills the other
