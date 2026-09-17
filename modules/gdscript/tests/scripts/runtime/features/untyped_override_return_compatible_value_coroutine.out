@@ -1,3 +1,4 @@
 GDTEST_OK
+~~ WARNING at line 12: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Resource" is not nullable. Declare it as "Resource?", or make sure the value is not null.
 true
 Resource

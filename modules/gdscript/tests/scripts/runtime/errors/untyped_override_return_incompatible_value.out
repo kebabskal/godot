@@ -1,4 +1,5 @@
 GDTEST_RUNTIME_ERROR
+~~ WARNING at line 5: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Node" is not nullable. Declare it as "Node?", or make sure the value is not null.
 >> SCRIPT ERROR at runtime/errors/untyped_override_return_incompatible_value.gd:8 on B.return_int(): Trying to return a value of type "String" from a function whose return type is "int".
 0
 >> SCRIPT ERROR at runtime/errors/untyped_override_return_incompatible_value.gd:9 on B.return_int_array(): Trying to return a value of type "String" from a function whose return type is "Array[int]".

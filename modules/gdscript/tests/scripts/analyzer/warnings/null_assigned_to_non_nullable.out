@@ -1,0 +1,17 @@
+GDTEST_OK
+~~ WARNING at line 14: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Item" is not nullable. Declare it as "Item?", or make sure the value is not null.
+~~ WARNING at line 23: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Item" is not nullable. Declare it as "Item?", or make sure the value is not null.
+~~ WARNING at line 24: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "Item?" may be null, but "Item" is not nullable. Declare it as "Item?", or make sure the value is not null.
+~~ WARNING at line 28: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "Item?" may be null, but "Item" is not nullable. Declare it as "Item?", or make sure the value is not null.
+~~ WARNING at line 32: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "Item?" may be null, but "Item" is not nullable. Declare it as "Item?", or make sure the value is not null.
+~~ WARNING at line 42: (UNSAFE_NULLABLE_ACCESS) Accessing "name" on a value of type "Item?", which may be null. Use "?.", or check it against null first.
+~~ WARNING at line 42: (UNSAFE_NULLABLE_ACCESS) Accessing "name" on a value of type "Item?", which may be null. Use "?.", or check it against null first.
+~~ WARNING at line 46: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Item" is not nullable. Declare it as "Item?", or make sure the value is not null.
+sword
+sword
+sword
+sword
+sword
+<null> sword sword sword
+<null> <null>
+<null> <null>

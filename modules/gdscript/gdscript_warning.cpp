@@ -178,7 +178,7 @@ String GDScriptWarning::get_message() const {
 			return vformat(R"(Value of type "%s" may be null, but "%s" is not nullable. Declare it as "%s?", or make sure the value is not null.)", symbols[0], symbols[1], symbols[1]);
 		case UNSAFE_NULLABLE_ACCESS:
 			CHECK_SYMBOLS(2);
-			return vformat(R"*(Cannot be sure that "%s" is not null here (it is "%s"). Use "?.", "??", or check it against null first.)*", symbols[0], symbols[1]);
+			return vformat(R"*(Accessing "%s" on a value of type "%s", which may be null. Use "?.", or check it against null first.)*", symbols[0], symbols[1]);
 		case REDUNDANT_NULL_CHECK:
 			CHECK_SYMBOLS(2);
 			return vformat(R"(The "%s" is redundant because "%s" can never be null.)", symbols[0], symbols[1]);

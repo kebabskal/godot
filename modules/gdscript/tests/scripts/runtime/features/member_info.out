@@ -1,4 +1,5 @@
 GDTEST_OK
+~~ WARNING at line 102: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Object" is not nullable. Declare it as "Object?", or make sure the value is not null.
 func _init() -> void # hint=NONE hint_string="" usage=DEFAULT class_name=&""
 static func _static_init() -> void # hint=NONE hint_string="" usage=NONE class_name=&""
 func _init(_param: int = 2) -> void # hint=NONE hint_string="" usage=NONE class_name=&""

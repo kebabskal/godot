@@ -1536,6 +1536,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		}
 	}
 
+	// Set again: looking a class, script or native name up replaces `result` wholesale, which
+	// would drop what was put there before the lookup.
+	result.is_nullable = p_type->is_nullable;
 	if (result.is_variant()) {
 		result.is_nullable = false; // `Variant?` is just `Variant`: it already holds null.
 	}
@@ -3582,6 +3585,7 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 				type.type_source = GDScriptParser::DataType::INFERRED;
 			}
 		} else if (!specified_type.is_variant()) {
+			warn_null_assignment(specified_type, initializer_type, p_assignable->initializer);
 			if (initializer_type.is_variant() || !initializer_type.is_hard_type()) {
 				mark_node_unsafe(p_assignable->initializer);
 				p_assignable->use_conversion_assign = true;
@@ -3668,10 +3672,24 @@ void GDScriptAnalyzer::resolve_parameter(GDScriptParser::ParameterNode *p_parame
 void GDScriptAnalyzer::resolve_if(GDScriptParser::IfNode *p_if) {
 	reduce_expression(p_if->condition);
 
-	resolve_suite(p_if->true_block);
+	NarrowedTypes when_true;
+	NarrowedTypes when_false;
+	collect_null_narrowings(p_if->condition, when_true, when_false);
+
+	{
+		NarrowingScope scope(this);
+		apply_narrowings(when_true);
+		resolve_suite(p_if->true_block);
+	}
 
 	if (p_if->false_block != nullptr) {
+		NarrowingScope scope(this);
+		apply_narrowings(when_false);
 		resolve_suite(p_if->false_block);
+	} else if (p_if->true_block != nullptr && p_if->true_block->has_return) {
+		// `if x == null: return`. The rest of the block is only reached when the condition
+		// was false, so those narrowings hold from here on.
+		apply_narrowings(when_false);
 	}
 }
 
@@ -4051,6 +4069,7 @@ void GDScriptAnalyzer::resolve_return(GDScriptParser::ReturnNode *p_return) {
 	}
 
 	if (has_expected_type && !expected_type.is_variant() && expected_type.is_hard_type()) {
+		warn_null_assignment(expected_type, result, p_return);
 		if (result.is_variant() || !result.is_hard_type()) {
 			p_return->use_conversion = true;
 			mark_node_unsafe(p_return);
@@ -4364,6 +4383,14 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 
 	reduce_expression(p_assignment->assignee);
 
+	if (!narrowed_locals.is_empty() && p_assignment->assignee->type == GDScriptParser::Node::IDENTIFIER) {
+		// Whatever an earlier test proved about this local, the new value need not honour it.
+		const void *key = narrowing_key(static_cast<GDScriptParser::IdentifierNode *>(p_assignment->assignee));
+		if (key != nullptr) {
+			narrowed_locals.erase(key);
+		}
+	}
+
 #ifdef DEBUG_ENABLED
 	{
 		bool is_subscript = false;
@@ -4454,6 +4481,9 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 	}
 
 	GDScriptParser::DataType assigned_value_type = p_assignment->assigned_value->type_constraint;
+	if (p_assignment->operation == GDScriptParser::AssignmentNode::OP_NONE) {
+		warn_null_assignment(assignee_type, assigned_value_type, p_assignment->assigned_value);
+	}
 
 	bool assignee_is_variant = assignee_type.is_variant();
 	bool assignee_is_hard = assignee_type.is_hard_type();
@@ -4617,7 +4647,22 @@ void GDScriptAnalyzer::reduce_null_coalescing(GDScriptParser::BinaryOpNode *p_bi
 
 void GDScriptAnalyzer::reduce_binary_op(GDScriptParser::BinaryOpNode *p_binary_op) {
 	reduce_expression(p_binary_op->left_operand);
-	reduce_expression(p_binary_op->right_operand);
+
+	const bool is_and = p_binary_op->operation == GDScriptParser::BinaryOpNode::OP_LOGIC_AND;
+	const bool is_or = p_binary_op->operation == GDScriptParser::BinaryOpNode::OP_LOGIC_OR;
+	if (is_and || is_or) {
+		// The right side only runs when the left one did not decide the answer, so it knows
+		// what that implies: `x != null and x.hp > 0`, and `x == null or x.hp > 0`. Without
+		// this, `?` would be unusable in a condition.
+		NarrowedTypes when_true;
+		NarrowedTypes when_false;
+		collect_null_narrowings(p_binary_op->left_operand, when_true, when_false);
+		NarrowingScope scope(this);
+		apply_narrowings(is_and ? when_true : when_false);
+		reduce_expression(p_binary_op->right_operand);
+	} else {
+		reduce_expression(p_binary_op->right_operand);
+	}
 
 	GDScriptParser::DataType left_type;
 	if (p_binary_op->left_operand) {
@@ -4633,6 +4678,7 @@ void GDScriptAnalyzer::reduce_binary_op(GDScriptParser::BinaryOpNode *p_binary_o
 	}
 
 	if (p_binary_op->operation == GDScriptParser::BinaryOpNode::OP_NULL_COALESCING) {
+		// Placed after both operands are reduced; see the `and` case for why that is fine here.
 		reduce_null_coalescing(p_binary_op, left_type, right_type);
 		return;
 	}
@@ -5296,6 +5342,8 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			reduce_expression(subscript->base);
 			if (subscript->is_safe_navigation) {
 				mark_safe_navigation_base(subscript);
+			} else {
+				warn_nullable_access(subscript->base, String(p_call->function_name) + "()", p_call);
 			}
 			base_type = subscript->base->type_constraint;
 			is_self = subscript->base->type == GDScriptParser::Node::SELF;
@@ -6359,6 +6407,16 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 			break;
 	}
 
+	if (found_source && !narrowed_locals.is_empty()) {
+		const void *key = narrowing_key(p_identifier);
+		if (key != nullptr) {
+			NarrowedTypes::ConstIterator narrowed = narrowed_locals.find(key);
+			if (narrowed) {
+				p_identifier->type_constraint = narrowed->value;
+			}
+		}
+	}
+
 #ifdef DEBUG_ENABLED
 	if (!found_source && p_identifier->suite != nullptr && p_identifier->suite->has_local(p_identifier->name)) {
 		parser->push_warning(p_identifier, GDScriptWarning::CONFUSABLE_LOCAL_USAGE, p_identifier->name);
@@ -6763,6 +6821,8 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 		// Past the guard the base cannot be null, so look the member up on the plain type.
 		// The `?.` itself is what makes the whole expression nullable, below.
 		mark_safe_navigation_base(p_subscript);
+	} else {
+		warn_nullable_access(p_subscript->base, p_subscript->is_attribute && p_subscript->attribute != nullptr ? String(p_subscript->attribute->name) : String("[]"), p_subscript);
 	}
 
 	GDScriptParser::DataType result_type;
@@ -7193,6 +7253,104 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 #endif // DEBUG_ENABLED
 }
 
+static bool is_null_literal(const GDScriptParser::ExpressionNode *p_expression) {
+	return p_expression != nullptr && p_expression->is_constant && p_expression->reduced_value.get_type() == Variant::NIL;
+}
+
+// Which declaration an identifier refers to, or null if it is not something narrowing can
+// safely track. Locals and parameters only change by assignment in this same function; a
+// lambda captures them by value, so it cannot change them behind our back either.
+const void *GDScriptAnalyzer::narrowing_key(const GDScriptParser::IdentifierNode *p_identifier) {
+	switch (p_identifier->source) {
+		case GDScriptParser::IdentifierNode::FUNCTION_PARAMETER:
+			return p_identifier->parameter_source;
+		case GDScriptParser::IdentifierNode::LOCAL_VARIABLE:
+			return p_identifier->variable_source;
+		default:
+			return nullptr;
+	}
+}
+
+// Record that `p_operand` is not null, if it is something we can track.
+void GDScriptAnalyzer::narrow_away_null(const GDScriptParser::ExpressionNode *p_operand, NarrowedTypes &r_narrowings) {
+	if (p_operand == nullptr || p_operand->type != GDScriptParser::Node::IDENTIFIER) {
+		return;
+	}
+	const GDScriptParser::IdentifierNode *identifier = static_cast<const GDScriptParser::IdentifierNode *>(p_operand);
+	const void *key = narrowing_key(identifier);
+	if (key == nullptr) {
+		return;
+	}
+	const GDScriptParser::DataType type = identifier->type_constraint;
+	if (!type.is_set() || type.is_variant() || !type.is_nullable) {
+		return;
+	}
+	r_narrowings[key] = type.without_nullability();
+}
+
+void GDScriptAnalyzer::collect_null_narrowings(const GDScriptParser::ExpressionNode *p_condition, NarrowedTypes &r_when_true, NarrowedTypes &r_when_false) {
+	if (p_condition == nullptr) {
+		return;
+	}
+	switch (p_condition->type) {
+		case GDScriptParser::Node::IDENTIFIER:
+			// `if x:` cannot be true for a null.
+			narrow_away_null(p_condition, r_when_true);
+			break;
+		case GDScriptParser::Node::UNARY_OPERATOR: {
+			const GDScriptParser::UnaryOpNode *unary = static_cast<const GDScriptParser::UnaryOpNode *>(p_condition);
+			if (unary->operation == GDScriptParser::UnaryOpNode::OP_LOGIC_NOT) {
+				// `if not x:` is the other way around.
+				collect_null_narrowings(unary->operand, r_when_false, r_when_true);
+			}
+		} break;
+		case GDScriptParser::Node::BINARY_OPERATOR: {
+			const GDScriptParser::BinaryOpNode *binary = static_cast<const GDScriptParser::BinaryOpNode *>(p_condition);
+			switch (binary->operation) {
+				case GDScriptParser::BinaryOpNode::OP_COMP_NOT_EQUAL:
+				case GDScriptParser::BinaryOpNode::OP_COMP_EQUAL: {
+					// Whichever side is the literal null, the other one is what gets narrowed.
+					NarrowedTypes &when_not_null = binary->operation == GDScriptParser::BinaryOpNode::OP_COMP_NOT_EQUAL ? r_when_true : r_when_false;
+					if (is_null_literal(binary->right_operand)) {
+						narrow_away_null(binary->left_operand, when_not_null);
+					} else if (is_null_literal(binary->left_operand)) {
+						narrow_away_null(binary->right_operand, when_not_null);
+					}
+				} break;
+				case GDScriptParser::BinaryOpNode::OP_LOGIC_AND: {
+					// True only if both sides are, so both sides' narrowings hold.
+					NarrowedTypes discarded;
+					collect_null_narrowings(binary->left_operand, r_when_true, discarded);
+					collect_null_narrowings(binary->right_operand, r_when_true, discarded);
+				} break;
+				case GDScriptParser::BinaryOpNode::OP_LOGIC_OR: {
+					// False only if both sides are.
+					NarrowedTypes discarded;
+					collect_null_narrowings(binary->left_operand, discarded, r_when_false);
+					collect_null_narrowings(binary->right_operand, discarded, r_when_false);
+				} break;
+				default:
+					break;
+			}
+		} break;
+		case GDScriptParser::Node::CALL: {
+			// `is_instance_valid(x)`, the idiomatic check in existing Godot code.
+			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_condition);
+			if (call->function_name == SNAME("is_instance_valid") && call->arguments.size() == 1 && call->get_callee_type() == GDScriptParser::Node::IDENTIFIER) {
+				narrow_away_null(call->arguments[0], r_when_true);
+			}
+		} break;
+		default:
+			break;
+	}
+}
+
+void GDScriptAnalyzer::apply_narrowings(const NarrowedTypes &p_narrowings) {
+	for (const KeyValue<const void *, GDScriptParser::DataType> &E : p_narrowings) {
+		narrowed_locals[E.key] = E.value;
+	}
+}
+
 // Whether a value of this type can really be null. A type without `?` only promises that
 // where the promise is kept: outside strict mode mainline's rule still holds, and every
 // object slot is nullable whether it says so or not.
@@ -7213,6 +7371,39 @@ bool GDScriptAnalyzer::type_can_be_null(const GDScriptParser::DataType &p_type) 
 		default:
 			return false;
 	}
+}
+
+// Putting a value that may be null where the type says it will not be. Only `null` itself
+// and a type written with `?` count as "may be null": a plain object type makes no promise
+// to break outside strict mode, so ordinary code stays quiet.
+void GDScriptAnalyzer::warn_null_assignment(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, const GDScriptParser::Node *p_source_node) {
+#ifdef DEBUG_ENABLED
+	if (!p_target.is_set() || !p_target.is_hard_type() || p_target.accepts_null()) {
+		return;
+	}
+	if (!p_source.is_set()) {
+		return;
+	}
+	const bool source_is_null = p_source.kind == GDScriptParser::DataType::BUILTIN && p_source.builtin_type == Variant::NIL;
+	if (!p_source.is_nullable && !source_is_null) {
+		return;
+	}
+	parser->push_warning(p_source_node, GDScriptWarning::NULL_ASSIGNED_TO_NON_NULLABLE, p_source.to_string(), p_target.to_string());
+#endif // DEBUG_ENABLED
+}
+
+// Reaching into a value that still carries a `?`. Only ever about a type the author wrote
+// `?` on: a plain object type makes no promise to break, outside strict mode.
+void GDScriptAnalyzer::warn_nullable_access(const GDScriptParser::ExpressionNode *p_base, const String &p_member, const GDScriptParser::Node *p_source) {
+#ifdef DEBUG_ENABLED
+	if (p_base == nullptr) {
+		return;
+	}
+	const GDScriptParser::DataType base_type = p_base->type_constraint;
+	if (base_type.is_set() && base_type.is_nullable) {
+		parser->push_warning(p_source, GDScriptWarning::UNSAFE_NULLABLE_ACCESS, p_member, base_type.to_string());
+	}
+#endif // DEBUG_ENABLED
 }
 
 // `?.`: report a guard that can never fire, then drop the `?` from the base's type so the
@@ -8307,6 +8498,7 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 			update_const_expression_builtin_type(p_call->arguments[i], par_type, "pass");
 		}
 		GDScriptParser::DataType arg_type = p_call->arguments[i]->type_constraint;
+		warn_null_assignment(par_type, arg_type, p_call->arguments[i]);
 
 		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
 #ifdef DEBUG_ENABLED

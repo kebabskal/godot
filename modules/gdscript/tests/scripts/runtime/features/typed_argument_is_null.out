@@ -1,3 +1,4 @@
 GDTEST_OK
+~~ WARNING at line 14: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "CustomNode" is not nullable. Declare it as "CustomNode?", or make sure the value is not null.
 null node
 null node

@@ -1,4 +1,5 @@
 GDTEST_RUNTIME_ERROR
+~~ WARNING at line 12: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Resource" is not nullable. Declare it as "Resource?", or make sure the value is not null.
 >> SCRIPT ERROR at runtime/errors/untyped_override_return_incompatible_value_coroutine.gd:20 on B.bool_coroutine(): Trying to return a value of type "String" from a function whose return type is "bool".
 false
 >> SCRIPT ERROR at runtime/errors/untyped_override_return_incompatible_value_coroutine.gd:24 on B.resource_coroutine(): Trying to return a value of type "String" from a function whose return type is "Resource".

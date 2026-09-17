@@ -140,7 +140,41 @@ class GDScriptAnalyzer {
 	void reduce_self(GDScriptParser::SelfNode *p_self);
 	void reduce_subscript(GDScriptParser::SubscriptNode *p_subscript, bool p_can_be_pseudo_type = false);
 	void mark_safe_navigation_base(GDScriptParser::SubscriptNode *p_subscript);
+	void warn_nullable_access(const GDScriptParser::ExpressionNode *p_base, const String &p_member, const GDScriptParser::Node *p_source);
+	void warn_null_assignment(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source, const GDScriptParser::Node *p_source_node);
 	static bool type_can_be_null(const GDScriptParser::DataType &p_type);
+
+	// Flow narrowing. A test that can only pass when a local is not null makes it non-null
+	// for as long as that result holds, so `T?` is a value you can actually use. Keyed by the
+	// declaration the identifier resolves to, so shadowing cannot confuse it. Only locals and
+	// parameters: a member could be changed by any call in between.
+	typedef HashMap<const void *, GDScriptParser::DataType> NarrowedTypes;
+	NarrowedTypes narrowed_locals;
+
+	static const void *narrowing_key(const GDScriptParser::IdentifierNode *p_identifier);
+	// The narrowings implied by `p_condition` being true, and by it being false.
+	void collect_null_narrowings(const GDScriptParser::ExpressionNode *p_condition, NarrowedTypes &r_when_true, NarrowedTypes &r_when_false);
+	void narrow_away_null(const GDScriptParser::ExpressionNode *p_operand, NarrowedTypes &r_narrowings);
+	void apply_narrowings(const NarrowedTypes &p_narrowings);
+
+	// Restores the narrowings in place when it was created, so a branch's cannot leak past it.
+	struct NarrowingScope {
+		GDScriptAnalyzer *analyzer = nullptr;
+		NarrowedTypes saved;
+
+		explicit NarrowingScope(GDScriptAnalyzer *p_analyzer) :
+				analyzer(p_analyzer) {
+			for (const KeyValue<const void *, GDScriptParser::DataType> &E : analyzer->narrowed_locals) {
+				saved.insert(E.key, E.value);
+			}
+		}
+		~NarrowingScope() {
+			analyzer->narrowed_locals.clear();
+			for (const KeyValue<const void *, GDScriptParser::DataType> &E : saved) {
+				analyzer->narrowed_locals.insert(E.key, E.value);
+			}
+		}
+	};
 	void reduce_ternary_op(GDScriptParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(GDScriptParser::TypeTestNode *p_type_test);
 	void reduce_unary_op(GDScriptParser::UnaryOpNode *p_unary_op);

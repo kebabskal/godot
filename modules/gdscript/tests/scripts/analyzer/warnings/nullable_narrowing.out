@@ -1,0 +1,19 @@
+GDTEST_OK
+~~ WARNING at line 12: (UNSAFE_NULLABLE_ACCESS) Accessing "name" on a value of type "Item?", which may be null. Use "?.", or check it against null first.
+~~ WARNING at line 15: (UNSAFE_NULLABLE_ACCESS) Accessing "describe()" on a value of type "Item?", which may be null. Use "?.", or check it against null first.
+~~ WARNING at line 60: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "Item?" may be null, but "Item" is not nullable. Declare it as "Item?", or make sure the value is not null.
+~~ WARNING at line 61: (UNSAFE_NULLABLE_ACCESS) Accessing "name" on a value of type "Item?", which may be null. Use "?.", or check it against null first.
+~~ WARNING at line 67: (UNSAFE_NULLABLE_ACCESS) Accessing "name" on a value of type "Item?", which may be null. Use "?.", or check it against null first.
+sword
+sword
+(none)
+(none)
+(none)
+(none)
+(none)
+(none)
+(none)
+(none)
+sword
+sword
+(none)

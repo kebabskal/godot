@@ -83,11 +83,22 @@ if not t:
 t.queue_free()
 ```
 
-Narrowing applies to locals and parameters, and to `self` members only when
-nothing between the test and the use could have changed them (any call or
-assignment re-widens a member). It is deliberately simple: an identifier
-compared against `null` with `==`/`!=`, or used as a truth value, and the
-`and` of such tests. No narrowing through `or`, and none through lambdas.
+Narrowing applies to **locals and parameters only**. A member would need to
+survive every call in between, and nothing here tries to prove that; write
+`var t := target` first. Locals are safe because only an assignment in the
+same function can change one, and a lambda captures by value.
+
+What counts as a test: an identifier compared to `null` with `==` or `!=`
+(either way round), used as a truth value, negated with `not`, or passed to
+`is_instance_valid()`. These compose through `and` and `or`, including into
+the right-hand operand — `x != null and x.hp > 0` and `x == null or x.hp == 0`
+both work, since the right side only runs when the left did not settle it.
+An assignment to the local drops what was proved about it.
+
+A narrowing also outlives the `if` when the branch cannot fall through:
+`if x == null: return` leaves `x` non-null for the rest of the block. That
+rests on the parser's `SuiteNode::has_return`, so a block that exits by
+`break` or `continue` instead does not narrow yet.
 
 ## Enforcement
 
@@ -139,8 +150,44 @@ not null, and `?.` will not save you from one, just as `!= null` does not.
 
 ## Order of work
 
-1. `T?` in types, `DataType::is_nullable`, the two opcodes, `??`. ← here
-2. `?.` on attributes, calls and subscripts.
-3. Narrowing.
-4. Strict-mode errors for null assignment and nullable dereference.
-5. Definite initialization (the `@export` / uninitialized-member rules).
+1. `T?` in types, `DataType::is_nullable`, the two opcodes, `??`. **Done.**
+2. `?.` on attributes, calls and subscripts. **Done.**
+3. Narrowing. **Done.**
+4. Strict-mode errors for null assignment and nullable dereference. **Done.**
+5. Definite initialization (the `@export` / uninitialized-member rules). Not started.
+
+## As built
+
+Enforcement rides on the existing warning machinery rather than on a separate
+strict-mode check: `UNSAFE_NULLABLE_ACCESS` and `NULL_ASSIGNED_TO_NON_NULLABLE`
+are listed in `GDScriptWarning::is_strict_mode_error()`, so they are errors in
+strict mode, silent by default elsewhere, and can be switched on per project
+like any other warning. `REDUNDANT_NULL_CHECK` is an ordinary warning.
+
+Traps found while building it, in the order they bit:
+
+- **`DataType::operator=` is hand-written.** `is_nullable` had to be added to
+  it, as `struct_layout` did before. The roadmap says this twice now.
+- **The token enum is serialized.** `?.`, `?[` and `??` were inserted into it,
+  which needs `TOKENIZER_VERSION` in `gdscript_tokenizer_buffer.h` bumped, or
+  previously exported `.gdc` files decode as garbage.
+- **`resolve_datatype()` had to set `is_nullable` twice.** Setting it on the
+  fresh `result` covers the early returns, but looking up a class, script or
+  native name replaces `result` wholesale, so `Item?` silently came out as
+  `Item` while `int?` worked. Set again just before the final return.
+- **`?[` is an opening bracket.** `parse_precedence` switches the tokenizer to
+  multiline mode for `(` and `[`; without `QUESTION_BRACKET` in that list, the
+  matching `pop_multiline()` underflowed.
+- **`update_const_expression_builtin_type()` converts constants to the
+  declared type.** `var n: int? = null` tried to build an `int` from null and
+  failed; a nullable target keeps a null constant as it is.
+- **A discarded `a?.method()` has no result address.** Writing the null to the
+  shared `nil` slot is GH-70964 all over again, so that write is skipped.
+- **`REDUNDANT_NULL_CHECK` cannot use `is_nullable` alone.** A plain object
+  type is *not* a promise outside strict mode, so `find()?.name`, where `find()`
+  returns `Item`, was reported as a redundant guard even though it returns null.
+  `type_can_be_null()` is the distinction: a type promises non-null only where
+  the promise is enforced.
+- Narrowing goes through `and` **and** `or`: `x == null or x.hp == 0` needs the
+  left operand's false-narrowings applied to the right one, which is the mirror
+  of what `and` needs. Only `and` was handled at first, and the test caught it.

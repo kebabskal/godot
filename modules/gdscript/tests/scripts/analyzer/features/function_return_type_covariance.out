@@ -1,1 +1,7 @@
 GDTEST_OK
+~~ WARNING at line 4: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Node" is not nullable. Declare it as "Node?", or make sure the value is not null.
+~~ WARNING at line 14: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Node" is not nullable. Declare it as "Node?", or make sure the value is not null.
+~~ WARNING at line 18: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Node" is not nullable. Declare it as "Node?", or make sure the value is not null.
+~~ WARNING at line 19: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Node2D" is not nullable. Declare it as "Node2D?", or make sure the value is not null.
+~~ WARNING at line 24: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Node" is not nullable. Declare it as "Node?", or make sure the value is not null.
+~~ WARNING at line 29: (NULL_ASSIGNED_TO_NON_NULLABLE) Value of type "null" may be null, but "Node" is not nullable. Declare it as "Node?", or make sure the value is not null.
