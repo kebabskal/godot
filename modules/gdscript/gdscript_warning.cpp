@@ -173,6 +173,15 @@ String GDScriptWarning::get_message() const {
 			return R"("@onready" will set the default value after "@export" takes effect and will override it.)";
 		case ONREADY_WITH_CAST:
 			return vformat(R"("as" will silently return "null" if the type of "%s" is wrong. Prefer assigning the node directly to an explicitly typed variable to get an error in such cases.)", symbols[0]);
+		case NULL_ASSIGNED_TO_NON_NULLABLE:
+			CHECK_SYMBOLS(2);
+			return vformat(R"(Value of type "%s" may be null, but "%s" is not nullable. Declare it as "%s?", or make sure the value is not null.)", symbols[0], symbols[1], symbols[1]);
+		case UNSAFE_NULLABLE_ACCESS:
+			CHECK_SYMBOLS(2);
+			return vformat(R"*(Cannot be sure that "%s" is not null here (it is "%s"). Use "?.", "??", or check it against null first.)*", symbols[0], symbols[1]);
+		case REDUNDANT_NULL_CHECK:
+			CHECK_SYMBOLS(2);
+			return vformat(R"(The "%s" is redundant because "%s" can never be null.)", symbols[0], symbols[1]);
 #ifndef DISABLE_DEPRECATED
 		// Never produced. These warnings migrated from 3.x by mistake.
 		case PROPERTY_USED_AS_FUNCTION: // There is already an error.
@@ -210,6 +219,8 @@ bool GDScriptWarning::is_strict_mode_error(Code p_code) {
 		case UNSAFE_CAST:
 		case UNSAFE_CALL_ARGUMENT:
 		case UNSAFE_VOID_RETURN:
+		case NULL_ASSIGNED_TO_NON_NULLABLE:
+		case UNSAFE_NULLABLE_ACCESS:
 			return true;
 		default:
 			return false;
@@ -267,6 +278,9 @@ String GDScriptWarning::get_name_from_code(Code p_code) {
 		PNAME("GET_NODE_DEFAULT_WITHOUT_ONREADY"),
 		PNAME("ONREADY_WITH_EXPORT"),
 		PNAME("ONREADY_WITH_CAST"),
+		PNAME("NULL_ASSIGNED_TO_NON_NULLABLE"),
+		PNAME("UNSAFE_NULLABLE_ACCESS"),
+		PNAME("REDUNDANT_NULL_CHECK"),
 #ifndef DISABLE_DEPRECATED
 		"PROPERTY_USED_AS_FUNCTION",
 		"CONSTANT_USED_AS_FUNCTION",

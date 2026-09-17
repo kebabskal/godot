@@ -125,6 +125,7 @@ class GDScriptAnalyzer {
 	void reduce_assignment(GDScriptParser::AssignmentNode *p_assignment);
 	void reduce_await(GDScriptParser::AwaitNode *p_await);
 	void reduce_binary_op(GDScriptParser::BinaryOpNode *p_binary_op);
+	void reduce_null_coalescing(GDScriptParser::BinaryOpNode *p_binary_op, const GDScriptParser::DataType &p_left_type, const GDScriptParser::DataType &p_right_type);
 	// `p_allow_void`: the caller is fine with a `void` result (the body of an arrow lambda), without
 	// the call counting as a discarded one.
 	void reduce_call(GDScriptParser::CallNode *p_call, bool p_is_await = false, bool p_is_root = false, bool p_allow_void = false);
@@ -138,6 +139,8 @@ class GDScriptAnalyzer {
 	void reduce_preload(GDScriptParser::PreloadNode *p_preload);
 	void reduce_self(GDScriptParser::SelfNode *p_self);
 	void reduce_subscript(GDScriptParser::SubscriptNode *p_subscript, bool p_can_be_pseudo_type = false);
+	void mark_safe_navigation_base(GDScriptParser::SubscriptNode *p_subscript);
+	static bool type_can_be_null(const GDScriptParser::DataType &p_type);
 	void reduce_ternary_op(GDScriptParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(GDScriptParser::TypeTestNode *p_type_test);
 	void reduce_unary_op(GDScriptParser::UnaryOpNode *p_unary_op);

@@ -1,0 +1,146 @@
+# Nullable types
+
+Roadmap item 8. `T?`, `?.` and `??`, plus the flow analysis that makes them
+worth having.
+
+## The problem
+
+GDScript today has two rules and no way to say otherwise:
+
+- An object-typed slot is **always** nullable. `var n: Node = null` is legal,
+  and `var n: Node` with no initializer *is* null. Every `.` on an object is
+  a potential "Attempt to call a function on a null instance".
+- A builtin-typed slot is **never** nullable. `var i: int = null` is an error.
+
+So the type system already knows about nullability; it just does not let you
+write it down, and it never checks the object case. Strict mode made every
+slot typed, which is what makes fixing this worth doing: once the types are
+there, null is the remaining hole.
+
+## Surface
+
+### `T?`
+
+`?` after any type means "or null".
+
+```gdscript
+var target: Node? = null
+var parsed: int? = text.to_int_or_null()
+var owners: Array[Node?] = []
+func find(id: int) -> Item?:
+	return null
+```
+
+`T` (no `?`) means not null. That claim is only *enforced* in strict mode —
+see below — but it is always what the analyzer reasons with, so `?.` and `??`
+give the same types either way.
+
+### `?.`
+
+`a?.b` evaluates `a` once. If it is null the whole expression is null;
+otherwise it is `a.b`. Same for `a?.m()` (the call is skipped, arguments are
+not evaluated) and `a?[i]`.
+
+```gdscript
+var name := get_node_or_null(^"Boss")?.name       # String?
+player?.take_damage(10)                            # no-op if null
+```
+
+**Each `?.` guards its own step only.** `a?.b.c` does not short-circuit the
+`.c` — if `a` is null, `a?.b` is null and `.c` then fails. Write `a?.b?.c`.
+This is deliberate: a chain-wide guard makes the reach of a single `?`
+depend on tokens far to its right. The analyzer closes the trap instead, by
+complaining about the `.c` on a nullable value.
+
+### `??`
+
+`a ?? b` is `a` when `a` is not null, otherwise `b`. `b` is evaluated only
+when needed, and `??` is right-associative, so `a ?? b ?? c` chains.
+
+```gdscript
+var label := item?.name ?? "(none)"
+```
+
+The result type is `b`'s type when that is not nullable, so `??` is the
+standard way to get from `T?` back to `T`.
+
+## Narrowing
+
+Without narrowing, `T?` would be a value you can never use. After a test
+that can only succeed when the value is not null, it has type `T`:
+
+```gdscript
+if target != null:
+	target.queue_free()        # Node here, not Node?
+
+if target == null:
+	return
+target.queue_free()            # Node: the null case left the block
+
+var t := target
+if not t:
+	return
+t.queue_free()
+```
+
+Narrowing applies to locals and parameters, and to `self` members only when
+nothing between the test and the use could have changed them (any call or
+assignment re-widens a member). It is deliberately simple: an identifier
+compared against `null` with `==`/`!=`, or used as a truth value, and the
+`and` of such tests. No narrowing through `or`, and none through lambdas.
+
+## Enforcement
+
+Outside strict mode nothing new is an error: `T?` and `T` accept null alike,
+and a `.` on a nullable value is the usual unsafe-access warning. Existing
+projects keep working, including `var n: Node` left null by the editor.
+
+In **strict mode** the non-null claim is real:
+
+| | |
+| --- | --- |
+| `var n: Node = null` | error: assign to `Node?`, or give it a value |
+| `n.foo` where `n: Node?` | error: use `?.`, `??`, or narrow it first |
+| `var n: Node` with no initializer | error (step 2): it would start null |
+| `@export var n: Node` | error (step 2): the editor can leave it empty |
+
+The last two are the breaking ones, so they land separately, after the rest
+is in and tested.
+
+## Representation
+
+`DataType::is_nullable`. Note that `DataType` has a hand-written
+`operator=`; a new field must be added there or it silently vanishes from
+every copy. (This has bitten this fork twice already — see
+`SCRIPTING_ROADMAP.md`.)
+
+At runtime:
+
+- **Object types.** Nothing changes. `Node` and `Node?` are both a `Node`
+  slot, which already permits null. The non-null guarantee is static only.
+- **Builtins.** `int?` cannot be an int slot, so it compiles to a Variant
+  slot, exactly like an untyped value. This is the honest cost of a nullable
+  builtin, and narrowing back to `int` gets the fast paths back.
+
+`GDScriptDataType` (the runtime type) is therefore built from a nullable
+builtin as "unset", in `_gdtype_from_datatype`.
+
+## Bytecode
+
+Two new opcodes, `OPCODE_JUMP_IF_NULL` and `OPCODE_JUMP_IF_NOT_NULL`: a
+Variant type check against `NIL` and a jump. They hold no locals, so unlike
+the struct opcodes they do not need `GDS_NOINLINE` (roadmap 4d).
+
+`a ?? b` and `a?.b` both compile like the ternary: a result temporary, the
+guard, and a patched jump over the path not taken.
+
+A null test is a **null** test, not `is_instance_valid()`. A freed object is
+not null, and `?.` will not save you from one, just as `!= null` does not.
+
+## Order of work
+
+1. `T?` in types, `DataType::is_nullable`, the two opcodes, `??`. ← here
+2. `?.` on attributes, calls and subscripts.
+3. Narrowing.
+4. Strict-mode errors for null assignment and nullable dereference.
+5. Definite initialization (the `@export` / uninitialized-member rules).

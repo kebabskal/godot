@@ -106,6 +106,17 @@ public:
 	virtual void write_ternary_true_expr(const Address &p_expr) = 0;
 	virtual void write_ternary_false_expr(const Address &p_expr) = 0;
 	virtual void write_end_ternary() = 0;
+
+	// `a ?? b`: the target keeps `a` unless it is null, in which case `b` is evaluated.
+	virtual void write_start_null_coalescing(const Address &p_target) = 0;
+	virtual void write_null_coalescing_left_operand(const Address &p_left_operand) = 0;
+	virtual void write_null_coalescing_right_operand(const Address &p_right_operand) = 0;
+	virtual void write_end_null_coalescing() = 0;
+
+	// `a?.b`: sets the target to null and skips everything written between the two calls
+	// when the base is null. Whatever runs in between writes the target itself.
+	virtual void write_start_safe_navigation(const Address &p_target, const Address &p_base) = 0;
+	virtual void write_end_safe_navigation() = 0;
 	virtual void write_set(const Address &p_target, const Address &p_index, const Address &p_source) = 0;
 	virtual void write_get(const Address &p_target, const Address &p_index, const Address &p_source) = 0;
 	virtual void write_set_named(const Address &p_target, const StringName &p_name, const Address &p_source) = 0;

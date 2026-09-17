@@ -1,0 +1,19 @@
+GDTEST_OK
+~~ WARNING at line 36: (REDUNDANT_NULL_CHECK) The "??" is redundant because "int" can never be null.
+sword
+sword
+<null>
+7
+3
+9
+5 0
+2 1
+sword
+<null>
+13 1
+<null> 1
+touched sword
+1
+<null>
+(none)
+sword

@@ -166,6 +166,10 @@ class GDScriptByteCodeGenerator : public GDScriptCodeGenerator {
 	List<int> ternary_jump_fail_pos;
 	List<int> ternary_jump_skip_pos;
 
+	List<Address> null_coalescing_result;
+	List<int> null_coalescing_jump_pos;
+	List<int> safe_navigation_jump_pos;
+
 	List<List<int>> current_breaks_to_patch;
 
 	void add_stack_identifier(const StringName &p_id, int p_stackpos) {
@@ -503,6 +507,12 @@ public:
 	virtual void write_ternary_true_expr(const Address &p_expr) override;
 	virtual void write_ternary_false_expr(const Address &p_expr) override;
 	virtual void write_end_ternary() override;
+	virtual void write_start_null_coalescing(const Address &p_target) override;
+	virtual void write_null_coalescing_left_operand(const Address &p_left_operand) override;
+	virtual void write_null_coalescing_right_operand(const Address &p_right_operand) override;
+	virtual void write_end_null_coalescing() override;
+	virtual void write_start_safe_navigation(const Address &p_target, const Address &p_base) override;
+	virtual void write_end_safe_navigation() override;
 	virtual void write_set(const Address &p_target, const Address &p_index, const Address &p_source) override;
 	virtual void write_get(const Address &p_target, const Address &p_index, const Address &p_source) override;
 	virtual void write_set_named(const Address &p_target, const StringName &p_name, const Address &p_source) override;

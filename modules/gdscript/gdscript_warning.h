@@ -93,6 +93,9 @@ public:
 		GET_NODE_DEFAULT_WITHOUT_ONREADY, // A class variable uses `get_node()` (or the `$` notation) as its default value, but does not use the @onready annotation.
 		ONREADY_WITH_EXPORT, // The `@onready` annotation will set the value after `@export` which is likely not intended.
 		ONREADY_WITH_CAST, // The cast will silently assign `null` if the node has a wrong type. This is likely not intended.
+		NULL_ASSIGNED_TO_NON_NULLABLE, // A value that may be null was assigned to a type without `?`.
+		UNSAFE_NULLABLE_ACCESS, // A member was accessed on a value that may be null.
+		REDUNDANT_NULL_CHECK, // `?.` or `??` used on a value that cannot be null.
 #ifndef DISABLE_DEPRECATED
 		PROPERTY_USED_AS_FUNCTION, // Function not found, but there's a property with the same name.
 		CONSTANT_USED_AS_FUNCTION, // Function not found, but there's a constant with the same name.
@@ -153,6 +156,9 @@ public:
 		ERROR, // GET_NODE_DEFAULT_WITHOUT_ONREADY // May not work as expected.
 		ERROR, // ONREADY_WITH_EXPORT // May not work as expected.
 		WARN, // ONREADY_WITH_CAST
+		IGNORE, // NULL_ASSIGNED_TO_NON_NULLABLE // Mainline GDScript allows this everywhere; strict mode is the opt-in.
+		IGNORE, // UNSAFE_NULLABLE_ACCESS // Same: every object access is one of these until a project adopts `?`.
+		WARN, // REDUNDANT_NULL_CHECK
 #ifndef DISABLE_DEPRECATED
 		WARN, // PROPERTY_USED_AS_FUNCTION
 		WARN, // CONSTANT_USED_AS_FUNCTION

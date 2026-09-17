@@ -3015,6 +3015,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_precedence(Precedence p_pr
 			// case GDScriptTokenizer::Token::BRACE_OPEN: // Not an infix operator.
 			case GDScriptTokenizer::Token::PARENTHESIS_OPEN:
 			case GDScriptTokenizer::Token::BRACKET_OPEN:
+			case GDScriptTokenizer::Token::QUESTION_BRACKET: // `a?[i]`, an opening bracket too.
 				push_multiline(true);
 				break;
 			default:
@@ -3193,6 +3194,24 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_binary_not_in_operator(Exp
 	operation->variant_op = Variant::OP_NOT;
 	operation->operand = in_operation;
 	complete_extents(operation);
+	return operation;
+}
+
+GDScriptParser::ExpressionNode *GDScriptParser::parse_null_coalescing_operator(ExpressionNode *p_previous_operand, bool p_can_assign) {
+	BinaryOpNode *operation = alloc_node<BinaryOpNode>();
+	reset_extents(operation, p_previous_operand);
+	update_extents(operation);
+
+	operation->operation = BinaryOpNode::OP_NULL_COALESCING;
+	operation->left_operand = p_previous_operand;
+	// Right-associative, so `a ?? b ?? c` is `a ?? (b ?? c)`: parse the right side at this
+	// same precedence rather than one above it.
+	operation->right_operand = parse_precedence(PREC_NULL_COALESCING, false);
+	complete_extents(operation);
+
+	if (operation->right_operand == nullptr) {
+		push_error(R"(Expected expression after "??" operator.)");
+	}
 	return operation;
 }
 
@@ -3703,6 +3722,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_attribute(ExpressionNode *
 	SubscriptNode *attribute = alloc_node<SubscriptNode>();
 	reset_extents(attribute, p_previous_operand);
 	update_extents(attribute);
+	attribute->is_safe_navigation = previous.type == GDScriptTokenizer::Token::QUESTION_PERIOD;
 
 	if (for_completion) {
 		bool is_builtin = false;
@@ -3743,6 +3763,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_subscript(ExpressionNode *
 
 	make_completion_context(COMPLETION_SUBSCRIPT, subscript);
 
+	subscript->is_safe_navigation = previous.type == GDScriptTokenizer::Token::QUESTION_BRACKET;
 	subscript->base = p_previous_operand;
 	subscript->index = parse_expression(false);
 
@@ -4202,6 +4223,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				push_error(R"(Expected a return type after "->" in the callable type.)");
 			}
 		}
+		type->is_nullable = match(GDScriptTokenizer::Token::QUESTION_MARK);
 		complete_extents(type);
 		return type;
 	}
@@ -4243,6 +4265,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		} while (match(GDScriptTokenizer::Token::COMMA));
 		consume(GDScriptTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after collection type.)");
 		if (type != nullptr) {
+			type->is_nullable = match(GDScriptTokenizer::Token::QUESTION_MARK);
 			complete_extents(type);
 		}
 		return type;
@@ -4257,6 +4280,7 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 		}
 	}
 
+	type->is_nullable = match(GDScriptTokenizer::Token::QUESTION_MARK);
 	complete_extents(type);
 	return type;
 }
@@ -4694,6 +4718,9 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ nullptr,                                          &GDScriptParser::parse_attribute,            	PREC_ATTRIBUTE }, // PERIOD,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // PERIOD_PERIOD,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // PERIOD_PERIOD_PERIOD,
+		{ nullptr,                                          &GDScriptParser::parse_attribute,            	PREC_ATTRIBUTE }, // QUESTION_PERIOD,
+		{ nullptr,                                          &GDScriptParser::parse_subscript,            	PREC_SUBSCRIPT }, // QUESTION_BRACKET,
+		{ nullptr,                                          &GDScriptParser::parse_null_coalescing_operator, PREC_NULL_COALESCING }, // QUESTION_QUESTION,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // COLON,
 		{ &GDScriptParser::parse_get_node,               	nullptr,                                        PREC_NONE }, // DOLLAR,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // FORWARD_ARROW,
@@ -5691,6 +5718,11 @@ String GDScriptParser::SuiteNode::Local::get_name() const {
 }
 
 String GDScriptParser::DataType::to_string() const {
+	const String text = base_to_string();
+	return is_nullable ? text + "?" : text;
+}
+
+String GDScriptParser::DataType::base_to_string() const {
 	switch (kind) {
 		case VARIANT:
 			return "Variant";

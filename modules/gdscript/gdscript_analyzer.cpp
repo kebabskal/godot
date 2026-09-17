@@ -1194,6 +1194,8 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 
 	GDScriptParser::DataType result;
 	result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	// Carried on every path out of here, so each early return keeps the `?`.
+	result.is_nullable = p_type->is_nullable;
 
 	if (p_type->type_chain.size() == 1 && p_type->container_types.is_empty()) {
 		const StringName &name = p_type->type_chain[0]->name;
@@ -1236,6 +1238,10 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 	}
 	if (p_type->type_chain.is_empty()) {
 		// void.
+		if (p_type->is_nullable) {
+			push_error(R"("void" cannot be nullable.)", p_type);
+			return bad_type;
+		}
 		result.kind = GDScriptParser::DataType::BUILTIN;
 		result.builtin_type = Variant::NIL;
 		p_type->resolved_type = result;
@@ -1515,19 +1521,23 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		} else if (result.kind == GDScriptParser::DataType::CLASS && result.class_type != nullptr && !result.class_type->type_parameters.is_empty()) {
 			// `Pool[int]`: the type arguments of a generic class, kept in the same place as a
 			// container's element types.
-			if (p_type->container_types.size() != (int)result.class_type->type_parameters.size()) {
+			if (p_type->container_types.size() != result.class_type->type_parameters.size()) {
 				push_error(vformat(R"(Class "%s" takes %d type argument(s), but got %d.)", result.to_string(), result.class_type->type_parameters.size(), p_type->container_types.size()), p_type);
 				return bad_type;
 			}
-			for (int i = 0; i < p_type->container_types.size(); i++) {
+			for (uint32_t i = 0; i < p_type->container_types.size(); i++) {
 				GDScriptParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
 				argument.is_constant = false;
-				result.set_container_element_type(i, argument);
+				result.set_container_element_type((int)i, argument);
 			}
 		} else {
 			push_error(R"(Only arrays and dictionaries can specify collection element types.)", p_type);
 			return bad_type;
 		}
+	}
+
+	if (result.is_variant()) {
+		result.is_nullable = false; // `Variant?` is just `Variant`: it already holds null.
 	}
 
 	p_type->resolved_type = result;
@@ -4093,9 +4103,17 @@ void GDScriptAnalyzer::reduce_expression(GDScriptParser::ExpressionNode *p_expre
 		case GDScriptParser::Node::BINARY_OPERATOR:
 			reduce_binary_op(static_cast<GDScriptParser::BinaryOpNode *>(p_expression));
 			break;
-		case GDScriptParser::Node::CALL:
-			reduce_call(static_cast<GDScriptParser::CallNode *>(p_expression), false, p_is_root);
-			break;
+		case GDScriptParser::Node::CALL: {
+			GDScriptParser::CallNode *call = static_cast<GDScriptParser::CallNode *>(p_expression);
+			reduce_call(call, false, p_is_root);
+			if (call->callee != nullptr && call->callee->type == GDScriptParser::Node::SUBSCRIPT &&
+					static_cast<GDScriptParser::SubscriptNode *>(call->callee)->is_safe_navigation &&
+					call->type_constraint.is_set()) {
+				// The call is skipped when the base is null, and then the result is null too.
+				call->type_constraint = call->type_constraint.as_nullable();
+				call->is_constant = false;
+			}
+		} break;
 		case GDScriptParser::Node::CAST:
 			reduce_cast(static_cast<GDScriptParser::CastNode *>(p_expression));
 			break;
@@ -4201,6 +4219,9 @@ void GDScriptAnalyzer::update_const_expression_builtin_type(GDScriptParser::Expr
 	}
 	if (p_type.kind != GDScriptParser::DataType::BUILTIN && p_type.kind != GDScriptParser::DataType::ENUM) {
 		return;
+	}
+	if (p_type.is_nullable && p_expression->reduced_value.get_type() == Variant::NIL) {
+		return; // `var n: int? = null` keeps the null instead of converting it to a zero.
 	}
 
 	GDScriptParser::DataType expression_type = p_expression->type_constraint;
@@ -4566,6 +4587,34 @@ void GDScriptAnalyzer::reduce_await(GDScriptParser::AwaitNode *p_await) {
 #endif // DEBUG_ENABLED
 }
 
+// `a ?? b`: `a` without its null, falling back to `b`.
+void GDScriptAnalyzer::reduce_null_coalescing(GDScriptParser::BinaryOpNode *p_binary_op, const GDScriptParser::DataType &p_left_type, const GDScriptParser::DataType &p_right_type) {
+#ifdef DEBUG_ENABLED
+	if (p_left_type.is_hard_type() && !type_can_be_null(p_left_type)) {
+		parser->push_warning(p_binary_op, GDScriptWarning::REDUNDANT_NULL_CHECK, "??", p_left_type.to_string());
+	}
+#endif // DEBUG_ENABLED
+
+	GDScriptParser::DataType result;
+	// The left operand can no longer be null here, whatever happens to the rest of it.
+	const GDScriptParser::DataType left_value_type = p_left_type.without_nullability();
+
+	if (left_value_type.is_variant() || p_right_type.is_variant()) {
+		result.kind = GDScriptParser::DataType::VARIANT;
+	} else if (is_type_compatible(left_value_type, p_right_type)) {
+		result = left_value_type;
+		result.is_nullable = p_right_type.is_nullable;
+	} else if (is_type_compatible(p_right_type, left_value_type)) {
+		result = p_right_type;
+	} else {
+		result.kind = GDScriptParser::DataType::VARIANT;
+	}
+
+	result.type_source = p_left_type.is_hard_type() && p_right_type.is_hard_type() ? GDScriptParser::DataType::ANNOTATED_INFERRED : GDScriptParser::DataType::INFERRED;
+	result.is_constant = false;
+	p_binary_op->type_constraint = result;
+}
+
 void GDScriptAnalyzer::reduce_binary_op(GDScriptParser::BinaryOpNode *p_binary_op) {
 	reduce_expression(p_binary_op->left_operand);
 	reduce_expression(p_binary_op->right_operand);
@@ -4580,6 +4629,11 @@ void GDScriptAnalyzer::reduce_binary_op(GDScriptParser::BinaryOpNode *p_binary_o
 	}
 
 	if (!left_type.is_set() || !right_type.is_set()) {
+		return;
+	}
+
+	if (p_binary_op->operation == GDScriptParser::BinaryOpNode::OP_NULL_COALESCING) {
+		reduce_null_coalescing(p_binary_op, left_type, right_type);
 		return;
 	}
 
@@ -5240,6 +5294,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			base_type = make_builtin_meta_type(GDScriptParser::get_builtin_type(base_id->name));
 		} else {
 			reduce_expression(subscript->base);
+			if (subscript->is_safe_navigation) {
+				mark_safe_navigation_base(subscript);
+			}
 			base_type = subscript->base->type_constraint;
 			is_self = subscript->base->type == GDScriptParser::Node::SELF;
 		}
@@ -6702,6 +6759,12 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 		reduce_expression(p_subscript->base);
 	}
 
+	if (p_subscript->is_safe_navigation) {
+		// Past the guard the base cannot be null, so look the member up on the plain type.
+		// The `?.` itself is what makes the whole expression nullable, below.
+		mark_safe_navigation_base(p_subscript);
+	}
+
 	GDScriptParser::DataType result_type;
 
 	if (p_subscript->is_attribute) {
@@ -7118,11 +7181,53 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 		}
 	}
 
+	if (p_subscript->is_safe_navigation && result_type.is_set()) {
+		result_type = result_type.as_nullable();
+		p_subscript->is_constant = false; // The guard is a runtime decision.
+	}
+
 	p_subscript->type_constraint = result_type;
 
 #ifdef DEBUG_ENABLED
 	warn_confusable_temporary_modification(p_subscript);
 #endif // DEBUG_ENABLED
+}
+
+// Whether a value of this type can really be null. A type without `?` only promises that
+// where the promise is kept: outside strict mode mainline's rule still holds, and every
+// object slot is nullable whether it says so or not.
+bool GDScriptAnalyzer::type_can_be_null(const GDScriptParser::DataType &p_type) {
+	if (p_type.accepts_null()) {
+		return true;
+	}
+	switch (p_type.kind) {
+		case GDScriptParser::DataType::NATIVE:
+		case GDScriptParser::DataType::SCRIPT:
+		case GDScriptParser::DataType::CLASS:
+		case GDScriptParser::DataType::TRAIT:
+			return !GDScriptParser::is_project_strict;
+		case GDScriptParser::DataType::TYPE_PARAMETER:
+			return true; // Whatever it binds to may well be an object.
+		case GDScriptParser::DataType::BUILTIN:
+			return p_type.builtin_type == Variant::OBJECT && !GDScriptParser::is_project_strict;
+		default:
+			return false;
+	}
+}
+
+// `?.`: report a guard that can never fire, then drop the `?` from the base's type so the
+// rest of the analysis sees the value it will actually have when the access happens.
+void GDScriptAnalyzer::mark_safe_navigation_base(GDScriptParser::SubscriptNode *p_subscript) {
+	const GDScriptParser::DataType base_type = p_subscript->base->type_constraint;
+	if (!base_type.is_set()) {
+		return;
+	}
+#ifdef DEBUG_ENABLED
+	if (base_type.is_hard_type() && !type_can_be_null(base_type)) {
+		parser->push_warning(p_subscript, GDScriptWarning::REDUNDANT_NULL_CHECK, "?.", base_type.to_string());
+	}
+#endif // DEBUG_ENABLED
+	p_subscript->base->type_constraint = base_type.without_nullability();
 }
 
 void GDScriptAnalyzer::reduce_ternary_op(GDScriptParser::TernaryOpNode *p_ternary_op, bool p_is_root) {
@@ -8480,6 +8585,12 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 
 	if (p_source.kind == GDScriptParser::DataType::VARIANT) {
 		// TODO: This is acceptable but unsafe. Make sure unsafe line is set.
+		return true;
+	}
+
+	if (p_target.is_nullable && p_source.kind == GDScriptParser::DataType::BUILTIN && p_source.builtin_type == Variant::NIL) {
+		// `null` fits anything declared with `?`, including a builtin, which an object slot
+		// would accept anyway.
 		return true;
 	}
 

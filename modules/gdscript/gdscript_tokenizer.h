@@ -141,6 +141,9 @@ public:
 			PERIOD,
 			PERIOD_PERIOD,
 			PERIOD_PERIOD_PERIOD,
+			QUESTION_PERIOD, // `?.`, safe navigation.
+			QUESTION_BRACKET, // `?[`, safe navigation into an index.
+			QUESTION_QUESTION, // `??`, null coalescing.
 			COLON,
 			DOLLAR,
 			FORWARD_ARROW,

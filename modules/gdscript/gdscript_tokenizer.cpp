@@ -136,6 +136,9 @@ static const char *token_names[] = {
 	".", // PERIOD,
 	"..", // PERIOD_PERIOD,
 	"...", // PERIOD_PERIOD_PERIOD,
+	"?.", // QUESTION_PERIOD,
+	"?[", // QUESTION_BRACKET,
+	"??", // QUESTION_QUESTION,
 	":", // COLON,
 	"$", // DOLLAR,
 	"->", // FORWARD_ARROW,
@@ -1469,6 +1472,19 @@ GDScriptTokenizer::Token GDScriptTokenizerText::scan() {
 		case '$':
 			return make_token(Token::DOLLAR);
 		case '?':
+			if (_peek() == '.') {
+				_advance();
+				return make_token(Token::QUESTION_PERIOD);
+			}
+			if (_peek() == '[') {
+				_advance();
+				push_paren('[');
+				return make_token(Token::QUESTION_BRACKET);
+			}
+			if (_peek() == '?') {
+				_advance();
+				return make_token(Token::QUESTION_QUESTION);
+			}
 			return make_token(Token::QUESTION_MARK);
 		case '`':
 			return make_token(Token::BACKTICK);

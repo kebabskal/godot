@@ -129,6 +129,10 @@ public:
 
 		bool is_constant = false;
 		bool is_read_only = false;
+		// A trailing `?`: this slot may also hold `null`. For an object type that is what
+		// the runtime already allows, so the guarantee of a non-nullable one is static only.
+		// For a builtin it forces a Variant slot, since an `int` slot cannot hold null.
+		bool is_nullable = false;
 		bool is_meta_type = false;
 		bool is_pseudo_type = false; // For global names that can't be used standalone.
 		bool is_coroutine = false; // For function calls.
@@ -159,6 +163,23 @@ public:
 		_FORCE_INLINE_ bool has_no_type() const { return type_source == UNDETECTED; }
 		_FORCE_INLINE_ bool is_variant() const { return kind == VARIANT || kind == RESOLVING || kind == UNRESOLVED; }
 		_FORCE_INLINE_ bool is_hard_type() const { return type_source > INFERRED; }
+		// Whether `null` fits here: anything nullable, plus a Variant and `null` itself.
+		_FORCE_INLINE_ bool accepts_null() const {
+			return is_nullable || is_variant() || (kind == BUILTIN && builtin_type == Variant::NIL);
+		}
+		_FORCE_INLINE_ GDScriptParser::DataType without_nullability() const {
+			DataType ret = *this;
+			ret.is_nullable = false;
+			return ret;
+		}
+		_FORCE_INLINE_ GDScriptParser::DataType as_nullable() const {
+			DataType ret = *this;
+			// Nothing to add for a Variant, for `void`, or for `null` itself.
+			if (!ret.is_variant() && !(ret.kind == BUILTIN && ret.builtin_type == Variant::NIL)) {
+				ret.is_nullable = true;
+			}
+			return ret;
+		}
 
 		_FORCE_INLINE_ GDScriptParser::DataType as_hard_type() const {
 			if (!is_set() || has_no_type() || is_hard_type()) {
@@ -171,6 +192,7 @@ public:
 		}
 
 		String to_string() const;
+		String base_to_string() const; // Without the trailing `?`.
 		_FORCE_INLINE_ String to_string_strict() const { return is_hard_type() ? to_string() : "Variant"; }
 
 		String to_property_info_hint_string() const;
@@ -234,6 +256,10 @@ public:
 				return false;
 			}
 
+			if (is_nullable != p_other.is_nullable && kind != VARIANT) {
+				return false; // `Node` and `Node?` are different types.
+			}
+
 			switch (kind) {
 				case VARIANT:
 					return true; // All variants are the same.
@@ -267,6 +293,7 @@ public:
 			type_source = p_other.type_source;
 			is_read_only = p_other.is_read_only;
 			is_constant = p_other.is_constant;
+			is_nullable = p_other.is_nullable;
 			is_meta_type = p_other.is_meta_type;
 			is_pseudo_type = p_other.is_pseudo_type;
 			is_coroutine = p_other.is_coroutine;
@@ -514,6 +541,7 @@ public:
 			OP_BIT_XOR,
 			OP_LOGIC_AND,
 			OP_LOGIC_OR,
+			OP_NULL_COALESCING, // `??`: the left operand unless it is null.
 			OP_CONTENT_TEST,
 			OP_COMP_EQUAL,
 			OP_COMP_NOT_EQUAL,
@@ -1256,6 +1284,9 @@ public:
 		};
 
 		bool is_attribute = false;
+		// Written with `?.` instead of `.`: yields null when the base is null, without
+		// evaluating the access, the call or the index.
+		bool is_safe_navigation = false;
 
 		SubscriptNode() {
 			type = SUBSCRIPT;
@@ -1383,6 +1414,7 @@ public:
 	struct TypeNode : public Node {
 		LocalVector<IdentifierNode *> type_chain;
 		LocalVector<TypeNode *> container_types;
+		bool is_nullable = false; // A trailing `?`.
 		// `func(A, B) -> R`: a typed callable. `type_chain` is empty, like for `void`.
 		bool is_callable_signature = false;
 		LocalVector<TypeNode *> callable_params;
@@ -1617,6 +1649,7 @@ private:
 		PREC_ASSIGNMENT,
 		PREC_CAST,
 		PREC_TERNARY,
+		PREC_NULL_COALESCING,
 		PREC_LOGIC_OR,
 		PREC_LOGIC_AND,
 		PREC_LOGIC_NOT,
@@ -1799,6 +1832,7 @@ private:
 	ExpressionNode *parse_builtin_constant(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_unary_operator(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_binary_operator(ExpressionNode *p_previous_operand, bool p_can_assign);
+	ExpressionNode *parse_null_coalescing_operator(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_binary_not_in_operator(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_ternary_operator(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_assignment(ExpressionNode *p_previous_operand, bool p_can_assign);

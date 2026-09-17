@@ -885,6 +885,52 @@ void GDScriptByteCodeGenerator::write_end_ternary() {
 	ternary_result.pop_back();
 }
 
+void GDScriptByteCodeGenerator::write_start_null_coalescing(const Address &p_target) {
+	null_coalescing_result.push_back(p_target);
+}
+
+void GDScriptByteCodeGenerator::write_null_coalescing_left_operand(const Address &p_left_operand) {
+	append_opcode(GDScriptFunction::OPCODE_ASSIGN);
+	append(null_coalescing_result.back()->get());
+	append(p_left_operand);
+	// Not null: the right operand must not run at all.
+	append_opcode(GDScriptFunction::OPCODE_JUMP_IF_NOT_NULL);
+	append(p_left_operand);
+	null_coalescing_jump_pos.push_back(opcodes.size());
+	append(0); // Jump target, will be patched.
+}
+
+void GDScriptByteCodeGenerator::write_null_coalescing_right_operand(const Address &p_right_operand) {
+	append_opcode(GDScriptFunction::OPCODE_ASSIGN);
+	append(null_coalescing_result.back()->get());
+	append(p_right_operand);
+}
+
+void GDScriptByteCodeGenerator::write_end_null_coalescing() {
+	patch_jump(null_coalescing_jump_pos.back()->get());
+	null_coalescing_jump_pos.pop_back();
+	null_coalescing_result.pop_back();
+}
+
+void GDScriptByteCodeGenerator::write_start_safe_navigation(const Address &p_target, const Address &p_base) {
+	// The access writes the target itself, so it only has to be null here for the path that
+	// jumps over it. A discarded result (`a?.method()` as a statement) has no target at all,
+	// and must not be written to the shared `nil` slot (GH-70964).
+	if (p_target.mode != Address::NIL) {
+		append_opcode(GDScriptFunction::OPCODE_ASSIGN_NULL);
+		append(p_target);
+	}
+	append_opcode(GDScriptFunction::OPCODE_JUMP_IF_NULL);
+	append(p_base);
+	safe_navigation_jump_pos.push_back(opcodes.size());
+	append(0); // Jump target, will be patched.
+}
+
+void GDScriptByteCodeGenerator::write_end_safe_navigation() {
+	patch_jump(safe_navigation_jump_pos.back()->get());
+	safe_navigation_jump_pos.pop_back();
+}
+
 void GDScriptByteCodeGenerator::write_set(const Address &p_target, const Address &p_index, const Address &p_source) {
 	if (HAS_BUILTIN_TYPE(p_target)) {
 		if (IS_BUILTIN_TYPE(p_index, Variant::INT) && Variant::get_member_validated_indexed_setter(p_target.type.builtin_type) &&
