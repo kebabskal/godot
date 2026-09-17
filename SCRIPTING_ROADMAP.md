@@ -761,6 +761,34 @@ group are independent and can proceed in any order.
   of is a file that is *not* a class: one file is one class, and the global
   registry maps a name to a script, so a true namespace would need a new
   registry rather than a parser change. Not attempted.
+- "Global scope" files, where a file's traits and enums are in scope everywhere
+  without a `Lib.` prefix: **pinned**, design settled, spelling undecided.
+  - Not through `ScriptServer`. `GlobalScriptClass` maps a name to a script
+    *path* and assumes that script's root class is the type, so a trait or enum
+    inside a file has nowhere to go in it. Adding a member path there would
+    reach C#, the editor class list, the node-creation dialog, `@export` hints,
+    the docs generator and `project.godot` serialization, and would hand all of
+    them a "global class" that is not a script.
+  - The route that fits is GDScript-only: a list of files whose top-level
+    declarations are consulted when a name fails to resolve, reusing the member
+    lookup that already makes `Lib.Damageable` work. The analyzer consults
+    `ScriptServer::is_global_class()` in seven places (type names, identifiers,
+    property and inheritance resolution); the new lookup goes beside each, which
+    is what keeps the work bounded.
+  - The limitation is also the point: such names would not be editor-visible
+    node types -- no class-list entry, no node script type, no
+    `@export var x: SomeGlobal`. That is what "without the `class_name`
+    semantics" asks for, and it is fine for traits and enums, but it means a
+    global-scope file cannot replace `class_name` for real node classes.
+  - Undecided, and the reason this is pinned: the spelling. A project setting
+    listing the files needs no scanning and behaves the same at runtime and in
+    the editor; a `@global_scope` annotation reads better but needs the editor
+    to scan for it and somewhere to persist the result, the way `class_name`
+    goes through `project.godot`; a per-declaration `@global` adds per-member
+    bookkeeping on top of that.
+  - Either way the fork's tooling-parity rule applies: completion of the names
+    as types and as identifiers, hover, go-to-definition, LSP document symbols,
+    plus an error when two files export the same name.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
