@@ -30,13 +30,13 @@
 
 #include "variant_parser.h"
 
-#include "core/variant/struct_layout.h"
 #include "core/crypto/crypto_core.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_uid.h"
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
 #include "core/string/string_buffer.h"
+#include "core/variant/struct_layout.h"
 
 char32_t VariantParser::Stream::get_char() {
 	// is within buffer?

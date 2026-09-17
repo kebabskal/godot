@@ -622,12 +622,13 @@ Dictionary OS::get_memory_info() const {
 static Ref<StructLayout> memory_info_layout;
 
 void OS::register_struct_layouts() {
-	memory_info_layout = StructDB::add_layout(MemoryInfoName, {
-			{ "physical", Variant::INT, -1 },
-			{ "free", Variant::INT, -1 },
-			{ "available", Variant::INT, -1 },
-			{ "stack", Variant::INT, -1 },
-	});
+	memory_info_layout = StructDB::add_layout(MemoryInfoName,
+			{
+					{ "physical", Variant::INT, -1 },
+					{ "free", Variant::INT, -1 },
+					{ "available", Variant::INT, -1 },
+					{ "stack", Variant::INT, -1 },
+			});
 }
 
 void OS::unregister_struct_layouts() {
@@ -1998,17 +1999,18 @@ Dictionary Engine::get_version_info() const {
 static Ref<StructLayout> version_info_layout;
 
 void Engine::register_struct_layouts() {
-	version_info_layout = StructDB::add_layout(VersionInfoName, {
-			{ "major", Variant::INT, 0 },
-			{ "minor", Variant::INT, 0 },
-			{ "patch", Variant::INT, 0 },
-			{ "hex", Variant::INT, 0 },
-			{ "status", Variant::STRING, String() },
-			{ "build", Variant::STRING, String() },
-			{ "hash", Variant::STRING, String() },
-			{ "timestamp", Variant::INT, 0 },
-			{ "string", Variant::STRING, String() },
-	});
+	version_info_layout = StructDB::add_layout(VersionInfoName,
+			{
+					{ "major", Variant::INT, 0 },
+					{ "minor", Variant::INT, 0 },
+					{ "patch", Variant::INT, 0 },
+					{ "hex", Variant::INT, 0 },
+					{ "status", Variant::STRING, String() },
+					{ "build", Variant::STRING, String() },
+					{ "hash", Variant::STRING, String() },
+					{ "timestamp", Variant::INT, 0 },
+					{ "string", Variant::STRING, String() },
+			});
 }
 
 void Engine::unregister_struct_layouts() {

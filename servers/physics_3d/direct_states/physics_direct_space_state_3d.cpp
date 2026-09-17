@@ -89,36 +89,40 @@ static Struct _make_shape_result(const PS3DT::ShapeResult &p_result) {
 }
 
 void PhysicsDirectSpaceState3D::register_struct_layouts() {
-	ray_result_layout = StructDB::add_layout(PhysicsRayResult3DName, {
-			{ "hit", Variant::BOOL, false },
-			{ "position", Variant::VECTOR3, Vector3() },
-			{ "normal", Variant::VECTOR3, Vector3() },
-			{ "face_index", Variant::INT, -1 },
-			{ "collider_id", Variant::INT, 0 },
-			{ "collider", Variant::OBJECT, Variant(), "Object" },
-			{ "shape", Variant::INT, 0 },
-			{ "rid", Variant::RID, RID() },
-	});
-	shape_result_layout = StructDB::add_layout(PhysicsShapeResult3DName, {
-			{ "rid", Variant::RID, RID() },
-			{ "collider_id", Variant::INT, 0 },
-			{ "collider", Variant::OBJECT, Variant(), "Object" },
-			{ "shape", Variant::INT, 0 },
-	});
-	rest_info_layout = StructDB::add_layout(PhysicsRestInfo3DName, {
-			{ "hit", Variant::BOOL, false },
-			{ "point", Variant::VECTOR3, Vector3() },
-			{ "normal", Variant::VECTOR3, Vector3() },
-			{ "rid", Variant::RID, RID() },
-			{ "collider_id", Variant::INT, 0 },
-			{ "collider", Variant::OBJECT, Variant(), "Object" },
-			{ "shape", Variant::INT, 0 },
-			{ "linear_velocity", Variant::VECTOR3, Vector3() },
-	});
-	cast_result_layout = StructDB::add_layout(PhysicsCastResult3DName, {
-			{ "safe_fraction", Variant::FLOAT, 1.0 },
-			{ "unsafe_fraction", Variant::FLOAT, 1.0 },
-	});
+	ray_result_layout = StructDB::add_layout(PhysicsRayResult3DName,
+			{
+					{ "hit", Variant::BOOL, false },
+					{ "position", Variant::VECTOR3, Vector3() },
+					{ "normal", Variant::VECTOR3, Vector3() },
+					{ "face_index", Variant::INT, -1 },
+					{ "collider_id", Variant::INT, 0 },
+					{ "collider", Variant::OBJECT, Variant(), "Object" },
+					{ "shape", Variant::INT, 0 },
+					{ "rid", Variant::RID, RID() },
+			});
+	shape_result_layout = StructDB::add_layout(PhysicsShapeResult3DName,
+			{
+					{ "rid", Variant::RID, RID() },
+					{ "collider_id", Variant::INT, 0 },
+					{ "collider", Variant::OBJECT, Variant(), "Object" },
+					{ "shape", Variant::INT, 0 },
+			});
+	rest_info_layout = StructDB::add_layout(PhysicsRestInfo3DName,
+			{
+					{ "hit", Variant::BOOL, false },
+					{ "point", Variant::VECTOR3, Vector3() },
+					{ "normal", Variant::VECTOR3, Vector3() },
+					{ "rid", Variant::RID, RID() },
+					{ "collider_id", Variant::INT, 0 },
+					{ "collider", Variant::OBJECT, Variant(), "Object" },
+					{ "shape", Variant::INT, 0 },
+					{ "linear_velocity", Variant::VECTOR3, Vector3() },
+			});
+	cast_result_layout = StructDB::add_layout(PhysicsCastResult3DName,
+			{
+					{ "safe_fraction", Variant::FLOAT, 1.0 },
+					{ "unsafe_fraction", Variant::FLOAT, 1.0 },
+			});
 }
 
 void PhysicsDirectSpaceState3D::unregister_struct_layouts() {

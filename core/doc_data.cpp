@@ -30,10 +30,9 @@
 
 #include "doc_data.h"
 
-#include "core/variant/struct_db.h"
-
 #include "core/object/method_info.h"
 #include "core/object/property_info.h"
+#include "core/variant/struct_db.h"
 
 String DocData::get_default_value_string(const Variant &p_value) {
 	const Variant::Type type = p_value.get_type();

@@ -235,31 +235,35 @@ static Ref<StructLayout> time_layout;
 static Ref<StructLayout> time_zone_layout;
 
 void Time::register_struct_layouts() {
-	datetime_layout = StructDB::add_layout(DateTimeName, {
-			{ YEAR_KEY, Variant::INT, (int64_t)UNIX_EPOCH_YEAR_AD },
-			{ MONTH_KEY, Variant::INT, 1 },
-			{ DAY_KEY, Variant::INT, 1 },
-			{ WEEKDAY_KEY, Variant::INT, (int)WEEKDAY_THURSDAY },
-			{ HOUR_KEY, Variant::INT, 0 },
-			{ MINUTE_KEY, Variant::INT, 0 },
-			{ SECOND_KEY, Variant::INT, 0 },
-			{ DST_KEY, Variant::BOOL, false },
-	});
-	date_layout = StructDB::add_layout(DateName, {
-			{ YEAR_KEY, Variant::INT, (int64_t)UNIX_EPOCH_YEAR_AD },
-			{ MONTH_KEY, Variant::INT, 1 },
-			{ DAY_KEY, Variant::INT, 1 },
-			{ WEEKDAY_KEY, Variant::INT, (int)WEEKDAY_THURSDAY },
-	});
-	time_layout = StructDB::add_layout(TimeOfDayName, {
-			{ HOUR_KEY, Variant::INT, 0 },
-			{ MINUTE_KEY, Variant::INT, 0 },
-			{ SECOND_KEY, Variant::INT, 0 },
-	});
-	time_zone_layout = StructDB::add_layout(TimeZoneInfoName, {
-			{ "bias", Variant::INT, 0 },
-			{ "name", Variant::STRING, String() },
-	});
+	datetime_layout = StructDB::add_layout(DateTimeName,
+			{
+					{ YEAR_KEY, Variant::INT, (int64_t)UNIX_EPOCH_YEAR_AD },
+					{ MONTH_KEY, Variant::INT, 1 },
+					{ DAY_KEY, Variant::INT, 1 },
+					{ WEEKDAY_KEY, Variant::INT, (int)WEEKDAY_THURSDAY },
+					{ HOUR_KEY, Variant::INT, 0 },
+					{ MINUTE_KEY, Variant::INT, 0 },
+					{ SECOND_KEY, Variant::INT, 0 },
+					{ DST_KEY, Variant::BOOL, false },
+			});
+	date_layout = StructDB::add_layout(DateName,
+			{
+					{ YEAR_KEY, Variant::INT, (int64_t)UNIX_EPOCH_YEAR_AD },
+					{ MONTH_KEY, Variant::INT, 1 },
+					{ DAY_KEY, Variant::INT, 1 },
+					{ WEEKDAY_KEY, Variant::INT, (int)WEEKDAY_THURSDAY },
+			});
+	time_layout = StructDB::add_layout(TimeOfDayName,
+			{
+					{ HOUR_KEY, Variant::INT, 0 },
+					{ MINUTE_KEY, Variant::INT, 0 },
+					{ SECOND_KEY, Variant::INT, 0 },
+			});
+	time_zone_layout = StructDB::add_layout(TimeZoneInfoName,
+			{
+					{ "bias", Variant::INT, 0 },
+					{ "name", Variant::STRING, String() },
+			});
 }
 
 void Time::unregister_struct_layouts() {
@@ -275,20 +279,20 @@ void Time::unregister_struct_layouts() {
 
 // Reads the date and time fields of a struct by name, like `EXTRACT_FROM_DICTIONARY`, so any
 // struct with those fields (a `DateTime`, a `Date`, a user struct) is accepted.
-#define EXTRACT_FROM_STRUCT                                                                   \
-	bool _valid = false;                                                                      \
-	Variant _v;                                                                               \
-	_v = p_datetime.get_field_by_name(YEAR_KEY, &_valid);                                     \
-	int64_t year = _valid ? int64_t(_v) : UNIX_EPOCH_YEAR_AD;                                 \
-	_v = p_datetime.get_field_by_name(MONTH_KEY, &_valid);                                    \
-	Month month = Month(_valid ? int(_v) : 1);                                                \
-	_v = p_datetime.get_field_by_name(DAY_KEY, &_valid);                                      \
-	int day = _valid ? int(_v) : 1;                                                           \
-	_v = p_datetime.get_field_by_name(HOUR_KEY, &_valid);                                     \
-	int hour = _valid ? int(_v) : 0;                                                          \
-	_v = p_datetime.get_field_by_name(MINUTE_KEY, &_valid);                                   \
-	int minute = _valid ? int(_v) : 0;                                                        \
-	_v = p_datetime.get_field_by_name(SECOND_KEY, &_valid);                                   \
+#define EXTRACT_FROM_STRUCT \
+	bool _valid = false; \
+	Variant _v; \
+	_v = p_datetime.get_field_by_name(YEAR_KEY, &_valid); \
+	int64_t year = _valid ? int64_t(_v) : UNIX_EPOCH_YEAR_AD; \
+	_v = p_datetime.get_field_by_name(MONTH_KEY, &_valid); \
+	Month month = Month(_valid ? int(_v) : 1); \
+	_v = p_datetime.get_field_by_name(DAY_KEY, &_valid); \
+	int day = _valid ? int(_v) : 1; \
+	_v = p_datetime.get_field_by_name(HOUR_KEY, &_valid); \
+	int hour = _valid ? int(_v) : 0; \
+	_v = p_datetime.get_field_by_name(MINUTE_KEY, &_valid); \
+	int minute = _valid ? int(_v) : 0; \
+	_v = p_datetime.get_field_by_name(SECOND_KEY, &_valid); \
 	int second = _valid ? int(_v) : 0;
 
 TypedStruct<DateTimeName> Time::get_datetime_from_unix_time(int64_t p_unix_time_val) const {

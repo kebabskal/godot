@@ -50,6 +50,18 @@ public:
 
 	// Creates and registers a layout. Returns null (and reports an error) if the name is taken or a
 	// field is invalid, so a broken declaration is caught at startup.
+	//
+	// Put the opening brace of the field list on its own line:
+	//
+	//     layout = StructDB::add_layout(SomeName,
+	//             {
+	//                     { FIELD_KEY, Variant::INT, 0 },
+	//             });
+	//
+	// Leaving it on the call's line (`add_layout(SomeName, {`) is what you would write, but
+	// `Cpp11BracedListStyle: false` then indents every field to the column of the name argument,
+	// so the block slides further right the longer the name is, and clang-format rewrites the
+	// whole list every time anyone formats the file.
 	static Ref<StructLayout> add_layout(const StringName &p_name, std::initializer_list<FieldDef> p_fields);
 	static Ref<StructLayout> get_layout(const StringName &p_name);
 	static bool has_layout(const StringName &p_name);

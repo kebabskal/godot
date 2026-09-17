@@ -30,8 +30,6 @@
 
 #include "gdscript_analyzer.h"
 
-#include "core/variant/struct_db.h"
-
 #include "gdscript.h"
 #include "gdscript_utility_callable.h"
 #include "gdscript_utility_functions.h"
@@ -44,6 +42,7 @@
 #include "core/object/class_db.h"
 #include "core/object/script_language.h"
 #include "core/templates/hash_map.h"
+#include "core/variant/struct_db.h"
 #include "scene/main/node.h"
 
 #include "modules/gdscript/gdscript_parser.h"

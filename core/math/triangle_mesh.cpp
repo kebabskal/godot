@@ -547,12 +547,13 @@ enum {
 static Ref<StructLayout> hit_layout;
 
 void TriangleMesh::register_struct_layouts() {
-	hit_layout = StructDB::add_layout(TriangleMeshHitName, {
-			{ "hit", Variant::BOOL, false },
-			{ "position", Variant::VECTOR3, Vector3() },
-			{ "normal", Variant::VECTOR3, Vector3() },
-			{ "face_index", Variant::INT, -1 },
-	});
+	hit_layout = StructDB::add_layout(TriangleMeshHitName,
+			{
+					{ "hit", Variant::BOOL, false },
+					{ "position", Variant::VECTOR3, Vector3() },
+					{ "normal", Variant::VECTOR3, Vector3() },
+					{ "face_index", Variant::INT, -1 },
+			});
 }
 
 void TriangleMesh::unregister_struct_layouts() {

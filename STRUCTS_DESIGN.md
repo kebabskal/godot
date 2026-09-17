@@ -207,3 +207,13 @@ and feeds `duplicate`, deep copy and the inspector, so it must say
 Increment 1 is the ~50 core sites plus serialization and tests. Editor
 and C# can lag behind it without breaking anything as long as the
 hard-failure sites in each are handled.
+
+## Formatting
+
+`StructDB::add_layout(Name, { ... })` written the obvious way, with the brace
+on the call's line, formats badly: Godot sets `Cpp11BracedListStyle: false`,
+so clang-format indents the fields to the column of the *name* argument and
+the block slides further right the longer that name is. Every registration
+site therefore puts the opening brace on its own line, and `struct_db.h`
+says so at the declaration. Written that way the sites are a clang-format
+fixed point.

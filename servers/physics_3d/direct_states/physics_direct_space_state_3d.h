@@ -30,8 +30,8 @@
 
 #pragma once
 
-#include "core/variant/typed_struct.h"
 #include "core/variant/type_info.h"
+#include "core/variant/typed_struct.h"
 #include "servers/physics_3d/physics_server_3d_types.h"
 #include "servers/physics_3d/queries/physics_point_query_parameters_3d.h"
 #include "servers/physics_3d/queries/physics_ray_query_parameters_3d.h"

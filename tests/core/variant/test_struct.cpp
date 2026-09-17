@@ -28,7 +28,6 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-
 #include "tests/test_macros.h"
 
 TEST_FORCE_LINK(test_struct)
@@ -259,11 +258,12 @@ TEST_CASE("[Struct] Registry") {
 
 TEST_CASE("[Struct] StructDB") {
 	CHECK_FALSE(StructDB::has_layout("TestEngineStruct"));
-	Ref<StructLayout> layout = StructDB::add_layout("TestEngineStruct", {
-			{ "hit", Variant::BOOL, false },
-			{ "position", Variant::VECTOR3, Vector3(1, 2, 3) },
-			{ "collider", Variant::OBJECT, Variant(), "Object" },
-	});
+	Ref<StructLayout> layout = StructDB::add_layout("TestEngineStruct",
+			{
+					{ "hit", Variant::BOOL, false },
+					{ "position", Variant::VECTOR3, Vector3(1, 2, 3) },
+					{ "collider", Variant::OBJECT, Variant(), "Object" },
+			});
 	REQUIRE(layout.is_valid());
 	CHECK(layout->get_source_path().is_empty());
 	CHECK(layout->get_field_count() == 3);

@@ -30,9 +30,9 @@
 
 #pragma once
 
-#include "core/templates/hash_set.h"
 #include "core/object/ref_counted.h"
 #include "core/object/script_language.h"
+#include "core/templates/hash_set.h"
 #include "core/variant/container_type_validate.h"
 #include "core/variant/struct.h"
 #include "core/variant/variant.h"

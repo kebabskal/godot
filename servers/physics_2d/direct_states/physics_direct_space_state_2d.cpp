@@ -30,9 +30,8 @@
 
 #include "physics_direct_space_state_2d.h"
 
-#include "core/variant/struct_db.h"
-
 #include "core/object/class_db.h"
+#include "core/variant/struct_db.h"
 #include "core/variant/typed_array.h"
 
 // `PhysicsRayResult2D`: field order, matching `register_struct_layouts()`.
@@ -89,35 +88,39 @@ static Struct _make_shape_result(const PS2DT::ShapeResult &p_result) {
 }
 
 void PhysicsDirectSpaceState2D::register_struct_layouts() {
-	ray_result_layout = StructDB::add_layout(PhysicsRayResult2DName, {
-			{ "hit", Variant::BOOL, false },
-			{ "position", Variant::VECTOR2, Vector2() },
-			{ "normal", Variant::VECTOR2, Vector2() },
-			{ "collider_id", Variant::INT, 0 },
-			{ "collider", Variant::OBJECT, Variant(), "Object" },
-			{ "shape", Variant::INT, 0 },
-			{ "rid", Variant::RID, RID() },
-	});
-	shape_result_layout = StructDB::add_layout(PhysicsShapeResult2DName, {
-			{ "rid", Variant::RID, RID() },
-			{ "collider_id", Variant::INT, 0 },
-			{ "collider", Variant::OBJECT, Variant(), "Object" },
-			{ "shape", Variant::INT, 0 },
-	});
-	rest_info_layout = StructDB::add_layout(PhysicsRestInfo2DName, {
-			{ "hit", Variant::BOOL, false },
-			{ "point", Variant::VECTOR2, Vector2() },
-			{ "normal", Variant::VECTOR2, Vector2() },
-			{ "rid", Variant::RID, RID() },
-			{ "collider_id", Variant::INT, 0 },
-			{ "collider", Variant::OBJECT, Variant(), "Object" },
-			{ "shape", Variant::INT, 0 },
-			{ "linear_velocity", Variant::VECTOR2, Vector2() },
-	});
-	cast_result_layout = StructDB::add_layout(PhysicsCastResult2DName, {
-			{ "safe_fraction", Variant::FLOAT, 1.0 },
-			{ "unsafe_fraction", Variant::FLOAT, 1.0 },
-	});
+	ray_result_layout = StructDB::add_layout(PhysicsRayResult2DName,
+			{
+					{ "hit", Variant::BOOL, false },
+					{ "position", Variant::VECTOR2, Vector2() },
+					{ "normal", Variant::VECTOR2, Vector2() },
+					{ "collider_id", Variant::INT, 0 },
+					{ "collider", Variant::OBJECT, Variant(), "Object" },
+					{ "shape", Variant::INT, 0 },
+					{ "rid", Variant::RID, RID() },
+			});
+	shape_result_layout = StructDB::add_layout(PhysicsShapeResult2DName,
+			{
+					{ "rid", Variant::RID, RID() },
+					{ "collider_id", Variant::INT, 0 },
+					{ "collider", Variant::OBJECT, Variant(), "Object" },
+					{ "shape", Variant::INT, 0 },
+			});
+	rest_info_layout = StructDB::add_layout(PhysicsRestInfo2DName,
+			{
+					{ "hit", Variant::BOOL, false },
+					{ "point", Variant::VECTOR2, Vector2() },
+					{ "normal", Variant::VECTOR2, Vector2() },
+					{ "rid", Variant::RID, RID() },
+					{ "collider_id", Variant::INT, 0 },
+					{ "collider", Variant::OBJECT, Variant(), "Object" },
+					{ "shape", Variant::INT, 0 },
+					{ "linear_velocity", Variant::VECTOR2, Vector2() },
+			});
+	cast_result_layout = StructDB::add_layout(PhysicsCastResult2DName,
+			{
+					{ "safe_fraction", Variant::FLOAT, 1.0 },
+					{ "unsafe_fraction", Variant::FLOAT, 1.0 },
+			});
 }
 
 void PhysicsDirectSpaceState2D::unregister_struct_layouts() {

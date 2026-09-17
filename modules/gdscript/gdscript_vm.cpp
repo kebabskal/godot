@@ -265,9 +265,9 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_OPERATOR, \
 		&&OPCODE_OPERATOR_VALIDATED, \
 		GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_LABEL) \
-		GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_LABEL) \
-		GDSCRIPT_TYPED_COMPARE_JUMP_OPCODES(_GDS_TYPED_JUMP_LABEL) \
-		&&OPCODE_TYPE_TEST_BUILTIN, \
+						GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_LABEL) \
+								GDSCRIPT_TYPED_COMPARE_JUMP_OPCODES(_GDS_TYPED_JUMP_LABEL) && \
+				OPCODE_TYPE_TEST_BUILTIN, \
 		&&OPCODE_TYPE_TEST_ARRAY, \
 		&&OPCODE_TYPE_TEST_DICTIONARY, \
 		&&OPCODE_TYPE_TEST_NATIVE, \
@@ -326,8 +326,8 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_CALL_NATIVE_STATIC_VALIDATED_NO_RETURN, \
 		&&OPCODE_CALL_METHOD_BIND_VALIDATED_RETURN, \
 		&&OPCODE_CALL_METHOD_BIND_VALIDATED_NO_RETURN, \
-		&&OPCODE_CALL_SCRIPT,                          \
-		&&OPCODE_CALL_STRUCT_METHOD,                   \
+		&&OPCODE_CALL_SCRIPT, \
+		&&OPCODE_CALL_STRUCT_METHOD, \
 		&&OPCODE_AWAIT, \
 		&&OPCODE_AWAIT_RESUME, \
 		&&OPCODE_CREATE_LAMBDA, \
@@ -336,7 +336,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_JUMP_IF, \
 		&&OPCODE_JUMP_IF_NOT, \
 		&&OPCODE_JUMP_TO_DEF_ARGUMENT, \
-		&&OPCODE_JUMP_IF_SHARED, 		&&OPCODE_JUMP_IF_NULL, 		&&OPCODE_JUMP_IF_NOT_NULL, \
+		&&OPCODE_JUMP_IF_SHARED, &&OPCODE_JUMP_IF_NULL, &&OPCODE_JUMP_IF_NOT_NULL, \
 		&&OPCODE_RETURN, \
 		&&OPCODE_RETURN_TYPED_BUILTIN, \
 		&&OPCODE_RETURN_TYPED_ARRAY, \
@@ -1111,8 +1111,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 		const auto &vb = *VariantInternal::_GDS_GET_##m_tb(b); \
 		constexpr const char *op_sym = m_sym; \
 		(void)op_sym; \
-		m_check \
-		if (unlikely(dst->get_type() != Variant::m_tr)) { \
+		m_check if (unlikely(dst->get_type() != Variant::m_tr)) { \
 			VariantInternal::initialize(dst, Variant::m_tr); \
 		} \
 		*VariantInternal::_GDS_GET_##m_tr(dst) = (m_expr); \

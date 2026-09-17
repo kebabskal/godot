@@ -79,7 +79,6 @@
 #include "core/object/class_db.h"
 #include "core/object/script_backtrace.h"
 #include "core/object/script_language_extension.h"
-#include "core/variant/struct_layout.h"
 #include "core/object/undo_redo.h"
 #include "core/object/worker_thread_pool.h"
 #include "core/os/main_loop.h"
@@ -90,6 +89,7 @@
 #include "core/string/regex.h"
 #include "core/string/translation.h"
 #include "core/string/translation_server.h"
+#include "core/variant/struct_layout.h"
 #ifndef DISABLE_DEPRECATED
 #include "core/io/packed_data_container.h"
 #endif

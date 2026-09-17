@@ -561,8 +561,8 @@ void GDScriptByteCodeGenerator::write_type_adjust(const Address &p_target, Varia
 // The inline typed opcode for `p_operator` on these built-in operand types, or -1 if there is none.
 static int _get_typed_binary_opcode(Variant::Operator p_operator, Variant::Type p_left, Variant::Type p_right) {
 #define _GDS_TYPED_BINOP_MATCH(m_name, m_vop, m_ta, m_tb, m_tr, m_sym, m_expr, m_check) \
-	if (p_operator == Variant::m_vop && p_left == Variant::m_ta && p_right == Variant::m_tb) {           \
-		return GDScriptFunction::OPCODE_##m_name;                                                       \
+	if (p_operator == Variant::m_vop && p_left == Variant::m_ta && p_right == Variant::m_tb) { \
+		return GDScriptFunction::OPCODE_##m_name; \
 	}
 	GDSCRIPT_TYPED_BINARY_OPCODES(_GDS_TYPED_BINOP_MATCH)
 #undef _GDS_TYPED_BINOP_MATCH
@@ -572,8 +572,8 @@ static int _get_typed_binary_opcode(Variant::Operator p_operator, Variant::Type 
 // The compare-and-jump opcode fusing the inline comparison `p_compare_opcode`, or -1 if there is none.
 static int _get_typed_compare_jump_opcode(int p_compare_opcode) {
 #define _GDS_TYPED_JUMP_MATCH(m_name, m_cmp, m_ta, m_tb, m_sym, m_expr) \
-	if (p_compare_opcode == GDScriptFunction::OPCODE_##m_cmp) {         \
-		return GDScriptFunction::OPCODE_##m_name;                       \
+	if (p_compare_opcode == GDScriptFunction::OPCODE_##m_cmp) { \
+		return GDScriptFunction::OPCODE_##m_name; \
 	}
 	GDSCRIPT_TYPED_COMPARE_JUMP_OPCODES(_GDS_TYPED_JUMP_MATCH)
 #undef _GDS_TYPED_JUMP_MATCH
@@ -604,8 +604,8 @@ int GDScriptByteCodeGenerator::_fuse_compare_jump(const Address &p_condition) {
 // The inline typed opcode for unary `p_operator` on this built-in operand type, or -1 if there is none.
 static int _get_typed_unary_opcode(Variant::Operator p_operator, Variant::Type p_operand) {
 #define _GDS_TYPED_UNOP_MATCH(m_name, m_vop, m_ta, m_tr, m_sym, m_expr) \
-	if (p_operator == Variant::m_vop && p_operand == Variant::m_ta) {   \
-		return GDScriptFunction::OPCODE_##m_name;                       \
+	if (p_operator == Variant::m_vop && p_operand == Variant::m_ta) { \
+		return GDScriptFunction::OPCODE_##m_name; \
 	}
 	GDSCRIPT_TYPED_UNARY_OPCODES(_GDS_TYPED_UNOP_MATCH)
 #undef _GDS_TYPED_UNOP_MATCH
