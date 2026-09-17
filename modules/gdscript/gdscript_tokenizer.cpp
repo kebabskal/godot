@@ -139,6 +139,7 @@ static const char *token_names[] = {
 	":", // COLON,
 	"$", // DOLLAR,
 	"->", // FORWARD_ARROW,
+	"=>", // ARROW,
 	"_", // UNDERSCORE,
 	// Whitespace
 	"Newline", // NEWLINE,
@@ -1610,6 +1611,9 @@ GDScriptTokenizer::Token GDScriptTokenizerText::scan() {
 		case '=':
 			if (_peek() == '=') {
 				return check_vcs_marker('=', Token::EQUAL_EQUAL);
+			} else if (_peek() == '>') {
+				_advance();
+				return make_token(Token::ARROW);
 			} else {
 				return make_token(Token::EQUAL);
 			}

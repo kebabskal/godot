@@ -1,0 +1,3 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 4: Cannot find member "to_upper" in base "int".
+>> ERROR at line 4: Function "to_upper()" not found in base int.

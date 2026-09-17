@@ -1,0 +1,9 @@
+GDTEST_OK
+["n1", "n2", "n3"] true
+[2, 4, 6] true
+["thing", "thing"] true
+[3, 3]
+["n1", "n2", "n3"] true
+[2, 3]
+2
+[1, 2]

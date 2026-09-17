@@ -3549,7 +3549,56 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_dictionary(ExpressionNode 
 }
 
 GDScriptParser::ExpressionNode *GDScriptParser::parse_grouping(ExpressionNode *p_previous_operand, bool p_can_assign) {
+	GDScriptTokenizer::Token start_token = previous;
+
+	// `() => expr`: an arrow lambda that takes nothing.
+	if (check(GDScriptTokenizer::Token::PARENTHESIS_CLOSE)) {
+		advance();
+		pop_multiline();
+		if (!consume(GDScriptTokenizer::Token::ARROW, R"*(Expected "=>" after an empty parameter list.)*")) {
+			return nullptr;
+		}
+		ExpressionNode *lambda = complete_arrow_lambda(Vector<IdentifierNode *>(), nullptr);
+		if (lambda != nullptr) {
+			reset_extents(lambda, start_token);
+		}
+		return lambda;
+	}
+
 	ExpressionNode *grouped = parse_expression(false);
+
+	// `(a, b) => expr`: an arrow lambda's parameter list. A single name stays a grouped
+	// expression here; the `=>` after the closing parenthesis is handled as an infix operator.
+	if (grouped != nullptr && check(GDScriptTokenizer::Token::COMMA)) {
+		Vector<IdentifierNode *> parameters;
+		bool valid = grouped->type == Node::IDENTIFIER;
+		if (!valid) {
+			push_error(R"(Expected a parameter name in the lambda parameter list.)", grouped);
+		} else {
+			parameters.push_back(static_cast<IdentifierNode *>(grouped));
+		}
+		while (match(GDScriptTokenizer::Token::COMMA)) {
+			if (check(GDScriptTokenizer::Token::PARENTHESIS_CLOSE)) {
+				break; // Trailing comma.
+			}
+			if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected a parameter name in the lambda parameter list.)")) {
+				valid = false;
+				break;
+			}
+			parameters.push_back(parse_identifier());
+		}
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after the lambda parameter list.)*");
+		if (!consume(GDScriptTokenizer::Token::ARROW, R"*(Expected "=>" after the lambda parameter list.)*") || !valid) {
+			return nullptr;
+		}
+		ExpressionNode *lambda = complete_arrow_lambda(parameters, nullptr);
+		if (lambda != nullptr) {
+			reset_extents(lambda, start_token);
+		}
+		return lambda;
+	}
+
 	pop_multiline();
 	if (grouped == nullptr) {
 		push_error(R"(Expected grouping expression.)");
@@ -3557,6 +3606,88 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_grouping(ExpressionNode *p
 		consume(GDScriptTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after grouping expression.)*");
 	}
 	return grouped;
+}
+
+// `item => item.name`, the short form of `func(item): return item.name`. The left side is a
+// parameter name; `()` and `(a, b)` lists are handled by `parse_grouping()`.
+GDScriptParser::ExpressionNode *GDScriptParser::parse_arrow_lambda(ExpressionNode *p_previous_operand, bool p_can_assign) {
+	Vector<IdentifierNode *> parameters;
+	if (p_previous_operand == nullptr || p_previous_operand->type != Node::IDENTIFIER) {
+		push_error(R"*(The left side of "=>" must be a parameter name, or a parenthesized list of them.)*");
+		return nullptr;
+	}
+	parameters.push_back(static_cast<IdentifierNode *>(p_previous_operand));
+	ExpressionNode *lambda = complete_arrow_lambda(parameters, p_previous_operand);
+	return lambda;
+}
+
+GDScriptParser::ExpressionNode *GDScriptParser::complete_arrow_lambda(const Vector<IdentifierNode *> &p_parameters, Node *p_start) {
+	LambdaNode *lambda = alloc_node<LambdaNode>();
+	if (p_start != nullptr) {
+		reset_extents(lambda, p_start);
+	}
+	lambda->parent_function = current_function;
+	lambda->parent_lambda = current_lambda;
+	lambda->is_arrow = true;
+
+	FunctionNode *function = alloc_node<FunctionNode>();
+	function->source_lambda = lambda;
+	function->is_static = current_function != nullptr ? current_function->is_static : false;
+
+	SuiteNode *body = alloc_node<SuiteNode>();
+	body->parent_function = function;
+	body->parent_block = current_suite;
+
+	for (IdentifierNode *parameter_name : p_parameters) {
+		ParameterNode *parameter = alloc_node<ParameterNode>();
+		reset_extents(parameter, parameter_name);
+		parameter->identifier = parameter_name;
+		complete_extents(parameter);
+		if (function->parameters_indices.has(parameter_name->name)) {
+			push_error(vformat(R"(Parameter with name "%s" was already declared for this lambda.)", parameter_name->name), parameter_name);
+		} else {
+			function->parameters_indices[parameter_name->name] = function->parameters.size();
+			function->parameters.push_back(parameter);
+			body->add_local(parameter, function);
+		}
+	}
+
+	FunctionNode *previous_function = current_function;
+	current_function = function;
+	LambdaNode *previous_lambda = current_lambda;
+	current_lambda = lambda;
+	SuiteNode *previous_suite = current_suite;
+	current_suite = body;
+	bool previous_in_lambda = in_lambda;
+	in_lambda = true;
+	bool could_break = can_break;
+	bool could_continue = can_continue;
+	can_break = false;
+	can_continue = false;
+
+	// The body is a single expression, which the lambda returns.
+	ReturnNode *return_node = alloc_node<ReturnNode>();
+	return_node->return_value = parse_expression(false);
+	if (return_node->return_value == nullptr) {
+		push_error(R"*(Expected an expression after "=>".)*");
+	}
+	complete_extents(return_node);
+	body->statements.push_back(return_node);
+	body->has_return = true;
+	complete_extents(body);
+
+	function->body = body;
+	complete_extents(function);
+	complete_extents(lambda);
+
+	current_function = previous_function;
+	current_lambda = previous_lambda;
+	current_suite = previous_suite;
+	in_lambda = previous_in_lambda;
+	can_break = could_break;
+	can_continue = could_continue;
+	lambda->function = function;
+	return lambda;
 }
 
 GDScriptParser::ExpressionNode *GDScriptParser::parse_attribute(ExpressionNode *p_previous_operand, bool p_can_assign) {
@@ -4557,6 +4688,7 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // COLON,
 		{ &GDScriptParser::parse_get_node,               	nullptr,                                        PREC_NONE }, // DOLLAR,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // FORWARD_ARROW,
+		{ nullptr,                                          &GDScriptParser::parse_arrow_lambda,         	PREC_ASSIGNMENT }, // ARROW,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // UNDERSCORE,
 		// Whitespace
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // NEWLINE,

@@ -17,6 +17,7 @@ Contents:
 - [Traits](#traits)
 - [Typed Callables](#typed-callables)
 - [Generic functions](#generic-functions)
+- [Short lambdas](#short-lambdas)
 - [`for` loops with two variables](#for-loops-with-two-variables)
 - [Editor support](#editor-support)
 - [Roadmap](#roadmap)
@@ -482,6 +483,46 @@ wrong. `map()` really does return an untyped array, since the element type
 changes. And `pop_back()`, `pop_front()`, `min()` and `max()` return `null`
 when the container is empty, so they stay `Variant` and the familiar
 pop-until-empty loop keeps working.
+
+## Short lambdas
+
+GDScript's lambdas are blocks, which reads badly inside a call. There is now
+an arrow form for the common case of a single expression:
+
+```gdscript
+var names := items.map(item => item.name)
+var alive := units.filter(u => u.hp > 0)
+units.sort_custom((a, b) => a.hp < b.hp)
+var done := () => print("finished")
+```
+
+`params => expression` is exactly `func(params): return expression`, so
+captures and everything else behave as before. One parameter needs no
+parentheses; zero or several do. A body that returns nothing, such as a
+`print()`, is fine: the lambda simply returns nothing too.
+
+The parameter types come from the call, so they are known without writing
+them out:
+
+```gdscript
+var nums: Array[int] = [1, 2, 3]
+
+nums.map(n => n * 2)        # n is an int
+nums.map(n => n.to_upper()) # error: "to_upper" not found in base "int"
+```
+
+And the result of `map` is a typed array, taken from what the lambda
+returns:
+
+```gdscript
+var texts: Array[String] = items.map(item => item.name)   # Array[String]
+var totals: Array[int] = items.map(item => item.hp * 2)   # Array[int]
+```
+
+That works for a named function too (`nums.map(to_text)`). `map` builds an
+untyped array internally, so the typed one is produced where the call
+happens, which costs one extra pass over the result. If the lambda returns
+something that does not fit, you get a clear error at the call.
 
 ## `for` loops with two variables
 

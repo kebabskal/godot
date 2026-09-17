@@ -144,6 +144,7 @@ public:
 			COLON,
 			DOLLAR,
 			FORWARD_ARROW,
+			ARROW,
 			UNDERSCORE,
 			// Whitespace
 			NEWLINE,

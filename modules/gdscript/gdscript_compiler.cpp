@@ -701,10 +701,10 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				result = codegen.add_temporary();
 			}
 
-			// A generic function that returns a container of a type parameter builds it untyped,
-			// since the binding only exists here. Convert it into the bound container type.
+			// The call returns an untyped container whose element type is only known here: a generic
+			// function's `Array[T]`, or `Array.map()`. Convert it into that type.
 			GDScriptCodeGenerator::Address generic_container_result;
-			if (call->convert_generic_container && result.mode == GDScriptCodeGenerator::Address::TEMPORARY && result.type.has_type() && result.type.has_container_element_type(0)) {
+			if (call->convert_result_container && result.mode == GDScriptCodeGenerator::Address::TEMPORARY && result.type.has_type() && result.type.has_container_element_type(0)) {
 				generic_container_result = result;
 				result = codegen.add_temporary();
 			}

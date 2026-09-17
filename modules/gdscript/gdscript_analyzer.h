@@ -105,7 +105,7 @@ class GDScriptAnalyzer {
 	static bool type_uses_trait(const GDScriptParser::DataType &p_type, const StringName &p_trait_name);
 	void resolve_struct_method_bodies(GDScriptParser::StructNode *p_struct);
 	void check_struct_field_shadowing(const GDScriptParser::IdentifierNode *p_identifier, const char *p_kind);
-	void reduce_struct_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, int p_method_index, GDScriptParser::ExpressionNode *p_base, bool p_is_await, bool p_is_root);
+	void reduce_struct_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, int p_method_index, GDScriptParser::ExpressionNode *p_base, bool p_is_await, bool p_is_root, bool p_allow_void = false);
 	GDScriptParser::StructNode *find_struct_node_for_layout(const Ref<StructLayout> &p_layout);
 	GDScriptParser::DataType type_from_struct_field(const Ref<StructLayout> &p_layout, int p_field);
 	void resolve_constant(GDScriptParser::ConstantNode *p_constant, bool p_is_local);
@@ -125,7 +125,9 @@ class GDScriptAnalyzer {
 	void reduce_assignment(GDScriptParser::AssignmentNode *p_assignment);
 	void reduce_await(GDScriptParser::AwaitNode *p_await);
 	void reduce_binary_op(GDScriptParser::BinaryOpNode *p_binary_op);
-	void reduce_call(GDScriptParser::CallNode *p_call, bool p_is_await = false, bool p_is_root = false);
+	// `p_allow_void`: the caller is fine with a `void` result (the body of an arrow lambda), without
+	// the call counting as a discarded one.
+	void reduce_call(GDScriptParser::CallNode *p_call, bool p_is_await = false, bool p_is_root = false, bool p_allow_void = false);
 	void reduce_cast(GDScriptParser::CastNode *p_cast);
 	void reduce_dictionary(GDScriptParser::DictionaryNode *p_dictionary);
 	void reduce_get_node(GDScriptParser::GetNodeNode *p_get_node);
@@ -209,6 +211,13 @@ public:
 	static GDScriptParser::DataType substitute_type_parameters(const GDScriptParser::DataType &p_type, const HashMap<StringName, GDScriptParser::DataType> &p_bindings);
 	// Whether a type parameter appears inside a container type, which cannot survive erasure.
 	static bool type_has_container_type_parameter(const GDScriptParser::DataType &p_type);
+
+	// A lambda written as a call argument takes its parameter types from the callable the callee
+	// expects, so `items.map(item => item.name)` knows what `item` is.
+	void apply_expected_lambda_signature(GDScriptParser::ExpressionNode *p_argument, const GDScriptParser::DataType &p_expected);
+	// Resolves a lambda's body ahead of the deferred pass, so its return type is known while the
+	// call that receives it is still being reduced. Idempotent.
+	void resolve_lambda_body_now(GDScriptParser::LambdaNode *p_lambda);
 
 	// Typed callables: `func(A, B) -> R`. The signature is analyzer-only.
 	static void set_callable_signature_from_function(GDScriptParser::DataType &r_type, const GDScriptParser::FunctionNode *p_function);

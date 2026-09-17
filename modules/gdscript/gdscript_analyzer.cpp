@@ -160,6 +160,91 @@ bool GDScriptAnalyzer::callable_signatures_compatible(const GDScriptParser::Data
 	return check_type_compatibility(wanted, given, false);
 }
 
+// The callable a built-in container method is given, for a container whose element type is known.
+// `Array[T].map(f)` calls `f` with a `T`, which is what lets a lambda written at the call site take
+// its parameter type from here.
+static GDScriptParser::DataType expected_callable_for_builtin(const GDScriptParser::DataType &p_base_type, const StringName &p_method) {
+	GDScriptParser::DataType expected;
+	if (p_base_type.kind != GDScriptParser::DataType::BUILTIN || p_base_type.is_meta_type || p_base_type.builtin_type != Variant::ARRAY || !p_base_type.has_container_element_types()) {
+		return expected;
+	}
+	const GDScriptParser::DataType element = p_base_type.get_container_element_type_or_variant(0);
+	if (!element.is_set() || element.is_variant() || !element.is_hard_type()) {
+		return expected;
+	}
+
+	GDScriptParser::DataType variant_type;
+	variant_type.kind = GDScriptParser::DataType::VARIANT;
+	GDScriptParser::DataType bool_type;
+	bool_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	bool_type.kind = GDScriptParser::DataType::BUILTIN;
+	bool_type.builtin_type = Variant::BOOL;
+
+	expected.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	expected.kind = GDScriptParser::DataType::BUILTIN;
+	expected.builtin_type = Variant::CALLABLE;
+	expected.has_callable_signature = true;
+	if (p_method == SNAME("map")) {
+		expected.callable_signature.push_back(variant_type); // Whatever the lambda returns.
+		expected.callable_signature.push_back(element);
+	} else if (p_method == SNAME("filter") || p_method == SNAME("any") || p_method == SNAME("all")) {
+		expected.callable_signature.push_back(bool_type);
+		expected.callable_signature.push_back(element);
+	} else if (p_method == SNAME("sort_custom") || p_method == SNAME("bsearch_custom")) {
+		expected.callable_signature.push_back(bool_type);
+		expected.callable_signature.push_back(element);
+		expected.callable_signature.push_back(element);
+	} else {
+		return GDScriptParser::DataType();
+	}
+	return expected;
+}
+
+void GDScriptAnalyzer::apply_expected_lambda_signature(GDScriptParser::ExpressionNode *p_argument, const GDScriptParser::DataType &p_expected) {
+	if (p_argument == nullptr || p_argument->type != GDScriptParser::Node::LAMBDA) {
+		return;
+	}
+	if (!p_expected.is_set() || !p_expected.has_callable_signature || p_expected.callable_signature.is_empty()) {
+		return;
+	}
+	GDScriptParser::LambdaNode *lambda = static_cast<GDScriptParser::LambdaNode *>(p_argument);
+	if (lambda->function == nullptr || lambda->function->resolved_body) {
+		return; // Its body has already been checked against whatever it had.
+	}
+
+	const int expected_count = p_expected.callable_signature.size() - 1;
+	bool changed = false;
+	for (uint32_t i = 0; i < lambda->function->parameters.size() && (int)i < expected_count; i++) {
+		GDScriptParser::ParameterNode *parameter = lambda->function->parameters[i];
+		if (parameter->datatype_specifier != nullptr) {
+			continue; // Written by hand; leave it alone.
+		}
+		const GDScriptParser::DataType &expected_parameter = p_expected.callable_signature[i + 1];
+		if (!expected_parameter.is_set() || expected_parameter.is_variant() || !expected_parameter.is_hard_type()) {
+			continue;
+		}
+		parameter->type_constraint = expected_parameter;
+		changed = true;
+	}
+	if (changed) {
+		set_callable_signature_from_function(lambda->type_constraint, lambda->function);
+	}
+}
+
+void GDScriptAnalyzer::resolve_lambda_body_now(GDScriptParser::LambdaNode *p_lambda) {
+	if (p_lambda == nullptr || p_lambda->function == nullptr || p_lambda->function->resolved_body) {
+		return;
+	}
+	GDScriptParser::LambdaNode *previous_lambda = current_lambda;
+	const bool previous_static_context = static_context;
+	current_lambda = p_lambda;
+	static_context = p_lambda->function->is_static;
+	resolve_function_body(p_lambda->function, true);
+	current_lambda = previous_lambda;
+	static_context = previous_static_context;
+	set_callable_signature_from_function(p_lambda->type_constraint, p_lambda->function);
+}
+
 void GDScriptAnalyzer::bind_type_parameters(const GDScriptParser::DataType &p_param, const GDScriptParser::DataType &p_arg, HashMap<StringName, GDScriptParser::DataType> &r_bindings) {
 	if (p_param.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
 		if (!p_arg.is_set() || p_arg.is_variant() || !p_arg.is_hard_type() || r_bindings.has(p_param.type_param_name)) {
@@ -3853,13 +3938,24 @@ void GDScriptAnalyzer::resolve_return(GDScriptParser::ReturnNode *p_return) {
 	} else {
 		const bool is_void_function = has_expected_type && expected_type.is_hard_type() && expected_type.kind == GDScriptParser::DataType::BUILTIN && expected_type.builtin_type == Variant::NIL;
 		const bool is_call = p_return->return_value->type == GDScriptParser::Node::CALL;
+		// `() => print("x")`: the body of an arrow lambda is returned, but a call that returns
+		// nothing is still a reasonable body. It just makes the lambda return nothing too.
+		const bool is_arrow_lambda_body = has_expected_type &&
+				parser->current_function->source_lambda != nullptr && parser->current_function->source_lambda->is_arrow;
 		if (is_void_function && is_call) {
 			// Pretend the call is a root expression to allow those that are `void`.
 			reduce_call(static_cast<GDScriptParser::CallNode *>(p_return->return_value), false, true);
+		} else if (is_arrow_lambda_body && is_call) {
+			reduce_call(static_cast<GDScriptParser::CallNode *>(p_return->return_value), false, false, true);
 		} else {
 			reduce_expression(p_return->return_value);
 		}
-		if (is_void_function) {
+		bool returns_void = is_void_function;
+		if (!is_void_function && is_arrow_lambda_body && is_call) {
+			const GDScriptParser::DataType &value_type = p_return->return_value->type_constraint;
+			returns_void = value_type.is_hard_type() && value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::NIL;
+		}
+		if (returns_void) {
 			p_return->void_return = true;
 			const GDScriptParser::DataType &return_type = p_return->return_value->type_constraint;
 			if (is_call && !return_type.is_hard_type()) {
@@ -4583,7 +4679,7 @@ const char *check_for_renamed_identifier(String identifier, GDScriptParser::Node
 
 // `p_base` is the struct expression the method is called on, or null for a bare call inside a
 // struct method (the implicit `self`). A mutating method needs a base it can write back to.
-void GDScriptAnalyzer::reduce_struct_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, int p_method_index, GDScriptParser::ExpressionNode *p_base, bool p_is_await, bool p_is_root) {
+void GDScriptAnalyzer::reduce_struct_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, int p_method_index, GDScriptParser::ExpressionNode *p_base, bool p_is_await, bool p_is_root, bool p_allow_void) {
 	const StringName struct_name = p_method->struct_owner != nullptr ? p_method->struct_owner->identifier->name : StringName();
 
 	List<GDScriptParser::DataType> par_types;
@@ -4630,7 +4726,7 @@ void GDScriptAnalyzer::reduce_struct_method_call(GDScriptParser::CallNode *p_cal
 	}
 
 	GDScriptParser::DataType return_type = p_method->return_type_constraint;
-	if (!p_is_root && !p_is_await && return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+	if (!p_is_root && !p_is_await && !p_allow_void && return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
 		push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", p_call->function_name), p_call);
 	}
 #ifdef DEBUG_ENABLED
@@ -4641,7 +4737,7 @@ void GDScriptAnalyzer::reduce_struct_method_call(GDScriptParser::CallNode *p_cal
 	p_call->type_constraint = return_type;
 }
 
-void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_await, bool p_is_root) {
+void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_await, bool p_is_root, bool p_allow_void) {
 	bool all_is_constant = true;
 	HashMap<int, GDScriptParser::ArrayNode *> arrays; // For array literal to potentially type when passing.
 	HashMap<int, GDScriptParser::DictionaryNode *> dictionaries; // Same, but for dictionaries.
@@ -4684,7 +4780,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				p_call->trait_self_call = true;
 				GDScriptParser::DataType return_type = method->return_type_constraint;
 				return_type.is_meta_type = false;
-				if (!p_is_root && !p_is_await && return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+				if (!p_is_root && !p_is_await && !p_allow_void && return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
 					push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", function_name), p_call);
 				}
 				p_call->type_constraint = return_type;
@@ -4697,7 +4793,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			int method_index = -1;
 			GDScriptParser::FunctionNode *method = find_struct_method(current_struct, function_name, &method_index);
 			if (method != nullptr) {
-				reduce_struct_method_call(p_call, method, method_index, nullptr, p_is_await, p_is_root);
+				reduce_struct_method_call(p_call, method, method_index, nullptr, p_is_await, p_is_root, p_allow_void);
 				return;
 			}
 		}
@@ -4942,7 +5038,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		} else if (GDScriptUtilityFunctions::function_exists(function_name)) {
 			MethodInfo function_info = GDScriptUtilityFunctions::get_function_info(function_name);
 
-			if (!p_is_root && !p_is_await && function_info.return_val.type == Variant::NIL && ((function_info.return_val.usage & PROPERTY_USAGE_NIL_IS_VARIANT) == 0)) {
+			if (!p_is_root && !p_is_await && !p_allow_void && function_info.return_val.type == Variant::NIL && ((function_info.return_val.usage & PROPERTY_USAGE_NIL_IS_VARIANT) == 0)) {
 				push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", function_name), p_call);
 			}
 
@@ -4993,7 +5089,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		} else if (Variant::has_utility_function(function_name)) {
 			MethodInfo function_info = info_from_utility_func(function_name);
 
-			if (!p_is_root && !p_is_await && function_info.return_val.type == Variant::NIL && ((function_info.return_val.usage & PROPERTY_USAGE_NIL_IS_VARIANT) == 0)) {
+			if (!p_is_root && !p_is_await && !p_allow_void && function_info.return_val.type == Variant::NIL && ((function_info.return_val.usage & PROPERTY_USAGE_NIL_IS_VARIANT) == 0)) {
 				push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", function_name), p_call);
 			}
 
@@ -5134,7 +5230,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			int method_index = -1;
 			GDScriptParser::FunctionNode *method = find_struct_method(base_type.struct_type, p_call->function_name, &method_index);
 			if (method != nullptr) {
-				reduce_struct_method_call(p_call, method, method_index, subscript->base, p_is_await, p_is_root);
+				reduce_struct_method_call(p_call, method, method_index, subscript->base, p_is_await, p_is_root, p_allow_void);
 				return;
 			}
 		}
@@ -5167,6 +5263,24 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 	Vector<StringName> type_parameters;
 	if (get_function_signature(p_call, is_constructor, base_type, p_call->function_name, return_type, par_types, default_arg_count, method_flags, nullptr, &type_parameters)) {
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
+
+		// A lambda written as an argument takes its parameter types from what the callee expects,
+		// before its body is checked. Built-in container methods describe their callable separately,
+		// since `MethodInfo` only says `Callable`.
+		{
+			uint32_t i = 0;
+			for (const GDScriptParser::DataType &par_type : par_types) {
+				if (i >= p_call->arguments.size()) {
+					break;
+				}
+				GDScriptParser::DataType expected = par_type;
+				if (!expected.has_callable_signature) {
+					expected = expected_callable_for_builtin(base_type, p_call->function_name);
+				}
+				apply_expected_lambda_signature(p_call->arguments[i], expected);
+				i++;
+			}
+		}
 
 		if (!type_parameters.is_empty()) {
 			// A generic function: bind its type parameters from the arguments, then check the call
@@ -5201,7 +5315,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 						break;
 					}
 				}
-				p_call->convert_generic_container = every_element_concrete;
+				p_call->convert_result_container = every_element_concrete;
 			}
 #ifdef DEBUG_ENABLED
 			for (const StringName &type_parameter : type_parameters) {
@@ -5236,6 +5350,41 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				update_dictionary_literal_element_type(E.value, key, value);
 			}
 		}
+		// `Array[T].map(f)` builds an untyped array, because the element type depends on `f`. The
+		// callable's return type is known here, so the result is typed and converted at this call.
+		if (base_type.kind == GDScriptParser::DataType::BUILTIN && base_type.builtin_type == Variant::ARRAY && !base_type.is_meta_type && base_type.has_container_element_types() && p_call->function_name == SNAME("map") && p_call->arguments.size() == 1) {
+			GDScriptParser::ExpressionNode *mapper = p_call->arguments[0];
+			GDScriptParser::DataType mapped_element;
+			if (mapper->type == GDScriptParser::Node::LAMBDA) {
+				GDScriptParser::LambdaNode *lambda = static_cast<GDScriptParser::LambdaNode *>(mapper);
+				resolve_lambda_body_now(lambda);
+				if (lambda->function != nullptr) {
+					mapped_element = lambda->function->return_type_constraint;
+				}
+			} else if (mapper->type_constraint.has_callable_signature && !mapper->type_constraint.callable_signature.is_empty()) {
+				mapped_element = mapper->type_constraint.callable_signature[0];
+			}
+			// The callable's return type does not have to be a *declared* one: whatever it is, the
+			// conversion below builds an array of it and fails loudly if an element does not fit,
+			// so the result really is that type by the time anyone sees it.
+			const bool usable = mapped_element.is_set() && !mapped_element.is_variant() &&
+					mapped_element.kind != GDScriptParser::DataType::TYPE_PARAMETER &&
+					!(mapped_element.kind == GDScriptParser::DataType::BUILTIN && mapped_element.builtin_type == Variant::NIL);
+			if (usable) {
+				GDScriptParser::DataType mapped;
+				mapped.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
+				mapped.kind = GDScriptParser::DataType::BUILTIN;
+				mapped.builtin_type = Variant::ARRAY;
+				mapped.is_constant = false;
+				mapped_element.is_constant = false;
+				mapped_element.is_meta_type = false;
+				mapped_element.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
+				mapped.set_container_element_type(0, mapped_element);
+				return_type = mapped;
+				p_call->convert_result_container = true;
+			}
+		}
+
 		validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call);
 
 		if (base_type.kind == GDScriptParser::DataType::ENUM && base_type.is_meta_type) {
@@ -5262,7 +5411,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			mark_lambda_use_self();
 		}
 
-		if (!p_is_root && !p_is_await && return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+		if (!p_is_root && !p_is_await && !p_allow_void && return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
 			push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", p_call->function_name), p_call);
 		}
 

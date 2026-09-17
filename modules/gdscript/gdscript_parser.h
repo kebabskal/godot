@@ -556,7 +556,7 @@ public:
 		bool is_static = false;
 		bool trait_self_call = false; // A bare call to another method of the trait, inside a trait's default method.
 		bool validate_callable_result = false; // `f.call()` on a typed callable: the declared return type is checked where the call returns.
-		bool convert_generic_container = false; // A generic function returning a container of a type parameter: the untyped container it built is converted here, where the binding is known.
+		bool convert_result_container = false; // The call returns an untyped container that this call site knows the element type of (a generic function's `Array[T]`, or `Array.map()`): it is converted here.
 		// Resolved struct method (`p.length()`, or a bare `length()` inside a struct method).
 		FunctionNode *struct_method = nullptr;
 		int struct_method_index = -1;
@@ -1111,6 +1111,7 @@ public:
 		FunctionNode *parent_function = nullptr;
 		LambdaNode *parent_lambda = nullptr;
 		LocalVector<IdentifierNode *> captures;
+		bool is_arrow = false; // `x => expr`, so the body is a single expression.
 		HashMap<StringName, uint32_t> captures_indices;
 		bool use_self = false;
 
@@ -1811,6 +1812,10 @@ private:
 	ExpressionNode *parse_attribute(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
+	// `item => item.name`: a lambda whose body is one expression.
+	ExpressionNode *parse_arrow_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
+	// Builds the lambda once the parameters are known and `=>` has been consumed.
+	ExpressionNode *complete_arrow_lambda(const Vector<IdentifierNode *> &p_parameters, Node *p_start);
 	ExpressionNode *parse_type_test(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_yield(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_invalid_token(ExpressionNode *p_previous_operand, bool p_can_assign);

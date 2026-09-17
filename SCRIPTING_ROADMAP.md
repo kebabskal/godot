@@ -345,6 +345,23 @@ group are independent and can proceed in any order.
   ordinary function. A body that produces the wrong element type is reported
   at the call line. Reification by hidden arguments and monomorphisation
   were both considered and rejected; the reasons are in the design.
+- Short lambdas landed (not previously on the list; asked for because
+  block lambdas read badly inside a call). `params => expression` is a new
+  token `=>` plus a parser that desugars to `func(params): return expr`;
+  one parameter needs no parentheses, `()` and `(a, b)` are handled in
+  `parse_grouping()`. Beyond syntax: a lambda argument takes its parameter
+  types from the callable the callee expects, with built-in container
+  methods describing theirs separately (`MethodInfo` only says `Callable`),
+  and `Array[T].map()` is typed from the callable's return type and
+  converted at the call site with the machinery added for generic
+  containers. Trap found by running it: a lambda's inferred return type is
+  not a *hard* type, so requiring hardness silently disabled the whole
+  thing for `n => n * 2` while leaving it working for `n => to_text(n)`.
+  Second trap: `() => print(x)` desugars to `return print(x)`, and the
+  "cannot get the return value of a void call" check lives in *five* places
+  in `reduce_call()` (utility functions, built-ins, struct and trait
+  methods, scripts). An arrow lambda body passes `p_allow_void` so a body
+  that returns nothing simply makes the lambda return nothing.
 - 12 (`for` with two variables) landed: `for key, value in dictionary`
   and `for index, item in` anything else, with optional types on both.
   The VM still yields one value per step; the compiler fills the other
