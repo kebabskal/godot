@@ -314,6 +314,15 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					}
 				} break;
 
+				case GDScriptParser::IdentifierNode::TRAIT_PROPERTY: {
+					// A required property, in a trait's default method: by name through `self`, which is
+					// the instance in a class and the value in a struct.
+					const GDScriptCodeGenerator::Address self_base = codegen.struct_self.mode == GDScriptCodeGenerator::Address::FUNCTION_PARAMETER ? codegen.struct_self : GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::SELF);
+					GDScriptCodeGenerator::Address temp = codegen.add_temporary(_gdtype_from_datatype(in->type_constraint, codegen.script));
+					gen->write_get_named(temp, identifier, self_base);
+					return temp;
+				} break;
+
 				case GDScriptParser::IdentifierNode::STRUCT_FIELD: {
 					// A field of the struct method's `self`; the layout on the address picks the index opcode.
 					GDScriptCodeGenerator::Address temp = codegen.add_temporary(_gdtype_from_datatype(in->type_constraint, codegen.script));
@@ -1380,8 +1389,10 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				if (assigned.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 					gen->pop_temporary();
 				}
-			} else if (assignment->assignee->type == GDScriptParser::Node::IDENTIFIER && static_cast<GDScriptParser::IdentifierNode *>(assignment->assignee)->source == GDScriptParser::IdentifierNode::STRUCT_FIELD) {
-				// Assignment to a field of the struct method's `self`.
+			} else if (assignment->assignee->type == GDScriptParser::Node::IDENTIFIER && (static_cast<GDScriptParser::IdentifierNode *>(assignment->assignee)->source == GDScriptParser::IdentifierNode::STRUCT_FIELD || static_cast<GDScriptParser::IdentifierNode *>(assignment->assignee)->source == GDScriptParser::IdentifierNode::TRAIT_PROPERTY)) {
+				// Assignment to a field of the struct method's `self`, or to a trait's required property
+				// (by name through `self`: the instance in a class, the value in a struct).
+				const GDScriptCodeGenerator::Address self_base = codegen.struct_self.mode == GDScriptCodeGenerator::Address::FUNCTION_PARAMETER ? codegen.struct_self : GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::SELF);
 				GDScriptCodeGenerator::Address assigned_value = _parse_expression(codegen, r_error, assignment->assigned_value);
 				if (r_error) {
 					return GDScriptCodeGenerator::Address();
@@ -1395,13 +1406,13 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				if (has_operation) {
 					GDScriptCodeGenerator::Address op_result = codegen.add_temporary(_gdtype_from_datatype(assignment->type_constraint, codegen.script));
 					GDScriptCodeGenerator::Address field = codegen.add_temporary(_gdtype_from_datatype(assignment->assignee->type_constraint, codegen.script));
-					gen->write_get_named(field, name, codegen.struct_self);
+					gen->write_get_named(field, name, self_base);
 					gen->write_binary_operator(op_result, assignment->variant_op, field, assigned_value);
 					gen->pop_temporary();
 					to_assign = op_result;
 				}
 
-				gen->write_set_named(codegen.struct_self, name, to_assign);
+				gen->write_set_named(self_base, name, to_assign);
 
 				if (to_assign.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
 					gen->pop_temporary(); // Pop assigned value or temp operation result.

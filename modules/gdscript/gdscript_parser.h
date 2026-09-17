@@ -620,6 +620,7 @@ public:
 	struct TraitNode : public Node {
 		IdentifierNode *identifier = nullptr;
 		Vector<FunctionNode *> methods;
+		Vector<VariableNode *> properties; // `var name: Type`: required from every user. Traits hold no state.
 		DataType trait_type; // The meta type; `type_from_metatype()` of it is the type of a value.
 		StringName qualified_name; // `script_path::Name`.
 		bool resolved = false;
@@ -1037,6 +1038,7 @@ public:
 			STATIC_VARIABLE,
 			NATIVE_CLASS,
 			STRUCT_FIELD, // A field of the enclosing struct, read through the method's implicit `self`.
+			TRAIT_PROPERTY, // A required property of the enclosing trait, reached by name through `self`.
 		};
 		Source source = UNDEFINED_SOURCE;
 

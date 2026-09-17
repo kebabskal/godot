@@ -89,6 +89,10 @@ class GDScriptAnalyzer {
 	void resolve_trait_method_bodies(GDScriptParser::TraitNode *p_trait);
 	// A method declared by a class in the chain, a script base or the native base: not a trait default.
 	bool class_chain_has_real_method(GDScriptParser::ClassNode *p_class, const StringName &p_name);
+	// The type of an instance property of the class: a member variable of the chain, a property of
+	// a script base, or a native property.
+	bool find_class_property_type(GDScriptParser::ClassNode *p_class, const StringName &p_name, GDScriptParser::DataType &r_type);
+	void check_property_conforms(const GDScriptParser::VariableNode *p_required, const GDScriptParser::TraitNode *p_trait, bool p_found, const GDScriptParser::DataType &p_actual, const String &p_who, const GDScriptParser::Node *p_source);
 	// Resolves a `uses` list; entries that are not traits are reported and left unset.
 	void resolve_used_traits(const Vector<GDScriptParser::TypeNode *> &p_used_traits, Vector<GDScriptParser::DataType> &r_types);
 	void check_class_trait_conformance(GDScriptParser::ClassNode *p_class);
@@ -201,6 +205,7 @@ public:
 	// Struct methods: index in the declaration order, which is also the index on the layout.
 	static GDScriptParser::FunctionNode *find_struct_method(const GDScriptParser::StructNode *p_struct, const StringName &p_name, int *r_index = nullptr);
 	static GDScriptParser::FunctionNode *find_trait_method(const GDScriptParser::TraitNode *p_trait, const StringName &p_name);
+	static GDScriptParser::VariableNode *find_trait_property(const GDScriptParser::TraitNode *p_trait, const StringName &p_name);
 	// Operator overloads are methods with reserved names (`_add`, `_lt`, `_neg`, ...).
 	static Variant::Operator struct_operator_from_method_name(const StringName &p_name);
 	static StringName struct_method_name_for_operator(Variant::Operator p_op);

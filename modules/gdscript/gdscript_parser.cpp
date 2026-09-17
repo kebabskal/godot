@@ -1801,12 +1801,18 @@ GDScriptParser::TraitNode *GDScriptParser::parse_trait(bool p_is_static) {
 				method->trait_owner = trait_node;
 				trait_node->methods.push_back(method);
 			}
+		} else if (match(GDScriptTokenizer::Token::VAR)) {
+			// A required property: the type that uses the trait provides the variable.
+			VariableNode *property = parse_variable(false, false);
+			if (property != nullptr) {
+				trait_node->properties.push_back(property);
+			}
 		} else if (match(GDScriptTokenizer::Token::PASS)) {
 			end_statement(R"("pass")");
 		} else if (match(GDScriptTokenizer::Token::NEWLINE)) {
 			// Blank line.
 		} else {
-			push_error(vformat(R"(Unexpected "%s" in a trait body: only "func" signatures are allowed.)", current.get_name()));
+			push_error(vformat(R"(Unexpected "%s" in a trait body: only "func" methods and "var" properties are allowed.)", current.get_name()));
 			advance();
 		}
 	}

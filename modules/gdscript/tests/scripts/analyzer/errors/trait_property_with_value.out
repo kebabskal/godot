@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Trait property "hp" cannot have a value: traits hold no state. Set the default in the type that uses the trait.

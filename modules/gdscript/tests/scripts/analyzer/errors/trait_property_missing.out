@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Class "Rock" uses trait "Mortal" but has no property "hp".

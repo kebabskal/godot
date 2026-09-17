@@ -414,6 +414,23 @@ void ExtendGDScriptParser::parse_trait_symbol(const GDScriptParser::TraitNode *p
 	r_symbol.uri = get_uri();
 	r_symbol.script_path = path;
 
+	for (const GDScriptParser::VariableNode *property : p_trait->properties) {
+		LSP::DocumentSymbol symbol;
+		symbol.name = property->identifier->name;
+		symbol.kind = LSP::SymbolKind::Property;
+		symbol.deprecated = false;
+		symbol.range = range_of_node(property);
+		symbol.selectionRange = range_of_node(property->identifier);
+		symbol.detail = "var " + String(property->identifier->name);
+		if (property->type_constraint.is_hard_type()) {
+			symbol.detail += ": " + property->type_constraint.to_string();
+		}
+		symbol.documentation = property->doc_data.description;
+		symbol.uri = get_uri();
+		symbol.script_path = path;
+		r_symbol.children.push_back(symbol);
+	}
+
 	for (const GDScriptParser::FunctionNode *method : p_trait->methods) {
 		LSP::DocumentSymbol symbol;
 		parse_function_symbol(method, symbol);
@@ -1039,6 +1056,14 @@ Dictionary ExtendGDScriptParser::dump_class_api(const GDScriptParser::ClassNode 
 					trait_methods.push_back(dump_function_api(method));
 				}
 				api["methods"] = trait_methods;
+				Array trait_properties;
+				for (const GDScriptParser::VariableNode *property : m.m_trait->properties) {
+					Dictionary f;
+					f["name"] = property->identifier->name;
+					f["data_type"] = property->type_constraint.to_string();
+					trait_properties.push_back(f);
+				}
+				api["properties"] = trait_properties;
 				if (const LSP::DocumentSymbol *symbol = get_symbol_defined_at_line(LINE_NUMBER_TO_INDEX(m.m_trait->start_line))) {
 					api["signature"] = symbol->detail;
 					api["description"] = symbol->documentation;

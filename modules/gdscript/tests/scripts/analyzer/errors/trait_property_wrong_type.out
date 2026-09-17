@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Struct "Crate" uses trait "Mortal", but its property "hp" is "float" where the trait declares "int".
