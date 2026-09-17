@@ -618,6 +618,25 @@ This works for the engine's own signals too, so `child_entered_tree.connect(n =>
 gives you a `Node`. Writing a parameter type by hand still wins, and a plain
 `Callable` variable is connected unchecked as before.
 
+`emit` is held to the same signature, so the value you send matches what the
+handler is promised:
+
+```gdscript
+signal changed(items: Array[String])
+signal hit(damage: int)
+
+func _ready():
+    changed.connect(a => print(a.filter(b => b.begins_with("k"))))
+    changed.emit(["kebab", "pizza"])   # built as Array[String], not a plain Array
+
+    hit.emit("oops")   # error: argument 1 should be "int" but is "String"
+    hit.emit()         # error: too few arguments for "emit()" call
+```
+
+The array literal matters: a handler that knows the element type rejects a
+plain `Array` at runtime, so `emit` builds the typed one, the same way a call
+to an ordinary function does.
+
 ## `for` loops with two variables
 
 Iterating a dictionary no longer needs a lookup inside the loop, and
@@ -781,9 +800,9 @@ Next, in order:
 1. **Typed `PackedScene` exports.** `@export var enemy: PackedScene[Enemy]`,
    with the scene picker filtered to scenes whose root matches, so dropping
    the wrong scene into a slot is caught in the editor.
-2. **Typed signals**: connecting already types the handler (above); what is
-   left is checking the arguments of `emit` and rejecting a handler whose
-   signature does not fit.
+2. **Typed signals**: connecting types the handler and `emit` is checked
+   against the signal (above); what is left is rejecting a handler whose
+   signature does not fit the signal.
 3. **Enums as real types**, with methods and exhaustive `match`.
 4. **Multiple return values**, including `if var ok, value := parse(text):`
    for error handling.

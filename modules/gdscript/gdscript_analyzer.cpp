@@ -5444,6 +5444,20 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 	if (get_function_signature(p_call, is_constructor, base_type, p_call->function_name, return_type, par_types, default_arg_count, method_flags, nullptr, &type_parameters)) {
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
 
+		// `emit()` is checked against the signal's own parameters rather than the varargs
+		// `MethodInfo` of `Signal.emit`, which says nothing about them. This is also what types an
+		// array literal argument: `emit(["a"])` on `signal s(items: Array[String])` has to build an
+		// `Array[String]`, because a handler that declares the element type rejects a plain `Array`
+		// at runtime, whether it wrote the type by hand or took it from the signal.
+		if (base_type.kind == GDScriptParser::DataType::BUILTIN && base_type.builtin_type == Variant::SIGNAL && !base_type.is_meta_type && p_call->function_name == SNAME("emit") && base_type.method_info.name != StringName()) {
+			par_types.clear();
+			for (const PropertyInfo &argument : base_type.method_info.arguments) {
+				par_types.push_back(type_from_property(argument, true, nullptr));
+			}
+			default_arg_count = 0;
+			method_flags.clear_flag(METHOD_FLAG_VARARG);
+		}
+
 		// A constructor of a generic class binds the class's type parameters from its own arguments:
 		// `Tiles.new(size, func() -> Tile: ...)` has to check `create` against `func() -> Tile`, not
 		// against the unbound `func() -> T`. The call's own type keeps no arguments, so `Tiles.new()`

@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 4: Too few arguments for "emit()" call. Expected at least 1 but received 0.

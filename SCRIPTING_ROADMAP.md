@@ -513,8 +513,9 @@ group are independent and can proceed in any order.
   a hand-written parameter type still wins. Not done, and the rest of item 9:
   checking the *arguments* of `emit()` against the signal, and rejecting a
   connected callable whose signature does not fit.
-  Two things found while building it, both pre-existing and both bigger than
-  this change:
+  A third thing, found by running it on real code, turned out to be a defect in
+  `emit` rather than in the inference; it is the entry above. Two more, both
+  pre-existing and both bigger than this change:
   - Inferred lambda parameters do not survive strict mode. The untyped
     declaration check runs when the lambda's signature is resolved, which is
     before the call site applies the expected types, so
@@ -542,6 +543,28 @@ group are independent and can proceed in any order.
   and the reason feedback item 1 is still open: since the result carries no
   arguments, a binding that contradicts the annotation
   (`var t: Tiles[Other] = Tiles.new(() => Tile.new())`) is not reported.
+- 9, second part (`emit` checked against the signal) landed, found by running
+  the first part on real code:
+  `signal test_signal(array: Array[String])` with
+  `test_signal.connect(a => print(a.filter(b => b.begins_with("k"))))` and
+  `test_signal.emit(["kebab", "pizza"])` failed at runtime with "Cannot convert
+  argument 1 from Array to Array". Typing the handler's parameter made the
+  latent bug visible: `Signal.emit` is a varargs builtin whose `MethodInfo`
+  says nothing about the signal, so the array literal stayed a plain `Array`
+  and the handler, which now declares `Array[String]`, refused it. A
+  hand-written `func(a: Array[String])` handler failed identically before any
+  of this, so the defect was in `emit`, not in the inference. `emit()` on a
+  statically known signal now takes its parameter types from the signal's own
+  `MethodInfo` instead of the varargs one, which makes the existing machinery
+  do three things at once: array literals are built with the right element
+  type (`update_array_literal_element_type`), argument types are checked, and
+  arity is checked. `hit.emit("x")` and `hit.emit()` on `signal hit(dmg: int)`
+  are now errors. A `Signal` value with no static identity is left alone.
+  Lesson worth keeping: inferring a *container* type for a parameter is only
+  safe if the value handed in really carries its element type at runtime, so
+  the inference and the conversion at the producing end have to land together.
+  Still not done in item 9: rejecting a connected callable whose signature does
+  not fit the signal.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
