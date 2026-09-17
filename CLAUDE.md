@@ -11,5 +11,11 @@
   `SCRIPTING_ROADMAP.md`. Verify every example in it actually runs before
   committing; one wrong claim was caught that way already.
 - GDScript tests: build with `scons platform=linuxbsd target=editor tests=yes`
-  and run `bin/godot.* --test --test-case="*GDScript*"`. Script-level tests
-  live in `modules/gdscript/tests/scripts/`.
+  and run `bin/godot.* --test --test-suite="*GDScript*"`. Use `--test-suite`,
+  not `--test-case`: `--test-case="*GDScript*"` silently skips the completion
+  and LSP suites, which are separate suites, so editor-side regressions pass
+  unnoticed. Script-level tests live in `modules/gdscript/tests/scripts/`, and
+  `--gdscript-generate-tests modules/gdscript/tests/scripts` regenerates the
+  `.out` expectations (always read the diff: the runner forces every warning
+  to "warn", so a new warning shows up across unrelated tests).
+  `completion/get_node/local/local.gd` fails before any of our changes.

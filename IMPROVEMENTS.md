@@ -20,6 +20,7 @@ Contents:
 - [Generic classes](#generic-classes)
 - [Short lambdas](#short-lambdas)
 - [`for` loops with two variables](#for-loops-with-two-variables)
+- [Nullable types](#nullable-types)
 - [Editor support](#editor-support)
 - [Roadmap](#roadmap)
 
@@ -592,6 +593,104 @@ for name, count in stock:
 
 ---
 
+## Nullable types
+
+A `?` after a type means "or null".
+
+```gdscript
+var target: Node? = null
+var score: int? = null
+var owners: Array[Node?] = []
+
+func find(id: String) -> Item?:
+    return inventory.get(id)
+```
+
+This is new information, not new behaviour: an object-typed variable could
+always hold null, and GDScript simply had no way to say whether that was
+intended. Now it does, and the two operators below let you act on it.
+
+### `?.` — reach in only if it is there
+
+`a?.b` gives null when `a` is null, instead of "Attempt to call a function on
+a null instance". It works for properties, methods and indexing.
+
+```gdscript
+print(find("sword")?.item_name)     # sword
+print(find("shield")?.item_name)    # <null>
+
+find("shield")?.repair()            # does nothing
+```
+
+A skipped call skips its arguments too, so nothing in `a?.m(expensive())`
+runs when `a` is null.
+
+Each `?.` guards its own step. In `a?.b.c` only the `.b` is guarded; write
+`a?.b?.c`. This is on purpose — otherwise a single `?` would silently change
+the meaning of code far to its right.
+
+### `??` — the fallback
+
+`a ?? b` is `a` unless it is null, and `b` is only evaluated if it is needed.
+It chains, and it is how you get from `Item?` back to `Item`.
+
+```gdscript
+print(find("shield")?.item_name ?? "(empty)")   # (empty)
+
+var score: int? = null
+print(score ?? 0)                                # 0
+```
+
+### Checking for null tells the compiler, too
+
+A `T?` you can never use would be pointless, so a test that can only pass for
+a non-null value makes it non-null from there on:
+
+```gdscript
+func describe(item: Item?) -> String:
+    if item == null:
+        return "(empty)"
+    return item.item_name       # `Item` here, not `Item?`
+
+func is_healthy(item: Item?) -> bool:
+    return item != null and item.hp > 0
+```
+
+`!= null`, `== null`, a bare `if item:`, `not item` and `is_instance_valid()`
+all count, and they compose through `and` and `or` — including into the
+right-hand side, which is what makes the second example work. A guard clause
+that returns narrows the rest of the function. This applies to local
+variables and parameters; for a member, copy it into a local first.
+
+### What is checked
+
+By default nothing here is an error, so existing projects are unaffected:
+mainline GDScript lets any object variable hold null and plenty of code
+relies on it. Two warnings, both off by default, say otherwise:
+
+- **`UNSAFE_NULLABLE_ACCESS`** — reaching into a value declared `T?` without
+  `?.` and without checking it.
+- **`NULL_ASSIGNED_TO_NON_NULLABLE`** — putting a value that may be null into
+  a slot whose type has no `?`.
+
+Turn them on in **Project Settings → Debug → GDScript → Warnings**, or turn
+on [strict mode](#strict-mode), where both are errors:
+
+```gdscript
+var enemy: Node = null      # error in strict mode: use `Node?`
+var target: Node? = get_node_or_null(^"Boss")
+target.queue_free()         # error in strict mode: use `?.` or check it
+```
+
+### The cost
+
+For an object type, `T?` is free: the slot was already able to hold null, and
+the guarantee is entirely compile-time. A nullable builtin is different —
+an `int` slot cannot hold null, so `int?` is stored the way an untyped value
+is, and gives up the fast paths until you narrow it back to `int`.
+
+---
+
 ## Editor support
 
 Every feature above works in the script editor and in external editors
@@ -627,16 +726,14 @@ from the marketplace as usual.
 
 Next, in order:
 
-1. **Nullable types.** `?.` and `??`, meaningful now that strict mode
-   exists.
-2. **Typed `PackedScene` exports.** `@export var enemy: PackedScene[Enemy]`,
+1. **Typed `PackedScene` exports.** `@export var enemy: PackedScene[Enemy]`,
    with the scene picker filtered to scenes whose root matches, so dropping
    the wrong scene into a slot is caught in the editor.
-3. **Typed signals**, checked at `emit` and `connect`.
-4. **Enums as real types**, with methods and exhaustive `match`.
-5. **Multiple return values**, including `if var ok, value := parse(text):`
+2. **Typed signals**, checked at `emit` and `connect`.
+3. **Enums as real types**, with methods and exhaustive `match`.
+4. **Multiple return values**, including `if var ok, value := parse(text):`
    for error handling.
-6. **String interpolation**, `f"{name} has {hp} HP"`.
+5. **String interpolation**, `f"{name} has {hp} HP"`.
 
 Further out: fixed multidimensional arrays of real numbers, a formatter,
 and direct dispatch for trait methods if profiling asks for it.

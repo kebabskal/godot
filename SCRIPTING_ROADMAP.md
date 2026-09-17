@@ -464,9 +464,37 @@ group are independent and can proceed in any order.
   name's highlighting; and `L:` injection priority only wins *ties*, so
   `item => x` needed a rule starting at `item`, because inside a call the
   bundled named-argument rule matches `item =` from one token earlier.
+- 8 (nullable types) landed: design in `NULLABLE_DESIGN.md`. `T?` on any
+  type, `?.`/`?[` safe navigation (each guards its own step, and a skipped
+  call skips its arguments), right-associative `??`, and flow narrowing
+  that makes `T?` usable. Narrowing covers `!= null`, `== null`, a bare
+  truth test, `not`, and `is_instance_valid()`, composed through `and` and
+  `or` into the right operand, plus guard clauses via
+  `SuiteNode::has_return`; it is keyed by the declaration, is limited to
+  locals and parameters, and is dropped on assignment. Enforcement reuses
+  the warning machinery: `UNSAFE_NULLABLE_ACCESS` and
+  `NULL_ASSIGNED_TO_NON_NULLABLE` are in `is_strict_mode_error()`, default
+  to `IGNORE`, and so are errors in strict mode and silent elsewhere.
+  Object `T?` is free at runtime; a nullable builtin becomes a Variant
+  slot. Two opcodes (`JUMP_IF_NULL`, `JUMP_IF_NOT_NULL`), no
+  `GDS_NOINLINE` needed since neither holds locals. Tooling: completion
+  after `?.`, after `??` and on a narrowed value all worked untouched
+  (tests under `completion/nullable/`); the VS Code injection grammar
+  gained `?`, `?.`, `?[` and `??`. Traps are listed under "As built" in
+  the design doc; the two worth repeating here are that
+  `resolve_datatype()` needs `is_nullable` set *twice* (a class/native
+  lookup replaces `result` wholesale, so `Item?` came out as `Item` while
+  `int?` worked), and that `REDUNDANT_NULL_CHECK` must not key off
+  `is_nullable` alone, since a plain object type is only a promise where
+  the promise is enforced. Not done: definite initialization, i.e. the
+  `@export var n: Node` and uninitialized-member rules.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
+- The documented test command was wrong until now: `--test-case="*GDScript*"`
+  skips the completion and LSP suites, which are separate *suites*. Use
+  `--test-suite="*GDScript*"`. Found by deliberately breaking a new
+  completion test and watching the run stay green.
 
 ## Rough performance expectations (times slower than well-written C)
 

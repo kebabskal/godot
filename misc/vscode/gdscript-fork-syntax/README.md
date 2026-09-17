@@ -20,6 +20,8 @@ the TextMate grammar, which is bundled inside the extension, is static.
 | `class Pool[T]:`                | `T` reads as a constant                     | type parameter                    |
 | `func pick[T](...)`             | the function name is not highlighted at all | function name + type parameter    |
 | `items.map(item => item.name)`  | `=>` splits into `=` and `>`                | one operator, `item` a parameter  |
+| `var target: Node?`             | a stray `?`                                 | part of the type                  |
+| `item?.name ?? "(none)"`        | `?.` and `??` are unhighlighted text        | null-safe operators               |
 
 `trait` already highlights without this, because mainline Godot reserves the
 word and the bundled grammar lists it.
