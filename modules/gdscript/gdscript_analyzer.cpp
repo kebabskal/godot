@@ -199,6 +199,28 @@ static GDScriptParser::DataType expected_callable_for_builtin(const GDScriptPars
 	return expected;
 }
 
+// The callable a `Signal` method is handed. `connect()` and friends call it with the signal's own
+// parameters, but `MethodInfo` describes the parameter as a plain `Callable`, so without this a
+// lambda written at the call site would take no types from the signal it is being connected to.
+GDScriptParser::DataType GDScriptAnalyzer::expected_callable_for_signal(const GDScriptParser::DataType &p_base_type, const StringName &p_method) const {
+	GDScriptParser::DataType expected;
+	if (p_base_type.kind != GDScriptParser::DataType::BUILTIN || p_base_type.is_meta_type || p_base_type.builtin_type != Variant::SIGNAL) {
+		return expected;
+	}
+	if (p_method != SNAME("connect") && p_method != SNAME("disconnect") && p_method != SNAME("is_connected")) {
+		return expected;
+	}
+	if (p_base_type.method_info.name == StringName()) {
+		return expected; // A `Signal` value whose signal is not known statically.
+	}
+
+	expected.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	expected.kind = GDScriptParser::DataType::BUILTIN;
+	expected.builtin_type = Variant::CALLABLE;
+	set_callable_signature_from_info(expected, p_base_type.method_info);
+	return expected;
+}
+
 void GDScriptAnalyzer::apply_expected_lambda_signature(GDScriptParser::ExpressionNode *p_argument, const GDScriptParser::DataType &p_expected) {
 	if (p_argument == nullptr || p_argument->type != GDScriptParser::Node::LAMBDA) {
 		return;
@@ -5423,8 +5445,8 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
 
 		// A lambda written as an argument takes its parameter types from what the callee expects,
-		// before its body is checked. Built-in container methods describe their callable separately,
-		// since `MethodInfo` only says `Callable`.
+		// before its body is checked. Built-in container methods and signals describe their callable
+		// separately, since `MethodInfo` only says `Callable`.
 		{
 			uint32_t i = 0;
 			for (const GDScriptParser::DataType &par_type : par_types) {
@@ -5434,6 +5456,9 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				GDScriptParser::DataType expected = par_type;
 				if (!expected.has_callable_signature) {
 					expected = expected_callable_for_builtin(base_type, p_call->function_name);
+				}
+				if (!expected.has_callable_signature) {
+					expected = expected_callable_for_signal(base_type, p_call->function_name);
 				}
 				apply_expected_lambda_signature(p_call->arguments[i], expected);
 				i++;

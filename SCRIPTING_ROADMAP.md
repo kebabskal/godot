@@ -502,6 +502,31 @@ group are independent and can proceed in any order.
   `Array` and its elements offer nothing. Resolving an element type needs an
   analyzer instance (`type_from_property_hint_string()` is not static), which
   is why it was not folded in here.
+- 9, first part (typed signal connect) landed, from feedback item 6. A
+  `Signal`'s `DataType` already carried the signal's `MethodInfo`, so
+  `connect()`, `disconnect()` and `is_connected()` now describe their callable
+  parameter from it, the same way the built-in container methods describe
+  theirs, and a lambda written at the call site takes its parameter types from
+  the signal. `hit.connect(d => d.to_upper())` is now an error on `int`
+  instead of a runtime surprise. Works for script and native signals alike;
+  a bare `Signal`-typed value has no signal identity, so it is left alone, and
+  a hand-written parameter type still wins. Not done, and the rest of item 9:
+  checking the *arguments* of `emit()` against the signal, and rejecting a
+  connected callable whose signature does not fit.
+  Two things found while building it, both pre-existing and both bigger than
+  this change:
+  - Inferred lambda parameters do not survive strict mode. The untyped
+    declaration check runs when the lambda's signature is resolved, which is
+    before the call site applies the expected types, so
+    `nums.map(n => n * 2)` is "Parameter "n" has no static type" under strict
+    mode today. That means the whole short-lambda feature is off in the mode
+    this fork pushes. The fix is to defer the check for lambda parameters
+    until after the expectation has been applied.
+  - Completion does not see an inferred lambda parameter, for signals or for
+    `map()`. The guesser rebuilds types from the parse tree and knows nothing
+    about the expected-callable machinery, so `nums.map(n => n.➡)` offers
+    nothing. Tests were written for both and removed again rather than left
+    failing; they go back in with the fix.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
@@ -552,9 +577,10 @@ work are recorded as such so they are not "fixed" twice.
    errors on the `int`, but `hit.connect(d => ...)` leaves `d` untyped, because
    `connect` takes a plain `Callable` in `MethodInfo` and the signal's declared
    parameters never reach the lambda. So short lambdas lose their inferred
-   types exactly where they are most used. The fix is the mechanism already
-   built for `Array[T].map()`: describe the callable parameter of `connect`
-   (and friends) from the signal's own signature rather than from `MethodInfo`.
+   types exactly where they are most used. **Done**, see Progress; building it
+   turned up two pre-existing limits that matter more than the feature did:
+   strict mode rejects an inferred lambda parameter, and completion cannot see
+   one. Both apply to `map()` as much as to signals.
 7. **`-> void` is noisy.** Under strict mode a function without a return type
    is an error ("has no static return type"), so every handler and lambda
    carries `-> void`. Asked whether it could be inferred. Worth splitting: for
