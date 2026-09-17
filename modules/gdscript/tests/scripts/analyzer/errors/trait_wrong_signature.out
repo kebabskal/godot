@@ -1,0 +1,3 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: Struct "Shield" uses trait "Damageable", but parameter 1 of its "take_damage()" is "String" where the trait declares "int".
+>> ERROR at line 6: Struct "Shield" uses trait "Damageable", but its "is_alive()" returns "int" where the trait declares "bool".

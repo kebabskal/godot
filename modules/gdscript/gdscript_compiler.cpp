@@ -98,6 +98,7 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 	GDScriptDataType result;
 
 	switch (p_datatype.kind) {
+		case GDScriptParser::DataType::TRAIT: // An object or a struct: a Variant slot. The analyzer checks conformance.
 		case GDScriptParser::DataType::VARIANT: {
 			result.kind = GDScriptDataType::VARIANT;
 		} break;
@@ -620,6 +621,29 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 		} break;
 		case GDScriptParser::Node::CAST: {
 			const GDScriptParser::CastNode *cn = static_cast<const GDScriptParser::CastNode *>(p_expression);
+			if (cn->type_constraint.kind == GDScriptParser::DataType::TRAIT) {
+				// `value as Trait`: the value if it uses the trait, otherwise null.
+				GDScriptCodeGenerator::Address result = codegen.add_temporary();
+				GDScriptCodeGenerator::Address src = _parse_expression(codegen, r_error, cn->operand);
+				if (r_error) {
+					return GDScriptCodeGenerator::Address();
+				}
+				GDScriptDataType bool_type;
+				bool_type.kind = GDScriptDataType::BUILTIN;
+				bool_type.builtin_type = Variant::BOOL;
+				GDScriptCodeGenerator::Address matches = codegen.add_temporary(bool_type);
+				gen->write_type_test_trait(matches, src, cn->type_constraint.trait_name);
+				gen->write_if(matches);
+				gen->write_assign(result, src);
+				gen->write_else();
+				gen->write_assign_null(result);
+				gen->write_endif();
+				gen->pop_temporary(); // `matches`.
+				if (src.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary();
+				}
+				return result;
+			}
 			GDScriptDataType cast_type = _gdtype_from_datatype(cn->type_constraint, codegen.script, false);
 
 			GDScriptCodeGenerator::Address result;
@@ -1070,7 +1094,9 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				return GDScriptCodeGenerator::Address();
 			}
 
-			if (test_type.has_type()) {
+			if (type_test->test_datatype.kind == GDScriptParser::DataType::TRAIT) {
+				gen->write_type_test_trait(result, operand, type_test->test_datatype.trait_name);
+			} else if (test_type.has_type()) {
 				gen->write_type_test(result, operand, test_type);
 			} else {
 				gen->write_assign_true(result);
@@ -3212,6 +3238,14 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 }
 
 Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser::ClassNode *p_class, bool p_keep_state) {
+	// The traits this class uses, for `is` / `as` at runtime. Inherited ones come from the base script.
+	p_script->traits.clear();
+	for (const GDScriptParser::DataType &used : p_class->used_trait_types) {
+		if (used.kind == GDScriptParser::DataType::TRAIT) {
+			p_script->traits.insert(used.trait_name);
+		}
+	}
+
 	// Compile member functions, getters, and setters.
 	for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
 		if (member.type == member.FUNCTION) {

@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 8: Cannot assign a value of type Rock to variable "d" with specified type Damageable.

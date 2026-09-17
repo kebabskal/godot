@@ -730,6 +730,13 @@ void GDScriptByteCodeGenerator::write_binary_operator(const Address &p_target, V
 	}
 }
 
+void GDScriptByteCodeGenerator::write_type_test_trait(const Address &p_target, const Address &p_source, const StringName &p_trait_name) {
+	append_opcode(GDScriptFunction::OPCODE_TYPE_TEST_TRAIT);
+	append(p_target);
+	append(p_source);
+	append(p_trait_name);
+}
+
 void GDScriptByteCodeGenerator::write_type_test(const Address &p_target, const Address &p_source, const GDScriptDataType &p_type) {
 	switch (p_type.kind) {
 		case GDScriptDataType::BUILTIN: {

@@ -1168,6 +1168,9 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 			case GDScriptTokenizer::Token::STRUCT:
 				parse_class_member(&GDScriptParser::parse_struct, AnnotationInfo::NONE, "struct");
 				break;
+			case GDScriptTokenizer::Token::TRAIT:
+				parse_class_member(&GDScriptParser::parse_trait, AnnotationInfo::NONE, "trait");
+				break;
 			case GDScriptTokenizer::Token::STATIC: {
 				advance();
 				next_is_static = true;
@@ -1212,6 +1215,11 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 				}
 				[[fallthrough]];
 			default:
+				if (current.type == GDScriptTokenizer::Token::IDENTIFIER && current.get_identifier() == "uses") {
+					advance();
+					parse_uses(current_class->used_traits);
+					break;
+				}
 				// Display a completion with identifiers.
 				make_completion_context(COMPLETION_IDENTIFIER, nullptr);
 				advance();
@@ -1749,13 +1757,16 @@ GDScriptParser::StructNode *GDScriptParser::parse_struct(bool p_is_static) {
 				method->is_static = true;
 				struct_node->methods.push_back(method);
 			}
+		} else if (check(GDScriptTokenizer::Token::IDENTIFIER) && current.get_identifier() == "uses") {
+			advance();
+			parse_uses(struct_node->used_traits);
 		} else if (check(GDScriptTokenizer::Token::STATIC)) {
 			push_error(R"(Struct methods cannot be static: every method takes the struct value as "self".)");
 			advance();
 		} else if (match(GDScriptTokenizer::Token::NEWLINE)) {
 			// Blank line.
 		} else {
-			push_error(vformat(R"(Unexpected "%s" in a struct body: only "var" fields and "func" methods are allowed.)", current.get_name()));
+			push_error(vformat(R"(Unexpected "%s" in a struct body: only "var" fields, "func" methods and "uses" lines are allowed.)", current.get_name()));
 			advance();
 		}
 	}
@@ -1763,6 +1774,59 @@ GDScriptParser::StructNode *GDScriptParser::parse_struct(bool p_is_static) {
 
 	complete_extents(struct_node);
 	return struct_node;
+}
+
+GDScriptParser::TraitNode *GDScriptParser::parse_trait(bool p_is_static) {
+	TraitNode *trait_node = alloc_node<TraitNode>();
+	make_completion_context(COMPLETION_DECLARATION, trait_node);
+
+	if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected trait name after "trait".)")) {
+		complete_extents(trait_node);
+		return nullptr;
+	}
+	trait_node->identifier = parse_identifier();
+
+	consume(GDScriptTokenizer::Token::COLON, R"(Expected ":" after trait name.)");
+	consume(GDScriptTokenizer::Token::NEWLINE, R"(Expected a newline after the trait declaration.)");
+	if (!consume(GDScriptTokenizer::Token::INDENT, R"(Expected an indented block with the trait methods.)")) {
+		complete_extents(trait_node);
+		return trait_node;
+	}
+
+	while (!check(GDScriptTokenizer::Token::DEDENT) && !is_at_end()) {
+		if (match(GDScriptTokenizer::Token::FUNC)) {
+			// A signature. Without a body it is required from every type that uses the trait.
+			FunctionNode *method = parse_function(false);
+			if (method != nullptr) {
+				method->trait_owner = trait_node;
+				trait_node->methods.push_back(method);
+			}
+		} else if (match(GDScriptTokenizer::Token::PASS)) {
+			end_statement(R"("pass")");
+		} else if (match(GDScriptTokenizer::Token::NEWLINE)) {
+			// Blank line.
+		} else {
+			push_error(vformat(R"(Unexpected "%s" in a trait body: only "func" signatures are allowed.)", current.get_name()));
+			advance();
+		}
+	}
+	consume(GDScriptTokenizer::Token::DEDENT, R"(Missing unindent at the end of the trait body.)");
+
+	complete_extents(trait_node);
+	return trait_node;
+}
+
+// `uses A, B.C`: the contextual keyword was just consumed.
+void GDScriptParser::parse_uses(Vector<TypeNode *> &r_used_traits) {
+	do {
+		TypeNode *trait_type = parse_type();
+		if (trait_type == nullptr) {
+			push_error(R"(Expected a trait name after "uses".)");
+			break;
+		}
+		r_used_traits.push_back(trait_type);
+	} while (match(GDScriptTokenizer::Token::COMMA));
+	end_statement(R"("uses" statement)");
 }
 
 bool GDScriptParser::parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start) {
@@ -5421,6 +5485,8 @@ String GDScriptParser::DataType::to_string() const {
 				return class_type->identifier->name.string();
 			}
 			return class_type->fqcn;
+		case TRAIT:
+			return String(trait_name).get_slice("::", String(trait_name).get_slice_count("::") - 1);
 		case SCRIPT: {
 			if (is_meta_type) {
 				return script_type.is_valid() ? script_type->get_class_name().string() : "";
@@ -5468,6 +5534,7 @@ String GDScriptParser::DataType::to_property_info_hint_string() const {
 			}
 		case ENUM:
 			return String(native_type).replace("::", ".");
+		case TRAIT: // No class reference page; a Variant as far as the API is concerned.
 		case VARIANT:
 			return "Variant";
 		case RESOLVING:
@@ -5546,6 +5613,7 @@ PropertyInfo GDScriptParser::DataType::to_property_info(const String &p_name) co
 				result.class_name = String(native_type).replace("::", ".");
 			}
 			break;
+		case TRAIT:
 		case VARIANT:
 		case RESOLVING:
 		case UNRESOLVED:

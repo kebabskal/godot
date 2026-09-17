@@ -272,6 +272,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_TYPE_TEST_DICTIONARY, \
 		&&OPCODE_TYPE_TEST_NATIVE, \
 		&&OPCODE_TYPE_TEST_SCRIPT, \
+		&&OPCODE_TYPE_TEST_TRAIT, \
 		&&OPCODE_SET_KEYED, \
 		&&OPCODE_SET_KEYED_VALIDATED, \
 		&&OPCODE_SET_INDEXED_VALIDATED, \
@@ -571,6 +572,24 @@ static GDS_NOINLINE bool _struct_get_field(const Variant *p_src, Variant *p_dst,
 #endif
 	*p_dst = ret;
 	return true;
+}
+
+// `value is Trait`. Out of line: the VM's dispatch function must not grow (see roadmap 4d).
+static GDS_NOINLINE bool _trait_test(const Variant *p_value, const StringName &p_trait, bool &r_was_freed) {
+	r_was_freed = false;
+	if (p_value->get_type() == Variant::STRUCT) {
+		const StructLayout *layout = VariantInternal::get_struct(p_value)->get_layout_ptr();
+		return layout != nullptr && layout->has_trait(p_trait);
+	}
+	if (p_value->get_type() != Variant::OBJECT) {
+		return false;
+	}
+	Object *object = p_value->get_validated_object_with_check(r_was_freed);
+	if (r_was_freed || object == nullptr || object->get_script_instance() == nullptr) {
+		return false;
+	}
+	const GDScript *script = Object::cast_to<GDScript>(object->get_script_instance()->get_script().ptr());
+	return script != nullptr && script->uses_trait(p_trait);
 }
 
 // Calls a method of the struct in `p_self` through its layout. The index is what the compiler saw;
@@ -1236,6 +1255,29 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 
 				*dst = object && object->is_class(native_type);
+				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_TYPE_TEST_TRAIT) {
+				CHECK_SPACE(4);
+
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(value, 1);
+
+				int trait_name_idx = _code_ptr[ip + 3];
+				GD_ERR_BREAK(trait_name_idx < 0 || trait_name_idx >= _global_names_count);
+
+				bool was_freed = false;
+				const bool result = _trait_test(value, _global_names_ptr[trait_name_idx], was_freed);
+				if (was_freed) {
+#ifdef DEBUG_ENABLED
+					err_text = "Left operand of 'is' is a previously freed instance.";
+#endif
+					OPCODE_BREAK;
+				}
+
+				*dst = result;
 				ip += 4;
 			}
 			DISPATCH_OPCODE;

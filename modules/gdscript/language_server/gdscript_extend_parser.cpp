@@ -390,11 +390,35 @@ void ExtendGDScriptParser::parse_class_symbol(const GDScriptParser::ClassNode *p
 				parse_struct_symbol(m.m_struct, symbol);
 				r_symbol.children.push_back(symbol);
 			} break;
+			case ClassNode::Member::TRAIT: {
+				LSP::DocumentSymbol symbol;
+				parse_trait_symbol(m.m_trait, symbol);
+				r_symbol.children.push_back(symbol);
+			} break;
 			case ClassNode::Member::GROUP:
 				break; // No-op, but silences warnings.
 			case ClassNode::Member::UNDEFINED:
 				break; // Unreachable.
 		}
+	}
+}
+
+void ExtendGDScriptParser::parse_trait_symbol(const GDScriptParser::TraitNode *p_trait, LSP::DocumentSymbol &r_symbol) {
+	r_symbol.name = p_trait->identifier->name;
+	r_symbol.kind = LSP::SymbolKind::Interface;
+	r_symbol.deprecated = false;
+	r_symbol.range = range_of_node(p_trait);
+	r_symbol.selectionRange = range_of_node(p_trait->identifier);
+	r_symbol.detail = "trait " + String(p_trait->identifier->name);
+	r_symbol.documentation = p_trait->doc_data.description;
+	r_symbol.uri = get_uri();
+	r_symbol.script_path = path;
+
+	for (const GDScriptParser::FunctionNode *method : p_trait->methods) {
+		LSP::DocumentSymbol symbol;
+		parse_function_symbol(method, symbol);
+		symbol.kind = LSP::SymbolKind::Method;
+		r_symbol.children.push_back(symbol);
 	}
 }
 
@@ -904,6 +928,7 @@ Dictionary ExtendGDScriptParser::dump_class_api(const GDScriptParser::ClassNode 
 	Array methods;
 	Array static_functions;
 	Array structs;
+	Array traits;
 
 	for (const ClassNode::Member &m : p_class->members) {
 		switch (m.type) {
@@ -1006,6 +1031,20 @@ Dictionary ExtendGDScriptParser::dump_class_api(const GDScriptParser::ClassNode 
 				}
 				structs.push_back(api);
 			} break;
+			case ClassNode::Member::TRAIT: {
+				Dictionary api;
+				api["name"] = m.m_trait->identifier->name;
+				Array trait_methods;
+				for (const GDScriptParser::FunctionNode *method : m.m_trait->methods) {
+					trait_methods.push_back(dump_function_api(method));
+				}
+				api["methods"] = trait_methods;
+				if (const LSP::DocumentSymbol *symbol = get_symbol_defined_at_line(LINE_NUMBER_TO_INDEX(m.m_trait->start_line))) {
+					api["signature"] = symbol->detail;
+					api["description"] = symbol->documentation;
+				}
+				traits.push_back(api);
+			} break;
 			case ClassNode::Member::GROUP:
 				break; // No-op, but silences warnings.
 			case ClassNode::Member::UNDEFINED:
@@ -1015,6 +1054,14 @@ Dictionary ExtendGDScriptParser::dump_class_api(const GDScriptParser::ClassNode 
 
 	class_api["sub_classes"] = nested_classes;
 	class_api["structs"] = structs;
+	class_api["traits"] = traits;
+	Array used_traits;
+	for (const GDScriptParser::DataType &used : p_class->used_trait_types) {
+		if (used.kind == GDScriptParser::DataType::TRAIT) {
+			used_traits.push_back(used.to_string());
+		}
+	}
+	class_api["uses"] = used_traits;
 	class_api["constants"] = constants;
 	class_api["members"] = class_members;
 	class_api["signals"] = signals;

@@ -84,6 +84,17 @@ class GDScriptAnalyzer {
 	void resolve_variable(GDScriptParser::VariableNode *p_variable, bool p_is_local);
 	void resolve_struct(GDScriptParser::StructNode *p_struct, GDScriptParser::ClassNode *p_class);
 	void resolve_struct_methods(GDScriptParser::StructNode *p_struct);
+	void resolve_trait(GDScriptParser::TraitNode *p_trait, GDScriptParser::ClassNode *p_class);
+	// Resolves a `uses` list; entries that are not traits are reported and left unset.
+	void resolve_used_traits(const Vector<GDScriptParser::TypeNode *> &p_used_traits, Vector<GDScriptParser::DataType> &r_types);
+	void check_class_trait_conformance(GDScriptParser::ClassNode *p_class);
+	void check_struct_trait_conformance(GDScriptParser::StructNode *p_struct);
+	// `p_source` is where the error goes; `p_who` names the class or struct in messages.
+	void check_method_conforms(const GDScriptParser::FunctionNode *p_required, const GDScriptParser::DataType &p_return_type, const List<GDScriptParser::DataType> &p_par_types, int p_default_arg_count, bool p_is_vararg, const String &p_who, const GDScriptParser::Node *p_source);
+	// Whether values of `p_type` (a class, script or struct type) use the trait, directly or through a base.
+	// Static like `check_type_compatibility()`: it reads the `uses` lists that class inheritance and
+	// struct resolution have already resolved.
+	static bool type_uses_trait(const GDScriptParser::DataType &p_type, const StringName &p_trait_name);
 	void resolve_struct_method_bodies(GDScriptParser::StructNode *p_struct);
 	void check_struct_field_shadowing(const GDScriptParser::IdentifierNode *p_identifier, const char *p_kind);
 	void reduce_struct_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, int p_method_index, GDScriptParser::ExpressionNode *p_base, bool p_is_await, bool p_is_root);

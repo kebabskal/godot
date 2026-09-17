@@ -1187,6 +1187,12 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 							r_result.insert(option.display, option);
 						}
 					} break;
+					case GDScriptParser::ClassNode::Member::TRAIT: {
+						if (!p_inherit_only) {
+							EditorLanguage::CompletionOption option(member.m_trait->identifier->name, EditorLanguage::CompletionKind::CLASS, EditorLanguage::CompletionLocation::LOCAL + location_offset);
+							r_result.insert(option.display, option);
+						}
+					} break;
 					case GDScriptParser::ClassNode::Member::CONSTANT: {
 						if (member.constant->type_constraint.is_meta_type) {
 							EditorLanguage::CompletionOption option(member.constant->identifier->name, EditorLanguage::CompletionKind::CLASS, EditorLanguage::CompletionLocation::LOCAL + location_offset);
@@ -1322,6 +1328,12 @@ static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class,
 							continue;
 						}
 						option = EditorLanguage::CompletionOption(member.m_struct->identifier->name, EditorLanguage::CompletionKind::CLASS, location);
+						break;
+					case GDScriptParser::ClassNode::Member::TRAIT:
+						if (p_only_functions) {
+							continue;
+						}
+						option = EditorLanguage::CompletionOption(member.m_trait->identifier->name, EditorLanguage::CompletionKind::CLASS, location);
 						break;
 					case GDScriptParser::ClassNode::Member::FUNCTION:
 						if (p_types_only || outer || (p_static && !member.function->is_static) || member.function->identifier->name.string().begins_with("@")) {
@@ -1708,6 +1720,28 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 					r_result.insert(option.display, option);
 				}
 
+				return;
+			} break;
+			case GDScriptParser::DataType::TRAIT: {
+				if (p_types_only || base_type.is_meta_type || base_type.trait_type == nullptr) {
+					return;
+				}
+				for (const GDScriptParser::FunctionNode *method : base_type.trait_type->methods) {
+					if (method->identifier == nullptr) {
+						continue;
+					}
+					EditorLanguage::CompletionOption option(method->identifier->name, EditorLanguage::CompletionKind::FUNCTION, EditorLanguage::CompletionLocation::LOCAL);
+					if (p_add_braces) {
+						if (method->parameters.size() > 0 || method->is_vararg()) {
+							option.insert_text += "(";
+							option.display += U"(\u2026)";
+						} else {
+							option.insert_text += "()";
+							option.display += "()";
+						}
+					}
+					r_result.insert(option.display, option);
+				}
 				return;
 			} break;
 			default: {
@@ -2822,6 +2856,14 @@ static bool _guess_identifier_type_from_base(GDScriptParser::CompletionContext &
 							return false;
 						case GDScriptParser::ClassNode::Member::STRUCT:
 							r_type.type = _struct_node_type(member.m_struct, true);
+							return true;
+						case GDScriptParser::ClassNode::Member::TRAIT:
+							r_type.type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+							r_type.type.kind = GDScriptParser::DataType::TRAIT;
+							r_type.type.trait_type = member.m_trait;
+							r_type.type.trait_name = member.m_trait->qualified_name;
+							r_type.type.is_meta_type = true;
+							r_type.type.is_constant = true;
 							return true;
 						case GDScriptParser::ClassNode::Member::ENUM:
 							r_type.type = member.m_enum->enum_type;
@@ -4149,6 +4191,7 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 						r_result.type = EditorLanguage::LookupResult::Type::CLASS_CONSTANT;
 						break;
 					case GDScriptParser::ClassNode::Member::STRUCT:
+					case GDScriptParser::ClassNode::Member::TRAIT:
 						r_result.type = EditorLanguage::LookupResult::Type::SCRIPT_LOCATION; // No class reference page: go to the declaration.
 						break;
 				}
@@ -4336,6 +4379,20 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 				} else {
 					return ERR_CANT_RESOLVE;
 				}
+			} break;
+			case GDScriptParser::DataType::TRAIT: {
+				// A method of a trait-typed value: the signature in the trait.
+				if (base_type.trait_type != nullptr) {
+					for (const GDScriptParser::FunctionNode *method : base_type.trait_type->methods) {
+						if (method->identifier != nullptr && method->identifier->name == p_symbol) {
+							r_result.type = EditorLanguage::LookupResult::Type::SCRIPT_LOCATION;
+							r_result.script_path = base_type.script_path;
+							r_result.location = method->start_line;
+							return OK;
+						}
+					}
+				}
+				return ERR_CANT_RESOLVE;
 			} break;
 			case GDScriptParser::DataType::BUILTIN: {
 				if (base_type.builtin_type == Variant::STRUCT && base_type.struct_type != nullptr && !base_type.is_meta_type) {

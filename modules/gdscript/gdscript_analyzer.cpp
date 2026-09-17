@@ -899,6 +899,8 @@ Error GDScriptAnalyzer::resolve_class_inheritance(GDScriptParser::ClassNode *p_c
 	class_type.native_type = result.native_type;
 	p_class->self_type = class_type;
 
+	resolve_used_traits(p_class->used_traits, p_class->used_trait_types);
+
 	// Apply annotations.
 	for (GDScriptParser::AnnotationNode *&E : p_class->annotations) {
 		resolve_annotation(E);
@@ -1143,6 +1145,7 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 					GDScriptParser::ClassNode::Member member = script_class->get_member(first);
 					switch (member.type) {
 						case GDScriptParser::ClassNode::Member::STRUCT:
+						case GDScriptParser::ClassNode::Member::TRAIT:
 						case GDScriptParser::ClassNode::Member::CLASS:
 							result = member.get_datatype();
 							found = true;
@@ -1480,6 +1483,10 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 					E->apply(parser, member.m_enum, p_class);
 				}
 			} break;
+			case GDScriptParser::ClassNode::Member::TRAIT: {
+				check_class_member_name_conflict(p_class, member.m_trait->identifier->name, member.m_trait);
+				resolve_trait(member.m_trait, p_class);
+			} break;
 			case GDScriptParser::ClassNode::Member::STRUCT: {
 				check_class_member_name_conflict(p_class, member.m_struct->identifier->name, member.m_struct);
 				member.m_struct->struct_type = resolving_datatype;
@@ -1614,6 +1621,8 @@ void GDScriptAnalyzer::resolve_class_interface(GDScriptParser::ClassNode *p_clas
 			}
 #endif // DEBUG_ENABLED
 		}
+
+		check_class_trait_conformance(p_class);
 
 #ifdef DEBUG_ENABLED
 		if (!has_static_data && p_class->annotated_static_unload) {
@@ -2127,6 +2136,207 @@ void GDScriptAnalyzer::resolve_struct(GDScriptParser::StructNode *p_struct, GDSc
 	meta.is_constant = true;
 	meta.script_path = parser->script_path;
 	p_struct->struct_type = meta;
+
+	resolve_used_traits(p_struct->used_traits, p_struct->used_trait_types);
+}
+
+void GDScriptAnalyzer::resolve_trait(GDScriptParser::TraitNode *p_trait, GDScriptParser::ClassNode *p_class) {
+	if (p_trait->resolved) {
+		return;
+	}
+	p_trait->resolved = true;
+	p_trait->qualified_name = p_class->fqcn + "::" + String(p_trait->identifier->name);
+
+	// The meta type first, so a signature can mention the trait itself.
+	GDScriptParser::DataType meta;
+	meta.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	meta.kind = GDScriptParser::DataType::TRAIT;
+	meta.trait_type = p_trait;
+	meta.trait_name = p_trait->qualified_name;
+	meta.script_path = parser->script_path;
+	meta.is_meta_type = true;
+	meta.is_constant = true;
+	p_trait->trait_type = meta;
+
+	HashSet<StringName> seen;
+	for (GDScriptParser::FunctionNode *method : p_trait->methods) {
+		if (method->identifier == nullptr) {
+			continue;
+		}
+		const StringName name = method->identifier->name;
+		if (seen.has(name)) {
+			push_error(vformat(R"(Trait "%s" already has a method named "%s".)", p_trait->identifier->name, name), method->identifier);
+		}
+		seen.insert(name);
+		if (method->body != nullptr && !method->body->statements.is_empty()) {
+			push_error(vformat(R"*(Trait method "%s()" cannot have a body yet: default methods are not implemented. Remove the ":" and the body to make it a required method.)*", name), method);
+		}
+		if (method->is_static) {
+			push_error(vformat(R"*(Trait method "%s()" cannot be static.)*", name), method);
+		}
+		resolve_function_signature(method);
+	}
+}
+
+void GDScriptAnalyzer::resolve_used_traits(const Vector<GDScriptParser::TypeNode *> &p_used_traits, Vector<GDScriptParser::DataType> &r_types) {
+	if (r_types.size() == p_used_traits.size()) {
+		return; // Already resolved.
+	}
+	r_types.clear();
+	for (GDScriptParser::TypeNode *used : p_used_traits) {
+		GDScriptParser::DataType type = resolve_datatype(used);
+		if (type.is_set() && type.kind != GDScriptParser::DataType::TRAIT) {
+			push_error(vformat(R"("%s" is not a trait, so it cannot be named in "uses".)", type.to_string()), used);
+			type = GDScriptParser::DataType();
+		}
+		if (type.kind == GDScriptParser::DataType::TRAIT) {
+			type.is_meta_type = false;
+			for (const GDScriptParser::DataType &previous : r_types) {
+				if (previous.kind == GDScriptParser::DataType::TRAIT && previous.trait_name == type.trait_name) {
+					push_error(vformat(R"(Trait "%s" is already used.)", type.to_string()), used);
+				}
+			}
+		}
+		r_types.push_back(type);
+	}
+}
+
+bool GDScriptAnalyzer::type_uses_trait(const GDScriptParser::DataType &p_type, const StringName &p_trait_name) {
+	if (p_type.kind == GDScriptParser::DataType::BUILTIN) {
+		if (p_type.builtin_type != Variant::STRUCT) {
+			return false;
+		}
+		if (p_type.struct_type != nullptr) {
+			for (const GDScriptParser::DataType &used : p_type.struct_type->used_trait_types) {
+				if (used.kind == GDScriptParser::DataType::TRAIT && used.trait_name == p_trait_name) {
+					return true;
+				}
+			}
+			return false;
+		}
+		return p_type.struct_layout.is_valid() && p_type.struct_layout->has_trait(p_trait_name);
+	}
+
+	GDScriptParser::DataType type = p_type;
+	while (type.is_set()) {
+		if (type.kind == GDScriptParser::DataType::CLASS && type.class_type != nullptr) {
+			const GDScriptParser::ClassNode *c = type.class_type;
+			for (const GDScriptParser::DataType &used : c->used_trait_types) {
+				if (used.kind == GDScriptParser::DataType::TRAIT && used.trait_name == p_trait_name) {
+					return true;
+				}
+			}
+			type = c->base_type;
+		} else if (type.kind == GDScriptParser::DataType::SCRIPT) {
+			// A compiled script base: ask the runtime.
+			const GDScript *script = Object::cast_to<GDScript>(type.script_type.ptr());
+			return script != nullptr && script->uses_trait(p_trait_name);
+		} else {
+			return false; // Native classes use no traits.
+		}
+	}
+	return false;
+}
+
+void GDScriptAnalyzer::check_method_conforms(const GDScriptParser::FunctionNode *p_required, const GDScriptParser::DataType &p_return_type, const List<GDScriptParser::DataType> &p_par_types, int p_default_arg_count, bool p_is_vararg, const String &p_who, const GDScriptParser::Node *p_source) {
+	const String trait_name = p_required->trait_owner != nullptr ? String(p_required->trait_owner->identifier->name) : String();
+	const StringName method_name = p_required->identifier->name;
+	const int required_count = p_required->parameters.size();
+
+	// The method must be callable with exactly the trait's arguments.
+	const int max_count = p_par_types.size();
+	const int min_count = max_count - p_default_arg_count;
+	if (required_count < min_count || (required_count > max_count && !p_is_vararg)) {
+		push_error(vformat(R"*(%s uses trait "%s", but its "%s()" takes a different number of parameters: the trait declares %d.)*", p_who, trait_name, method_name, required_count), p_source);
+		return;
+	}
+	int i = 0;
+	for (const GDScriptParser::DataType &own : p_par_types) {
+		if (i >= required_count) {
+			break;
+		}
+		const GDScriptParser::DataType &required = p_required->parameters[i]->type_constraint;
+		// Parameters may be wider than the trait's, never narrower.
+		if (required.is_hard_type() && own.is_hard_type() && !own.is_variant() && !required.is_variant() && !is_type_compatible(own, required, true)) {
+			push_error(vformat(R"*(%s uses trait "%s", but parameter %d of its "%s()" is "%s" where the trait declares "%s".)*", p_who, trait_name, i + 1, method_name, own.to_string(), required.to_string()), p_source);
+		}
+		i++;
+	}
+	// The return type may be narrower than the trait's, never wider.
+	const GDScriptParser::DataType &required_return = p_required->return_type_constraint;
+	const bool required_void = required_return.is_hard_type() && required_return.kind == GDScriptParser::DataType::BUILTIN && required_return.builtin_type == Variant::NIL;
+	if (required_return.is_hard_type() && !required_void && !required_return.is_variant()) {
+		if (!p_return_type.is_hard_type() || p_return_type.is_variant() || !is_type_compatible(required_return, p_return_type, false)) {
+			push_error(vformat(R"*(%s uses trait "%s", but its "%s()" returns "%s" where the trait declares "%s".)*", p_who, trait_name, method_name, p_return_type.is_set() ? p_return_type.to_string() : String("Variant"), required_return.to_string()), p_source);
+		}
+	}
+}
+
+void GDScriptAnalyzer::check_class_trait_conformance(GDScriptParser::ClassNode *p_class) {
+	resolve_used_traits(p_class->used_traits, p_class->used_trait_types);
+	const String who = p_class->identifier != nullptr ? vformat(R"(Class "%s")", p_class->identifier->name) : String("This class");
+
+	GDScriptParser::DataType self_type = p_class->self_type;
+	self_type.is_meta_type = false;
+
+	for (int t = 0; t < p_class->used_trait_types.size(); t++) {
+		const GDScriptParser::DataType &used = p_class->used_trait_types[t];
+		if (used.kind != GDScriptParser::DataType::TRAIT || used.trait_type == nullptr) {
+			continue;
+		}
+		for (const GDScriptParser::FunctionNode *required : used.trait_type->methods) {
+			if (required->identifier == nullptr) {
+				continue;
+			}
+			GDScriptParser::DataType return_type;
+			List<GDScriptParser::DataType> par_types;
+			int default_arg_count = 0;
+			BitField<MethodFlags> method_flags = {};
+			if (!get_function_signature(p_class->used_traits[t], false, self_type, required->identifier->name, return_type, par_types, default_arg_count, method_flags)) {
+				push_error(vformat(R"*(%s uses trait "%s" but does not implement "%s()".)*", who, used.to_string(), required->identifier->name), p_class->used_traits[t]);
+				continue;
+			}
+			if (method_flags.has_flag(METHOD_FLAG_STATIC)) {
+				push_error(vformat(R"*(%s uses trait "%s", but its "%s()" is static.)*", who, used.to_string(), required->identifier->name), p_class->used_traits[t]);
+				continue;
+			}
+			check_method_conforms(required, return_type, par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), who, p_class->used_traits[t]);
+		}
+	}
+}
+
+void GDScriptAnalyzer::check_struct_trait_conformance(GDScriptParser::StructNode *p_struct) {
+	resolve_used_traits(p_struct->used_traits, p_struct->used_trait_types);
+	const String who = vformat(R"(Struct "%s")", p_struct->identifier->name);
+
+	for (int t = 0; t < p_struct->used_trait_types.size(); t++) {
+		const GDScriptParser::DataType &used = p_struct->used_trait_types[t];
+		if (used.kind != GDScriptParser::DataType::TRAIT || used.trait_type == nullptr) {
+			continue;
+		}
+		if (p_struct->layout.is_valid()) {
+			p_struct->layout->add_trait(used.trait_name); // For `value is Trait` at runtime.
+		}
+		for (const GDScriptParser::FunctionNode *required : used.trait_type->methods) {
+			if (required->identifier == nullptr) {
+				continue;
+			}
+			const GDScriptParser::FunctionNode *own = find_struct_method(p_struct, required->identifier->name);
+			if (own == nullptr) {
+				push_error(vformat(R"*(%s uses trait "%s" but does not implement "%s()".)*", who, used.to_string(), required->identifier->name), p_struct->used_traits[t]);
+				continue;
+			}
+			List<GDScriptParser::DataType> par_types;
+			int default_arg_count = 0;
+			for (const GDScriptParser::ParameterNode *param : own->parameters) {
+				par_types.push_back(param->type_constraint);
+				if (param->initializer != nullptr) {
+					default_arg_count++;
+				}
+			}
+			check_method_conforms(required, own->return_type_constraint, par_types, default_arg_count, own->is_vararg(), who, p_struct->used_traits[t]);
+		}
+	}
 }
 
 void GDScriptAnalyzer::resolve_struct_methods(GDScriptParser::StructNode *p_struct) {
@@ -2156,6 +2366,7 @@ void GDScriptAnalyzer::resolve_struct_methods(GDScriptParser::StructNode *p_stru
 			}
 		}
 	}
+	check_struct_trait_conformance(p_struct);
 	compute_struct_mutation(p_struct);
 	for (GDScriptParser::FunctionNode *method : p_struct->methods) {
 		if (method->identifier != nullptr && method->mutates_self && struct_operator_from_method_name(method->identifier->name) != Variant::OP_MAX) {
@@ -2322,7 +2533,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 		int default_par_count = 0;
 		BitField<MethodFlags> method_flags = {};
 		StringName native_base;
-		if (!p_is_lambda && p_function->struct_owner == nullptr && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base)) {
+		if (!p_is_lambda && p_function->struct_owner == nullptr && p_function->trait_owner == nullptr && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base)) {
 			bool valid = p_function->is_static == method_flags.has_flag(METHOD_FLAG_STATIC);
 
 			if (p_function->return_type == nullptr) {
@@ -4493,7 +4704,11 @@ void GDScriptAnalyzer::reduce_cast(GDScriptParser::CastNode *p_cast) {
 #endif // DEBUG_ENABLED
 		} else {
 			bool valid = false;
-			if (op_type.builtin_type == Variant::INT && cast_type.kind == GDScriptParser::DataType::ENUM) {
+			if (cast_type.kind == GDScriptParser::DataType::TRAIT || op_type.kind == GDScriptParser::DataType::TRAIT) {
+				// Decided at runtime: any object or struct may use a trait. Plain built-in values cannot.
+				const GDScriptParser::DataType &other = cast_type.kind == GDScriptParser::DataType::TRAIT ? op_type : cast_type;
+				valid = other.kind != GDScriptParser::DataType::BUILTIN || other.builtin_type == Variant::STRUCT;
+			} else if (op_type.builtin_type == Variant::INT && cast_type.kind == GDScriptParser::DataType::ENUM) {
 				mark_node_unsafe(p_cast);
 				valid = true;
 			} else if (op_type.kind == GDScriptParser::DataType::ENUM && cast_type.builtin_type == Variant::INT) {
@@ -4890,6 +5105,14 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 					p_identifier->type_constraint = member.get_datatype();
 					p_identifier->is_constant = true;
 					p_identifier->reduced_value = member.m_enum->dictionary;
+					p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_CONSTANT;
+					return;
+				}
+				case GDScriptParser::ClassNode::Member::TRAIT: {
+					// The name of a trait is its meta type; as a value it is the trait's qualified name.
+					p_identifier->type_constraint = member.get_datatype();
+					p_identifier->is_constant = true;
+					p_identifier->reduced_value = member.m_trait->qualified_name;
 					p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_CONSTANT;
 					return;
 				}
@@ -5975,6 +6198,14 @@ void GDScriptAnalyzer::reduce_type_test(GDScriptParser::TypeTestNode *p_type_tes
 		return;
 	}
 
+	if (test_type.kind == GDScriptParser::DataType::TRAIT || operand_type.kind == GDScriptParser::DataType::TRAIT) {
+		const GDScriptParser::DataType &other = test_type.kind == GDScriptParser::DataType::TRAIT ? operand_type : test_type;
+		if (other.is_hard_type() && other.kind == GDScriptParser::DataType::BUILTIN && other.builtin_type != Variant::STRUCT) {
+			push_error(vformat(R"(Expression is of type "%s" so it can't be of type "%s".)", operand_type.to_string(), test_type.to_string()), p_type_test->operand);
+		}
+		return;
+	}
+
 	if (!is_type_compatible(test_type, operand_type) && !is_type_compatible(operand_type, test_type)) {
 		if (operand_type.is_hard_type()) {
 			push_error(vformat(R"(Expression is of type "%s" so it can't be of type "%s".)", operand_type.to_string(), test_type.to_string()), p_type_test->operand);
@@ -6677,6 +6908,31 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 		}
 	}
 
+	if (p_base_type.kind == GDScriptParser::DataType::TRAIT) {
+		// Only the trait's own methods are visible on a trait-typed value.
+		if (p_base_type.trait_type == nullptr || p_base_type.is_meta_type) {
+			return false;
+		}
+		for (const GDScriptParser::FunctionNode *method : p_base_type.trait_type->methods) {
+			if (method->identifier == nullptr || method->identifier->name != p_function) {
+				continue;
+			}
+			for (const GDScriptParser::ParameterNode *param : method->parameters) {
+				r_par_types.push_back(param->type_constraint);
+				if (param->initializer != nullptr) {
+					r_default_arg_count++;
+				}
+			}
+			if (method->is_vararg()) {
+				r_method_flags.set_flag(METHOD_FLAG_VARARG);
+			}
+			r_return_type = method->return_type_constraint;
+			r_return_type.is_meta_type = false;
+			return true;
+		}
+		return false;
+	}
+
 	if (p_base_type.kind == GDScriptParser::DataType::BUILTIN) {
 		// Construct a base type to get methods.
 		Callable::CallError err;
@@ -7137,6 +7393,21 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 		return true;
 	}
 
+	if (p_target.kind == GDScriptParser::DataType::TRAIT) {
+		if (p_source.is_meta_type) {
+			return false;
+		}
+		if (p_source.kind == GDScriptParser::DataType::TRAIT) {
+			return p_source.trait_name == p_target.trait_name;
+		}
+		if (p_source.kind == GDScriptParser::DataType::BUILTIN && p_source.builtin_type == Variant::NIL) {
+			return true; // `null`, like an object slot.
+		}
+		return type_uses_trait(p_source, p_target.trait_name);
+	}
+	if (p_source.kind == GDScriptParser::DataType::TRAIT) {
+		return false; // Narrowing to a concrete type needs `as`.
+	}
 	if (p_target.kind == GDScriptParser::DataType::BUILTIN) {
 		bool valid = p_source.kind == GDScriptParser::DataType::BUILTIN && p_target.builtin_type == p_source.builtin_type;
 		if (!valid && p_allow_implicit_conversion) {

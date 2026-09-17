@@ -1440,6 +1440,15 @@ void GDScript::_recurse_replace_function_ptrs(const HashMap<GDScriptFunction *, 
 	}
 }
 
+bool GDScript::uses_trait(const StringName &p_qualified_name) const {
+	for (const GDScript *s = this; s != nullptr; s = s->base.ptr()) {
+		if (s->traits.has(p_qualified_name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void GDScript::clear() {
 	if (clearing) {
 		return;
@@ -1466,6 +1475,7 @@ void GDScript::clear() {
 		functions_to_clear.insert(E.value);
 	}
 	struct_functions.clear();
+	traits.clear();
 	for (const KeyValue<StringName, Ref<StructLayout>> &E : struct_layouts) {
 		// Values that keep this layout must not reach the functions freed below.
 		E.value->clear_methods();

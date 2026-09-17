@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/templates/hash_set.h"
 #include "core/object/ref_counted.h"
 #include "core/object/script_language.h"
 #include "core/variant/container_type_validate.h"
@@ -67,6 +68,7 @@ private:
 	Vector<Method> methods;
 	HashMap<StringName, int> method_index;
 	HashMap<int, Callable> operators; // Keyed by `Variant::Operator`.
+	HashSet<StringName> traits; // Qualified names of the script traits this struct type `uses`.
 
 protected:
 	static void _bind_methods();
@@ -113,6 +115,11 @@ public:
 	void set_operator(Variant::Operator p_op, const Callable &p_callable);
 	bool has_operator(Variant::Operator p_op) const;
 	const Callable &get_operator(Variant::Operator p_op) const;
+
+	// Traits are a scripting-language notion; core only keeps the names so `value is Trait` can
+	// be answered from the value alone.
+	void add_trait(const StringName &p_qualified_name);
+	bool has_trait(const StringName &p_qualified_name) const;
 
 	// Drops every method and operator, so values that keep a stale layout after a script reload
 	// report a missing method instead of calling freed code.

@@ -111,6 +111,7 @@ private:
 	HashMap<StringName, Ref<GDScript>> subclasses;
 	HashMap<StringName, Ref<StructLayout>> struct_layouts; // `struct` declarations of this class.
 	HashMap<StringName, GDScriptFunction *> struct_functions; // Struct methods, keyed `Struct.method`. Not reachable by name; the layout holds them as callables.
+	HashSet<StringName> traits; // Qualified names of the traits this class `uses` itself; bases are walked by `uses_trait()`.
 	HashMap<StringName, MethodInfo> _signals;
 	Dictionary rpc_config;
 
@@ -264,6 +265,8 @@ public:
 	}
 
 	_FORCE_INLINE_ const HashMap<StringName, GDScriptFunction *> &get_member_functions() const { return member_functions; }
+	// Whether this class or one of its script bases `uses` the trait (by qualified name).
+	bool uses_trait(const StringName &p_qualified_name) const;
 	_FORCE_INLINE_ const HashMap<StringName, MemberInfo> &get_member_indices() const { return member_indices; }
 
 	// Resolves a member index to its info, or `nullptr` if the index is stale (e.g. mid hot-reload) so the

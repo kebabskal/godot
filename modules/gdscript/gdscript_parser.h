@@ -74,6 +74,7 @@ public:
 	struct DictionaryNode;
 	struct EnumNode;
 	struct StructNode;
+	struct TraitNode;
 	struct ExpressionNode;
 	struct ForNode;
 	struct FunctionNode;
@@ -110,6 +111,7 @@ public:
 			SCRIPT,
 			CLASS, // GDScript.
 			ENUM, // Enumeration.
+			TRAIT, // A `trait`: any object or struct whose type `uses` it. A Variant at runtime.
 			VARIANT, // Can be any type.
 			RESOLVING, // Currently resolving.
 			UNRESOLVED,
@@ -138,6 +140,8 @@ public:
 		ClassNode *class_type = nullptr;
 		StructNode *struct_type = nullptr; // For `BUILTIN` with `builtin_type == Variant::STRUCT`.
 		Ref<StructLayout> struct_layout; // Same; the runtime identity of the struct type.
+		TraitNode *trait_type = nullptr; // For `TRAIT`.
+		StringName trait_name; // Same; `script_path::Name`, the runtime identity of the trait.
 
 		MethodInfo method_info; // For callable/signals.
 		HashMap<StringName, int64_t> enum_values; // For enums.
@@ -234,6 +238,8 @@ public:
 					return script_type == p_other.script_type;
 				case CLASS:
 					return class_type == p_other.class_type || class_type->fqcn == p_other.class_type->fqcn;
+				case TRAIT:
+					return trait_name == p_other.trait_name;
 				case RESOLVING:
 				case UNRESOLVED:
 					break;
@@ -262,6 +268,8 @@ public:
 			class_type = p_other.class_type;
 			struct_type = p_other.struct_type;
 			struct_layout = p_other.struct_layout;
+			trait_type = p_other.trait_type;
+			trait_name = p_other.trait_name;
 			method_info = p_other.method_info;
 			enum_values = p_other.enum_values;
 			container_element_types = p_other.container_element_types;
@@ -349,6 +357,7 @@ public:
 			SIGNAL,
 			SUBSCRIPT,
 			STRUCT,
+			TRAIT,
 			SUITE,
 			TERNARY_OPERATOR,
 			TYPE,
@@ -592,6 +601,8 @@ public:
 		IdentifierNode *identifier = nullptr;
 		Vector<VariableNode *> fields;
 		Vector<FunctionNode *> methods; // Declaration order is the method index on the layout.
+		Vector<TypeNode *> used_traits; // `uses A, B` lines in the body.
+		Vector<DataType> used_trait_types; // Resolved by the analyzer, same order; unset entries failed.
 		DataType struct_type; // The meta type; `type_from_metatype()` of it is the type of a value.
 		Ref<StructLayout> layout;
 #ifdef TOOLS_ENABLED
@@ -600,6 +611,23 @@ public:
 
 		StructNode() {
 			type = STRUCT;
+		}
+	};
+
+	// `trait Name:` with method signatures. A function without a body is required from every
+	// type that `uses` the trait.
+	struct TraitNode : public Node {
+		IdentifierNode *identifier = nullptr;
+		Vector<FunctionNode *> methods;
+		DataType trait_type; // The meta type; `type_from_metatype()` of it is the type of a value.
+		StringName qualified_name; // `script_path::Name`.
+		bool resolved = false;
+#ifdef TOOLS_ENABLED
+		MemberDocData doc_data;
+#endif // TOOLS_ENABLED
+
+		TraitNode() {
+			type = TRAIT;
 		}
 	};
 
@@ -615,6 +643,7 @@ public:
 				ENUM,
 				ENUM_VALUE, // For unnamed enums.
 				STRUCT,
+				TRAIT,
 				GROUP, // For member grouping.
 			};
 
@@ -628,6 +657,7 @@ public:
 				VariableNode *variable;
 				EnumNode *m_enum;
 				StructNode *m_struct;
+				TraitNode *m_trait;
 				AnnotationNode *annotation;
 			};
 			EnumNode::Value enum_value;
@@ -652,6 +682,8 @@ public:
 						return m_enum->identifier->name;
 					case STRUCT:
 						return m_struct->identifier->name;
+					case TRAIT:
+						return m_trait->identifier->name;
 					case ENUM_VALUE:
 						return enum_value.identifier->name;
 					case GROUP:
@@ -678,6 +710,8 @@ public:
 						return "enum";
 					case STRUCT:
 						return "struct";
+					case TRAIT:
+						return "trait";
 					case ENUM_VALUE:
 						return "enum value";
 					case GROUP:
@@ -702,6 +736,8 @@ public:
 						return m_enum->start_line;
 					case STRUCT:
 						return m_struct->start_line;
+					case TRAIT:
+						return m_trait->start_line;
 					case SIGNAL:
 						return signal->start_line;
 					case GROUP:
@@ -726,6 +762,8 @@ public:
 						return m_enum->enum_type;
 					case STRUCT:
 						return m_struct->struct_type;
+					case TRAIT:
+						return m_trait->trait_type;
 					case ENUM_VALUE:
 						return enum_value.identifier->type_constraint;
 					case SIGNAL:
@@ -752,6 +790,8 @@ public:
 						return m_enum;
 					case STRUCT:
 						return m_struct;
+					case TRAIT:
+						return m_trait;
 					case ENUM_VALUE:
 						return enum_value.identifier;
 					case SIGNAL:
@@ -782,6 +822,10 @@ public:
 				type = STRUCT;
 				m_struct = p_struct;
 			}
+			Member(TraitNode *p_trait) {
+				type = TRAIT;
+				m_trait = p_trait;
+			}
 			Member(SignalNode *p_signal) {
 				type = SIGNAL;
 				signal = p_signal;
@@ -811,6 +855,8 @@ public:
 		HashMap<StringName, uint32_t> members_indices;
 		ClassNode *outer = nullptr;
 		bool extends_used = false;
+		Vector<TypeNode *> used_traits; // `uses A, B` statements.
+		Vector<DataType> used_trait_types; // Resolved by the analyzer, same order; unset entries failed.
 		bool onready_used = false;
 		bool is_abstract = false;
 		bool has_static_data = false;
@@ -935,6 +981,7 @@ public:
 		bool is_static = false; // For lambdas it's determined in the analyzer.
 		bool is_coroutine = false;
 		StructNode *struct_owner = nullptr; // Set for a method declared in a `struct` body: `self` is the struct value, passed as the implicit first parameter.
+		TraitNode *trait_owner = nullptr; // Set for a signature declared in a `trait` body; no body means "required".
 		bool mutates_self = false; // A struct method that assigns to a field of `self`, directly or through another mutating method. The call site writes the result back.
 		Variant rpc_config;
 		MethodInfo info;
@@ -1654,6 +1701,8 @@ private:
 	SignalNode *parse_signal(bool p_is_static);
 	EnumNode *parse_enum(bool p_is_static);
 	StructNode *parse_struct(bool p_is_static);
+	TraitNode *parse_trait(bool p_is_static);
+	void parse_uses(Vector<TypeNode *> &r_used_traits);
 	ParameterNode *parse_parameter();
 	FunctionNode *parse_function(bool p_is_static);
 	bool parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start);

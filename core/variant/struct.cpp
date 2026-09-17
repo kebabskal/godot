@@ -449,6 +449,14 @@ Struct StructLayout::instantiate(const Dictionary &p_values) const {
 	return s;
 }
 
+void StructLayout::add_trait(const StringName &p_qualified_name) {
+	traits.insert(p_qualified_name);
+}
+
+bool StructLayout::has_trait(const StringName &p_qualified_name) const {
+	return traits.has(p_qualified_name);
+}
+
 void StructLayout::clear_methods() {
 	methods.clear();
 	method_index.clear();
