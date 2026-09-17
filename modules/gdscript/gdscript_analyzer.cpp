@@ -3185,10 +3185,6 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	}
 #endif // DEBUG_ENABLED
 
-	if (!p_function->type_parameters.is_empty() && type_has_container_type_parameter(p_function->return_type_constraint)) {
-		push_error(vformat(R"*(A generic function cannot return "%s": the type parameter is erased at runtime, so "%s()" cannot build a container of it. Return the element type, or take the container as a parameter.)*", p_function->return_type_constraint.to_string(), function_name), p_function->return_type != nullptr ? static_cast<GDScriptParser::Node *>(p_function->return_type) : static_cast<GDScriptParser::Node *>(p_function));
-	}
-
 	method_info.default_arguments.append_array(p_function->default_arg_values);
 	method_info.return_val = p_function->return_type_constraint.to_property_info("");
 	p_function->info = method_info;
@@ -5191,7 +5187,22 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				bound_par_types.push_back(substitute_type_parameters(par_type, bindings));
 			}
 			par_types = bound_par_types;
+
+			// A container of a type parameter is built untyped inside the generic function, which
+			// cannot know the binding. The call site can: it converts the result below.
+			const bool returns_generic_container = type_has_container_type_parameter(return_type);
 			return_type = substitute_type_parameters(return_type, bindings);
+			if (returns_generic_container && return_type.kind == GDScriptParser::DataType::BUILTIN && (return_type.builtin_type == Variant::ARRAY || return_type.builtin_type == Variant::DICTIONARY) && return_type.has_container_element_types()) {
+				bool every_element_concrete = true;
+				for (int i = 0; i < return_type.get_container_element_type_count(); i++) {
+					const GDScriptParser::DataType element = return_type.get_container_element_type(i);
+					if (!element.is_set() || !element.is_hard_type() || element.is_variant() || element.kind == GDScriptParser::DataType::TYPE_PARAMETER) {
+						every_element_concrete = false;
+						break;
+					}
+				}
+				p_call->convert_generic_container = every_element_concrete;
+			}
 #ifdef DEBUG_ENABLED
 			for (const StringName &type_parameter : type_parameters) {
 				if (!bindings.has(type_parameter)) {

@@ -1,0 +1,7 @@
+GDTEST_OK
+["n1", "n2", "n3"] true
+[2, 3] true
+[2, 4, 6]
+3 1
+3 animal
+[20, 30]

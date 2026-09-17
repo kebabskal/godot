@@ -556,6 +556,7 @@ public:
 		bool is_static = false;
 		bool trait_self_call = false; // A bare call to another method of the trait, inside a trait's default method.
 		bool validate_callable_result = false; // `f.call()` on a typed callable: the declared return type is checked where the call returns.
+		bool convert_generic_container = false; // A generic function returning a container of a type parameter: the untyped container it built is converted here, where the binding is known.
 		// Resolved struct method (`p.length()`, or a bare `length()` inside a struct method).
 		FunctionNode *struct_method = nullptr;
 		int struct_method_index = -1;

@@ -701,6 +701,14 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				result = codegen.add_temporary();
 			}
 
+			// A generic function that returns a container of a type parameter builds it untyped,
+			// since the binding only exists here. Convert it into the bound container type.
+			GDScriptCodeGenerator::Address generic_container_result;
+			if (call->convert_generic_container && result.mode == GDScriptCodeGenerator::Address::TEMPORARY && result.type.has_type() && result.type.has_container_element_type(0)) {
+				generic_container_result = result;
+				result = codegen.add_temporary();
+			}
+
 			Vector<GDScriptCodeGenerator::Address> arguments;
 			for (uint32_t i = 0; i < call->arguments.size(); i++) {
 				GDScriptCodeGenerator::Address arg = _parse_expression(codegen, r_error, call->arguments[i]);
@@ -886,6 +894,20 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				gen->write_assign_with_conversion(typed_result, result);
 				gen->pop_temporary(); // The untyped call result.
 				return typed_result;
+			}
+			if (generic_container_result.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+				// Build the bound container and copy the untyped one into it, converting as it goes.
+				if (generic_container_result.type.builtin_type == Variant::DICTIONARY) {
+					gen->write_construct_typed_dictionary(generic_container_result, generic_container_result.type.get_container_element_type_or_variant(0),
+							generic_container_result.type.get_container_element_type_or_variant(1), Vector<GDScriptCodeGenerator::Address>());
+				} else {
+					gen->write_construct_typed_array(generic_container_result, generic_container_result.type.get_container_element_type(0), Vector<GDScriptCodeGenerator::Address>());
+				}
+				Vector<GDScriptCodeGenerator::Address> assign_args;
+				assign_args.push_back(result);
+				gen->write_call_builtin_type(GDScriptCodeGenerator::Address(), generic_container_result, generic_container_result.type.builtin_type, SNAME("assign"), assign_args);
+				gen->pop_temporary(); // The untyped call result.
+				return generic_container_result;
 			}
 			return result;
 		} break;

@@ -1,6 +1,6 @@
 # Generics (roadmap item 6, second part)
 
-Status: increment 1 (generic functions) landed, plus the sound part of increment 3 (built-in container methods).
+Status: increments 1 (generic functions), 2 (containers of type parameters) and the sound part of 3 (built-in container methods) landed.
 
 ## Goal
 
@@ -34,11 +34,11 @@ var strings: Array[String] = make()
 ```
 
 So a generic function that *builds* a container cannot honestly claim to
-return `Array[T]`: what it actually built is an untyped `Array`. Making that
-work needs the bound types at runtime (reification), which is increment 2.
+return `Array[T]`: what it actually built is an untyped `Array`.
 
-Increment 1 therefore allows type parameters everywhere they are sound and
-rejects the one case that is not, with an error that says so.
+Increment 1 rejected that case. Increment 2 solves it at the **call site**
+instead of in the callee, which needs no runtime type information at all:
+see below.
 
 ## Syntax
 
@@ -67,19 +67,29 @@ func find_by[T](items: Array[T], pred: func(T) -> bool) -> T: ...
   binding. Assigning it to a `Variant` is allowed and unsafe, as usual.
 - `x is T` and `x as T` are errors: a type parameter has no runtime identity.
 
-## The restriction
+## Containers of type parameters
 
-A type parameter may not appear inside a container type in a **return**
-type, because the function would have to build that container without
-knowing the element type:
+A generic function may return `Array[T]` or `Dictionary[K, V]`. Inside the
+body the container it builds is untyped, because the binding does not exist
+there. The **caller** knows the binding, so the call site converts:
 
 ```
-func map[T, U](items: Array[T], f: func(T) -> U) -> Array[U]:   # error
+var out: Array[String] = map_all(nums, to_text)
 ```
 
-The error names increment 2 as the reason.
+compiles to the call, then an empty `Array[String]`, then `assign()` from
+the returned array, which converts element by element.
 
-Everywhere else it is fine. A parameter `Array[T]` matches a container the
+That costs one extra pass over the result, which is the same order as the
+work the function did to build it. In exchange there are no hidden
+arguments, no change to how functions are called, and no new opcodes, so a
+generic function is still an ordinary function that anything can call.
+
+If the function put the wrong type in, `assign()` reports it at the call
+line and leaves an empty container, rather than handing back something
+mistyped.
+
+Everywhere else a type parameter is fine. A parameter `Array[T]` matches a container the
 caller already built. A local `var seen: Array[T] = []` is sound too, even
 though the array it builds is untyped at runtime: the analyzer only lets
 values of type `T` into it, and it cannot escape into a concrete container,
@@ -134,6 +144,25 @@ drops the declared element type of a local initialised with an array literal
 completion on a generic call's result is only precise when the argument's
 element type survives. The analyzer itself is unaffected.
 
+## As built (increment 2)
+
+- The return-type restriction is gone. `reduce_call()` notices when the
+  declared return type mentions a type parameter inside a container and the
+  binding makes every element type concrete, and marks the call.
+- The compiler lands such a call in an untyped temporary, builds the bound
+  container, and calls `assign()` on it. `assign()` already exists for both
+  `Array` and `Dictionary`, converts elements, preserves the class name for
+  object elements and reports a genuine mismatch loudly. All of that was
+  checked against a running build before the design was chosen.
+- Rejected on the way: passing the bound types to the callee as hidden
+  arguments. It would avoid the copy, but it changes the arity of a generic
+  function, which then has to interact with `Callable`, dynamic calls,
+  virtual dispatch and varargs, and it invents a calling convention upstream
+  does not have. Monomorphising per binding was rejected too: a script in
+  another file can call a generic function with a binding the defining
+  script never saw, so the specialisations cannot all be known at compile
+  time.
+
 ## As built (increment 3, the sound part)
 
 The built-in container methods now keep their element types in the analyzer,
@@ -160,9 +189,7 @@ Two families are deliberately left as `Variant`:
 ## Increments
 
 1. Generic functions: binding, checking, substitution, the restriction.
-2. Reified type parameters, so a generic function can build typed
-   containers. Bound types are passed to the callee, which uses them where
-   it constructs. Unlocks `map`, `filter` and friends.
+2. Containers of type parameters, converted at the call site. Done.
 3. Generic inference for the built-in container methods, so `Array.map()`
    itself infers its result. Their signatures come from `MethodInfo`, which
    has no notion of type parameters, so this needs a table of the known

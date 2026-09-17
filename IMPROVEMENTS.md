@@ -436,17 +436,28 @@ Inside the function the type parameter is opaque: the body has to work for
 every possible `T`, so `T` has no members of its own. Reaching into one is
 an unsafe access, which strict mode turns into an error.
 
-**One limit for now.** A generic function cannot *return* a container of a
-type parameter:
+A generic function can also build and return collections, so the `map` and
+`filter` you would otherwise write once per element type can be written
+once:
 
 ```gdscript
-func map[T, U](items: Array[T], f: func(T) -> U) -> Array[U]:   # error
+func map_all[T, U](items: Array[T], f: func(T) -> U) -> Array[U]:
+    var out: Array[U] = []
+    for item in items:
+        out.append(f.call(item))
+    return out
+
+func _ready():
+    var nums: Array[int] = [1, 2, 3]
+    var words: Array[String] = map_all(nums, func(n: int) -> String: return "n%d" % n)
+    print(words)    # ["n1", "n2", "n3"], a real Array[String]
 ```
 
-Type parameters do not exist at runtime, so the function would have to build
-an `Array[U]` without knowing what `U` is. Returning the element type, or
-taking the container as a parameter, both work. Lifting this is the next
-step on the roadmap.
+The returned collection really carries its element type, so it can be passed
+straight into anything expecting `Array[String]`. Building it costs one
+extra pass over the result, because the element type is only known where the
+function is called. If a generic function puts the wrong type in, you get a
+clear error at the call, not a mistyped collection.
 
 ### Built-in container methods keep their types
 
@@ -518,11 +529,9 @@ structs is still to come.
 
 Next, in order:
 
-1. **Generic functions that build containers.** Today a generic function
-   cannot return `Array[T]`, because type parameters are erased. Passing the
-   bound types to the function at runtime lifts that, and unlocks `map` and
-   `filter` written in GDScript. After that: inference for the built-in
-   `Array.map()`, then generic classes.
+1. **Generic classes.** `class Pool[T]`, so a container or service can be
+   written once and keep its element type. Generic functions are done; this
+   is the remaining half of the feature.
 2. **Typed `PackedScene` exports.** `@export var enemy: PackedScene[Enemy]`,
    with the scene picker filtered to scenes whose root matches, so dropping
    the wrong scene into a slot is caught in the editor.

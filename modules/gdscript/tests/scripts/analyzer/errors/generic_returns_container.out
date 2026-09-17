@@ -1,2 +1,0 @@
-GDTEST_ANALYZER_ERROR
->> ERROR at line 1: A generic function cannot return "Array[U]": the type parameter is erased at runtime, so "map_all()" cannot build a container of it. Return the element type, or take the container as a parameter.

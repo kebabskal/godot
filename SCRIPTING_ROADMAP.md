@@ -336,6 +336,15 @@ group are independent and can proceed in any order.
   `null` on an empty container, and sharpening them would break the
   pop-until-empty loop. The same knowledge existed only in the completion
   guesser before.
+- 6, generic functions returning containers, landed. A generic function may
+  now return `Array[T]` / `Dictionary[K, V]`; the container it builds is
+  untyped inside the body, and the **call site** converts it into the bound
+  type with `assign()`, since that is where the binding is known. Costs one
+  extra pass over the result and nothing else: no hidden arguments, no
+  calling-convention change, no new opcodes, so a generic function stays an
+  ordinary function. A body that produces the wrong element type is reported
+  at the call line. Reification by hidden arguments and monomorphisation
+  were both considered and rejected; the reasons are in the design.
 - 12 (`for` with two variables) landed: `for key, value in dictionary`
   and `for index, item in` anything else, with optional types on both.
   The VM still yields one value per step; the compiler fills the other
