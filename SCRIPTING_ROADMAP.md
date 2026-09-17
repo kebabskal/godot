@@ -304,6 +304,12 @@ group are independent and can proceed in any order.
   dictionary (platform `get_memory_info` overrides). Next in (a):
   `Image.compute_image_metrics`, `Geometry2D.make_atlas`, the
   `GraphEdit` connection records, `ProjectSettings.get_global_class_list`.
+- 7 (traits): design in `TRAITS_DESIGN.md`. Upstream closed the big
+  mixin PR (#97657) and asked for a minimal version: inner traits,
+  `uses`, required bodyless methods, overriding. This fork builds that
+  subset with the same spelling: nominal conformance, traits as static
+  types for objects and structs, `is`/`as` through one runtime test,
+  name-based dispatch first. Default method bodies are increment 2.
 - Tooling parity is part of "done" for every language feature from
   here on. Checklist: parser/analyzer/compiler; class reference docs;
   editor completion (`gdscript_editor.cpp`: type names, class members,
