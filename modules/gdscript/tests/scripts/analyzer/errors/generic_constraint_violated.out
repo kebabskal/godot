@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 12: Type parameter "T" of "Registry" is bound to "Rock", which is not a "Named".

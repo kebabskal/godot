@@ -1778,7 +1778,7 @@ GDScriptParser::StructNode *GDScriptParser::parse_struct(bool p_is_static) {
 }
 
 // `[T, U]` after a class or function name.
-bool GDScriptParser::parse_type_parameters(LocalVector<IdentifierNode *> &r_type_parameters) {
+bool GDScriptParser::parse_type_parameters(LocalVector<TypeParameter> &r_type_parameters) {
 	if (!match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		return true;
 	}
@@ -1791,13 +1791,22 @@ bool GDScriptParser::parse_type_parameters(LocalVector<IdentifierNode *> &r_type
 			valid = false;
 			break;
 		}
-		IdentifierNode *type_parameter = parse_identifier();
-		if (get_builtin_type(type_parameter->name) < Variant::VARIANT_MAX) {
-			push_error(vformat(R"(Cannot use "%s" as a type parameter name: it is a built-in type.)", type_parameter->name), type_parameter);
+		TypeParameter type_parameter;
+		type_parameter.identifier = parse_identifier();
+		if (get_builtin_type(type_parameter.identifier->name) < Variant::VARIANT_MAX) {
+			push_error(vformat(R"(Cannot use "%s" as a type parameter name: it is a built-in type.)", type_parameter.identifier->name), type_parameter.identifier);
 		}
-		for (const IdentifierNode *other : r_type_parameters) {
-			if (other->name == type_parameter->name) {
-				push_error(vformat(R"(Type parameter "%s" was already declared here.)", type_parameter->name), type_parameter);
+		for (const TypeParameter &other : r_type_parameters) {
+			if (other.identifier->name == type_parameter.identifier->name) {
+				push_error(vformat(R"(Type parameter "%s" was already declared here.)", type_parameter.identifier->name), type_parameter.identifier);
+			}
+		}
+		if (match(GDScriptTokenizer::Token::COLON)) {
+			make_completion_context(COMPLETION_TYPE_NAME, type_parameter.identifier);
+			type_parameter.bound = parse_type();
+			if (type_parameter.bound == nullptr) {
+				push_error(vformat(R"(Expected a type after ":" to bound the type parameter "%s".)", type_parameter.identifier->name));
+				valid = false;
 			}
 		}
 		r_type_parameters.push_back(type_parameter);

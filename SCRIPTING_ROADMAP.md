@@ -609,6 +609,26 @@ group are independent and can proceed in any order.
   Method for next time: when a completion test fails, check what the guesser
   resolved before assuming the type is missing. Both wrong turns here would
   have been caught by asking "does this method even exist on that type".
+- Generic constraints landed (feedback item 3), design in `GENERICS_DESIGN.md`.
+  `class Registry[T: Named]` and `func label[T: Named](...)`, where the bound
+  is a trait, a script class or a native class. The bound is checked where the
+  argument is named (`Registry[Rock]` is an error at the annotation) and at a
+  call, where inference binds it. Inside the body a bounded `T` offers the
+  bound's members and is assignable to the bound; the other direction stays
+  closed, since a binding may be narrower. Why this was "necessary" rather
+  than nice: under strict mode reaching into an unbounded `T` is an error, so
+  without bounds a generic body could only pass values along. Tooling in the
+  same pass: completion of the bound after `[T: `, members of a bounded `T`
+  in completion and in hover/go-to-definition (one helper each, mirroring the
+  analyzer's), and the VS Code injection grammar, verified by tokenizing
+  `class Registry[T: Named]:` with vscode-textmate against the bundled
+  godot-tools grammar rather than by eye.
+  Not done: bounding one parameter by another (`[T, U: T]`), and multiple
+  bounds (`[T: Named & Damageable]`), which the trait system could express but
+  nothing has asked for. Noticed and left alone, pre-existing: in the bundled
+  VS Code grammar a type parameter *used* as a type (`item: T`) tokenizes as
+  `variable.other.constant`, since it looks like a constant to a static
+  grammar.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
@@ -640,7 +660,7 @@ work are recorded as such so they are not "fixed" twice.
 3. **Constraints are necessary, not optional.** `class Pool[T: RefCounted]` is
    a parse error. `GENERICS_DESIGN.md` said "worth having later"; use says
    otherwise, since without a bound a type parameter is opaque and the body
-   can do nothing with a `T` but pass it along. Traits are the natural bound.
+   can do nothing with a `T` but pass it along. Traits are the natural bound. **Done**, see Progress.
 4. **Signals in traits: already works.** Verified: a `signal` in a trait is
    added to every using class, and it connects and emits both on the concrete
    class and through a trait-typed value. Landed with the rest of trait

@@ -1141,8 +1141,8 @@ static void _list_available_types(bool p_inherit_only, GDScriptParser::Completio
 
 	// The type parameters of the generic function being written.
 	if (!p_inherit_only && p_context.current_function != nullptr) {
-		for (const GDScriptParser::IdentifierNode *type_parameter : p_context.current_function->type_parameters) {
-			EditorLanguage::CompletionOption option(type_parameter->name, EditorLanguage::CompletionKind::CLASS, EditorLanguage::CompletionLocation::LOCAL);
+		for (const GDScriptParser::TypeParameter &type_parameter : p_context.current_function->type_parameters) {
+			EditorLanguage::CompletionOption option(type_parameter.identifier->name, EditorLanguage::CompletionKind::CLASS, EditorLanguage::CompletionLocation::LOCAL);
 			r_result.insert(option.display, option);
 		}
 	}
@@ -1256,6 +1256,17 @@ static void _find_identifiers_in_suite(const GDScriptParser::SuiteNode *p_suite,
 	if (p_suite->parent_block) {
 		_find_identifiers_in_suite(p_suite->parent_block, r_result, p_recursion_depth + 1);
 	}
+}
+
+// Same rule the analyzer uses: a value of type `T` offers what its bound offers, since that is
+// what the bound promises. An unbounded type parameter has nothing to show.
+static GDScriptParser::DataType _type_parameter_lookup_base(const GDScriptParser::DataType &p_type) {
+	if (p_type.kind == GDScriptParser::DataType::TYPE_PARAMETER && p_type.has_type_param_bound()) {
+		GDScriptParser::DataType bound = p_type.get_type_param_bound();
+		bound.is_meta_type = p_type.is_meta_type;
+		return bound;
+	}
+	return p_type;
 }
 
 static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base, bool p_only_functions, bool p_types_only, bool p_add_braces, HashMap<String, EditorLanguage::CompletionOption> &r_result, int p_recursion_depth);
@@ -1393,7 +1404,7 @@ static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class,
 static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base, bool p_only_functions, bool p_types_only, bool p_add_braces, HashMap<String, EditorLanguage::CompletionOption> &r_result, int p_recursion_depth) {
 	ERR_FAIL_COND(p_recursion_depth > COMPLETION_RECURSION_LIMIT);
 
-	GDScriptParser::DataType base_type = p_base.type;
+	GDScriptParser::DataType base_type = _type_parameter_lookup_base(p_base.type);
 
 	if (!p_types_only && base_type.is_meta_type && base_type.kind != GDScriptParser::DataType::BUILTIN && base_type.kind != GDScriptParser::DataType::ENUM) {
 		EditorLanguage::CompletionOption option("new", EditorLanguage::CompletionKind::FUNCTION, EditorLanguage::CompletionLocation::LOCAL);
@@ -4248,7 +4259,7 @@ void GDScriptEditorLanguage::format_code(String &r_code, uint32_t p_from_line, u
 }
 
 static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, const String &p_symbol, EditorLanguage::LookupResult &r_result) {
-	GDScriptParser::DataType base_type = p_base;
+	GDScriptParser::DataType base_type = _type_parameter_lookup_base(p_base);
 
 	while (true) {
 		switch (base_type.kind) {

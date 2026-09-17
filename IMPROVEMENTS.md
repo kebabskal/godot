@@ -552,6 +552,37 @@ What is not checked is the binding against the annotation: because
 `Tiles.new(...)` carries no arguments of its own, a
 `var t: Tiles[Other] = Tiles.new(() => Tile.new())` is accepted today.
 
+A type parameter can be **bounded**, which is what lets the class do anything
+with the values it holds:
+
+```gdscript
+trait Named:
+    func get_name() -> String
+
+class Registry[T: Named]:
+    var items: Array[T] = []
+
+    func add(item: T) -> void:
+        items.append(item)
+        print("added ", item.get_name())   # allowed: every T is a Named
+
+func _ready():
+    var people: Registry[Person] = Registry.new()
+    people.add(Person.new())
+
+    var rocks: Registry[Rock] = Registry.new()
+    # error: Type parameter "T" of "Registry" is bound to "Rock", which is not a "Named".
+```
+
+The bound can be a trait, one of your classes, or an engine class
+(`[T: Node2D]` lets the body read `item.position`). Without a bound a type
+parameter is opaque: you can store it and hand it back, but not call anything
+on it, and under strict mode reaching into one is an error. A bounded `T` also
+goes wherever the bound goes, so `var named: Named = item` is fine; the
+reverse is not, because the binding may be narrower than the bound.
+
+Functions take bounds too: `func label[T: Named](item: T) -> String`.
+
 A method returning `Array[T]` gives the caller a real `Array[T]`, built at
 the call, so it is a copy rather than a reference to the class's own array.
 A `var items: Array[T]` read from outside the class is a plain `Array`: the

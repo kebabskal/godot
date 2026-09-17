@@ -92,10 +92,15 @@
 					"name": "punctuation.separator.typeparameters.gdscript"
 				},
 				{
+					"match": ":",
+					"name": "punctuation.separator.type.gdscript"
+				},
+				{
 					"match": "\\b[A-Za-z_]\\w*\\b",
 					"name": "entity.name.type.gdscript"
 				}
-			]
+			],
+			"comment": "A type parameter and, after `:`, its bound. Both are type names."
 		},
 		"struct_declaration": {
 			"match": "^\\s*(struct)\\s+([A-Za-z_]\\w*)",

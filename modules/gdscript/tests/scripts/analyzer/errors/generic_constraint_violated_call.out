@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 9: Type parameter "T" is bound to "int", which is not a "Named".

@@ -146,6 +146,15 @@ public:
 		StructNode *struct_type = nullptr; // For `BUILTIN` with `builtin_type == Variant::STRUCT`.
 		Ref<StructLayout> struct_layout; // Same; the runtime identity of the struct type.
 		StringName type_param_name; // For `TYPE_PARAMETER`.
+		// `T: Node`. A Vector because a DataType cannot hold itself by value; at most one entry.
+		Vector<DataType> type_param_bound;
+
+		bool has_type_param_bound() const { return !type_param_bound.is_empty(); }
+		const DataType &get_type_param_bound() const { return type_param_bound[0]; }
+		void set_type_param_bound(const DataType &p_bound) {
+			type_param_bound.clear();
+			type_param_bound.push_back(p_bound);
+		}
 		TraitNode *trait_type = nullptr; // For `TRAIT`.
 		StringName trait_name; // Same; `script_path::Name`, the runtime identity of the trait.
 		// For `BUILTIN` with `builtin_type == Variant::CALLABLE`: a typed callable, `func(A, B) -> R`.
@@ -306,6 +315,7 @@ public:
 			struct_type = p_other.struct_type;
 			struct_layout = p_other.struct_layout;
 			type_param_name = p_other.type_param_name;
+			type_param_bound = p_other.type_param_bound;
 			trait_type = p_other.trait_type;
 			trait_name = p_other.trait_name;
 			has_callable_signature = p_other.has_callable_signature;
@@ -324,6 +334,14 @@ public:
 		}
 
 		~DataType() {}
+	};
+
+	// `T` or `T: Bound` in `class Pool[T]` / `func pick[T](...)`. The bound is what makes a type
+	// parameter usable: without one it is opaque, so the body can only pass the value along.
+	struct TypeParameter {
+		IdentifierNode *identifier = nullptr;
+		TypeNode *bound = nullptr; // Null when the parameter is unbounded.
+		DataType bound_type; // Resolved by the analyzer; unset when there is no bound.
 	};
 
 	struct ParserError {
@@ -906,7 +924,7 @@ public:
 		HashMap<StringName, uint32_t> members_indices;
 		ClassNode *outer = nullptr;
 		bool extends_used = false;
-		LocalVector<IdentifierNode *> type_parameters; // `class Pool[T]:`, erased at runtime like a generic function's.
+		LocalVector<TypeParameter> type_parameters; // `class Pool[T]:`, erased at runtime like a generic function's.
 		Vector<TypeNode *> used_traits; // `uses A, B` statements.
 		Vector<DataType> used_trait_types; // Resolved by the analyzer, same order; unset entries failed.
 		Vector<FunctionNode *> trait_default_methods; // Default methods of used traits that no class in the chain implements; compiled into this class.
@@ -1038,7 +1056,7 @@ public:
 		HashMap<StringName, uint32_t> parameters_indices;
 		ParameterNode *rest_parameter = nullptr;
 
-		LocalVector<IdentifierNode *> type_parameters; // `func name[T, U](...)`: erased at runtime.
+		LocalVector<TypeParameter> type_parameters; // `func name[T, U](...)`: erased at runtime.
 		TypeNode *return_type = nullptr;
 		DataType return_type_constraint;
 
@@ -1848,7 +1866,7 @@ private:
 	ExpressionNode *parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
 	// `[T, U]` after a class or function name. Returns false if the list is malformed.
-	bool parse_type_parameters(LocalVector<IdentifierNode *> &r_type_parameters);
+	bool parse_type_parameters(LocalVector<TypeParameter> &r_type_parameters);
 	// `item => item.name`: a lambda whose body is one expression.
 	ExpressionNode *parse_arrow_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
 	// Builds the lambda once the parameters are known and `=>` has been consumed.

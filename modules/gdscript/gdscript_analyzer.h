@@ -201,7 +201,7 @@ class GDScriptAnalyzer {
 	GDScriptParser::DataType type_from_property_hint_string(const String &p_type_name) const;
 	GDScriptParser::DataType type_from_property(const PropertyInfo &p_property, bool p_is_arg, const GDScriptParser::Node *p_source) const;
 	GDScriptParser::DataType make_global_class_meta_type(const StringName &p_class_name, const GDScriptParser::Node *p_source) const;
-	bool get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor, GDScriptParser::DataType base_type, const StringName &p_function, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, StringName *r_native_class = nullptr, Vector<StringName> *r_type_parameters = nullptr);
+	bool get_function_signature(GDScriptParser::Node *p_source, bool p_is_constructor, GDScriptParser::DataType base_type, const StringName &p_function, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, StringName *r_native_class = nullptr, Vector<GDScriptParser::TypeParameter> *r_type_parameters = nullptr);
 	bool function_signature_from_info(const MethodInfo &p_info, GDScriptParser::DataType &r_return_type, List<GDScriptParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, const GDScriptParser::Node *p_source);
 	void validate_call_arg(const List<GDScriptParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const GDScriptParser::CallNode *p_call);
 	void validate_call_arg(const MethodInfo &p_method, const GDScriptParser::CallNode *p_call);
@@ -243,6 +243,9 @@ public:
 
 	// Generic functions. Type parameters are erased at runtime; these only steer the analyzer.
 	// Binds the type parameters in `p_param` by matching it against an argument's type.
+	GDScriptParser::TypeParameter *find_type_parameter(const StringName &p_name);
+	void resolve_type_parameter_bound(GDScriptParser::TypeParameter &p_type_parameter);
+	void resolve_type_parameter_bounds(LocalVector<GDScriptParser::TypeParameter> &p_type_parameters);
 	static void bind_type_parameters(const GDScriptParser::DataType &p_param, const GDScriptParser::DataType &p_arg, HashMap<StringName, GDScriptParser::DataType> &r_bindings);
 	// Replaces every type parameter in `p_type` with its binding (unbound ones become `Variant`).
 	// With `p_keep_unbound`, a type parameter with no binding is left alone instead of becoming

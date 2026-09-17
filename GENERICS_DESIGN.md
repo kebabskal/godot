@@ -1,6 +1,6 @@
 # Generics (roadmap item 6, second part)
 
-Status: all four increments landed: generic functions, containers of type parameters, the sound part of the built-in container methods, and generic classes.
+Status: all five increments landed: generic functions, containers of type parameters, the sound part of the built-in container methods, generic classes, and constraints.
 
 ## Goal
 
@@ -61,10 +61,12 @@ func find_by[T](items: Array[T], pred: func(T) -> bool) -> T: ...
   `Array[int]` and a `String` where both are `T` is an error.
 - **Result.** The call's type is the return type with the bindings applied,
   which is the whole point: `first(scores)` is an `int`.
-- **Inside the body** a type parameter is opaque. A value of type `T` can be
-  passed where `T` is expected, stored in a `T` variable and returned, but it
-  has no members and no operators: the function must work for every possible
-  binding. Assigning it to a `Variant` is allowed and unsafe, as usual.
+- **Inside the body** an *unbounded* type parameter is opaque. A value of type
+  `T` can be passed where `T` is expected, stored in a `T` variable and
+  returned, but it has no members and no operators: the function must work for
+  every possible binding. Assigning it to a `Variant` is allowed and unsafe, as
+  usual. A **bounded** one (`[T: Named]`) answers with its bound's members
+  instead; see "constraints" below.
 - `x is T` and `x as T` are errors: a type parameter has no runtime identity.
 
 ## Containers of type parameters
@@ -236,11 +238,53 @@ var ints: Pool[int] = Pool.new()
    has no notion of type parameters, so this needs a table of the known
    generic built-ins.
 4. Generic classes. Done.
+5. Constraints (`[T: Named]`), so a body can use what it holds. Done.
+
+## As built (increment 5, constraints)
+
+```
+trait Named:
+    func get_name() -> String
+
+class Registry[T: Named]:
+    func add(item: T) -> void:
+        print(item.get_name())     # the bound is what makes this legal
+
+var people: Registry[Person] = Registry.new()
+var rocks: Registry[Rock] = Registry.new()   # error: "Rock" is not a "Named"
+```
+
+Written as `[T: Bound]` on a class or a function. The bound may be a trait, a
+script class or a native class; it may not be another type parameter, since
+that would need a resolution order the analyzer does not have.
+
+What a bound buys, and the reason this stopped being optional: an unbounded
+type parameter is opaque, so a body can only pass the value along. Under
+strict mode reaching into one is an error outright ("the method is not present
+on the inferred type"). With a bound, `T` answers with the bound's members and
+goes wherever the bound goes, so generic code can actually do something.
+
+- **Checked in two places.** Where the argument is named
+  (`Registry[Rock]`), so the error points at the annotation rather than at the
+  first line inside the class that fails; and at a call, where inference binds
+  the parameter (`label(5)` on `func label[T: Named]`).
+- **One direction only.** A `T` bounded by `Named` is assignable to `Named`,
+  because the bound is a promise the binding had to keep. `Named` is *not*
+  assignable to `T`: the binding may be narrower than the bound.
+- **Lookup goes through the bound**, in the analyzer and in the editor, so
+  completion, hover and go-to-definition on a `T` value show the bound's
+  members. Same rule in both places, spelled as one small helper each.
+- Bounds are resolved lazily, when the parameter name first resolves as a
+  type. `check_type_compatibility()` is static and cannot resolve anything, so
+  the bound has to be on the `DataType` by the time any compatibility question
+  is asked; it is, because the type has to be resolved before it can be
+  compared.
+- Trap, the same one the struct work hit: `DataType` has a hand-written copy
+  assignment, so the new `type_param_bound` field had to be added there too or
+  every copy would silently drop the bound.
 
 ## Not doing
 
-- Constraints (`T: Node`). Worth having later; traits are the natural
-  spelling once there is a reason.
 - Explicit type arguments at the call site (`first[int](x)`). Inference
   covers the cases that motivated this, and the syntax collides with
   indexing.
