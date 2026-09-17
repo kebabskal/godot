@@ -520,6 +520,38 @@ func _ready():
 is no separate construction syntax. The bindings are exact: a `Pool[String]`
 is not a `Pool[int]`, and mixing them is an error that names both.
 
+A constructor can use the type parameter as well, and its arguments bind it,
+so a `func() -> T` parameter is checked against what you actually pass:
+
+```gdscript
+class Tiles[T]:
+    var items: Array[T] = []
+
+    func _init(create: func() -> T) -> void:
+        items.append(create.call())
+
+    func first() -> T:
+        return items[0]
+
+func _ready():
+    var tiles: Tiles[Tile] = Tiles.new(() => Tile.new())
+    print(tiles.first().name)
+```
+
+Where two arguments have to agree, disagreeing is an error:
+
+```gdscript
+class Pair[T]:
+    func _init(first: T, second: T) -> void:
+        print(first, second)
+
+Pair.new(1, "two")   # error: argument 2 should be "int" but is "String"
+```
+
+What is not checked is the binding against the annotation: because
+`Tiles.new(...)` carries no arguments of its own, a
+`var t: Tiles[Other] = Tiles.new(() => Tile.new())` is accepted today.
+
 A method returning `Array[T]` gives the caller a real `Array[T]`, built at
 the call, so it is a copy rather than a reference to the class's own array.
 A `var items: Array[T]` read from outside the class is a plain `Array`: the
@@ -565,6 +597,26 @@ That works for a named function too (`nums.map(to_text)`). `map` builds an
 untyped array internally, so the typed one is produced where the call
 happens, which costs one extra pass over the result. If the lambda returns
 something that does not fit, you get a clear error at the call.
+
+### Signal handlers are typed too
+
+A signal's declared parameters reach the lambda you connect to it, so the
+short form keeps its types there as well:
+
+```gdscript
+signal hit(damage: int, who: String)
+signal healed(amount: int)
+
+func _ready():
+    hit.connect((d, w) => print(w, " took ", d * 2))
+    healed.connect(a => print("healed ", a * 2))
+
+    healed.connect(a => a.to_upper())   # error: "to_upper" not found in base "int"
+```
+
+This works for the engine's own signals too, so `child_entered_tree.connect(n => ...)`
+gives you a `Node`. Writing a parameter type by hand still wins, and a plain
+`Callable` variable is connected unchecked as before.
 
 ## `for` loops with two variables
 
@@ -729,7 +781,9 @@ Next, in order:
 1. **Typed `PackedScene` exports.** `@export var enemy: PackedScene[Enemy]`,
    with the scene picker filtered to scenes whose root matches, so dropping
    the wrong scene into a slot is caught in the editor.
-2. **Typed signals**, checked at `emit` and `connect`.
+2. **Typed signals**: connecting already types the handler (above); what is
+   left is checking the arguments of `emit` and rejecting a handler whose
+   signature does not fit.
 3. **Enums as real types**, with methods and exhaustive `match`.
 4. **Multiple return values**, including `if var ok, value := parse(text):`
    for error handling.
