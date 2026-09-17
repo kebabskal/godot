@@ -1,6 +1,6 @@
 # Traits (roadmap item 7)
 
-Status: design draft. Increment 1 in progress.
+Status: increment 1 landed (interfaces). Default methods are next.
 
 ## Goal
 
@@ -112,6 +112,32 @@ traits (`trait_name` files) are out of scope for now.
 3. Other members as upstream settles them: required properties, signals,
    constants; traits using traits; global `trait_name` files.
 4. Interface method tables for direct dispatch, if profiles ask for it.
+
+## As built (increment 1)
+
+- Parser: `TraitNode` as a class member; `uses` is contextual in class
+  and struct bodies and parses a list of types; trait functions reuse
+  `parse_function`, where a missing `:` already means "no body".
+- Analyzer: `DataType::TRAIT` with `trait_type` and `trait_name`
+  (`class fqcn::Name`). `uses` lists resolve with the type itself (end of
+  class inheritance resolution, end of `resolve_struct`), because
+  `check_type_compatibility()` is static and can only read them.
+  Conformance runs once all member signatures are resolved, through
+  `get_function_signature()`, so inherited script methods and native
+  methods count. Calls on a trait-typed base get their signature from the
+  trait (`get_function_signature` TRAIT branch). `is` / `as` with a trait
+  on either side are left to runtime unless the other side is a plain
+  built-in type.
+- Runtime: `GDScript::traits` plus `uses_trait()` walking the base chain,
+  `StructLayout::add_trait` / `has_trait` (filled by the analyzer on the
+  layout it creates), `OPCODE_TYPE_TEST_TRAIT` through `_trait_test()`.
+  `as` is the test plus a conditional null. Trait-typed slots compile to
+  Variant slots; a struct passed to a trait-typed parameter is a copy, and
+  a mutating method called through the trait changes that copy.
+- Tooling: trait names complete as types and members, a trait-typed value
+  completes the trait's methods only, lookup goes to the signature, the
+  language server reports `Interface` symbols and a `traits` / `uses`
+  section in the script API.
 
 ## Not doing
 

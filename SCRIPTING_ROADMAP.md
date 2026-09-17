@@ -310,6 +310,19 @@ group are independent and can proceed in any order.
   subset with the same spelling: nominal conformance, traits as static
   types for objects and structs, `is`/`as` through one runtime test,
   name-based dispatch first. Default method bodies are increment 2.
+  Increment 1 landed: `trait Name:` with required (bodyless) methods,
+  contextual `uses A, B` in classes and struct bodies, conformance
+  errors at the `uses` line (missing method, parameter count, narrower
+  parameter, wider return), traits as types for variables, parameters,
+  returns and typed arrays, subclass inheritance of traits, and
+  `is` / `as` at runtime for objects and structs through
+  `OPCODE_TYPE_TEST_TRAIT`. Trait-typed slots are Variant slots with no
+  runtime validation on assignment (typed code is checked statically;
+  strict mode makes all code typed). Tooling done per the checklist
+  except the class reference, which has nowhere to document a script
+  keyword. Trap: `check_type_compatibility()` is static, so anything it
+  consults (`uses` lists) must be resolved eagerly with the type. Next:
+  default method bodies, then required properties.
 - Tooling parity is part of "done" for every language feature from
   here on. Checklist: parser/analyzer/compiler; class reference docs;
   editor completion (`gdscript_editor.cpp`: type names, class members,
