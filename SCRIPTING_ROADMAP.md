@@ -735,6 +735,32 @@ group are independent and can proceed in any order.
   list next to `trait_default_methods`, resolved in the trait's context and
   compiled into every using class that does not define it, plus an error for
   structs, which have fields rather than properties.
+- Qualified generic types (`Lib.Pool[int]`) landed, which was a real hole
+  rather than a new feature: `parse_type()` parsed `[...]` only straight after
+  the *first* identifier and returned, so the arguments could never attach to a
+  dotted name. A generic class in another file was therefore unusable -- the
+  annotation was a syntax error, and without one the call `p.add(7)` failed with
+  `argument 1 should be "T" but is "int"`. The chain is now parsed first and the
+  arguments attach to the whole name, so `Array[int]` is unchanged and
+  `Lib.Pool[int]` works, with the binding enforced across files. Found while
+  answering whether a "module" file could hold generics.
+  Context for the rest of feedback item 9, from the discussion that turned it
+  around: a generic `class_name` is the wrong shape, because the editor cannot
+  offer a node type that still needs arguments. Naming a *specialisation* is the
+  right shape -- `class_name CertainTileMap extends TileMap[CertainTile]` has no
+  type parameters, so it behaves like any other class in a node slot or an
+  export. That needs `extends` to accept arguments (parser) and member lookup to
+  carry the base's bindings along the class chain (analyzer); today they are
+  only applied to access through an annotated value.
+  Also settled by testing: the "module file" half largely exists already. A
+  `.gd` file holding traits, enums, generic classes and inner classes is reached
+  as `Lib.Damageable`, `Lib.Element.ICE`, `Lib.Pool[int]`, either through
+  `preload` or through `class_name` in a scanned project, which is what
+  `TRAITS_DESIGN.md` already recommends instead of `trait_name` files. Marking
+  such a file `@abstract` stops it being instantiated. What Godot has no concept
+  of is a file that is *not* a class: one file is one class, and the global
+  registry maps a name to a script, so a true namespace would need a new
+  registry rather than a parser change. Not attempted.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

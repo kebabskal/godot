@@ -605,6 +605,37 @@ reverse is not, because the binding may be narrower than the bound.
 
 Functions take bounds too: `func label[T: Named](item: T) -> String`.
 
+A generic class in another file is named through the chain, so one file can
+hold the shared traits, enums and containers a project uses:
+
+```gdscript
+# lib.gd
+@abstract
+class_name Lib
+extends RefCounted
+
+enum Element { FIRE, ICE }
+
+trait Damageable:
+    func take_damage(amount: int) -> void
+
+class Pool[T]:
+    var items: Array[T] = []
+    func add(item: T) -> void: items.append(item)
+```
+
+```gdscript
+var numbers: Lib.Pool[int] = Lib.Pool.new()
+numbers.add(7)
+numbers.add("no")        # error: argument 1 should be "int" but is "String"
+
+var target: Lib.Damageable = some_node
+print(Lib.Element.ICE)
+```
+
+`@abstract` keeps the file from being instantiated, which is what you want for
+one that exists only to hold declarations.
+
 A bound can also list alternatives, which is how generic arithmetic is
 written: `int`, `float` and `Vector2` share no named type, but they all
 support `+`.

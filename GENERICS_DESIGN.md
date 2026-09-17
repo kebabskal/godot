@@ -234,7 +234,16 @@ var ints: Pool[int] = Pool.new()
   spelling is not available**: `new()` with no base is already valid GDScript
   and constructs the *enclosing script*, verified by running it, so
   repurposing it would silently change what existing code means.
-- Generic global classes (`class_name`), and `extends Pool[int]`.
+- Generic global classes (`class_name`) and `extends Pool[int]`. Both are about
+  giving a *specialisation* a name the editor can handle, which is the better
+  shape than a generic `class_name`: `class_name IntPool extends Pool[int]` has
+  no type parameters of its own, so a node slot or an export can accept it like
+  any other class. `extends` does not take arguments yet, and inheriting them
+  also needs member lookup to carry the base's bindings along the class chain,
+  where today they are only applied to access through an annotated value
+  (`member_type_for_base()`).
+- A qualified generic type (`Lib.Pool[int]`) **is** supported now; it was not,
+  which quietly made generic classes usable only inside their own file.
 
 ## Increments
 

@@ -4268,8 +4268,21 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 
 	type->type_chain.push_back(type_element);
 
+	// The dotted chain comes first, so the arguments below attach to the *whole* name. Parsing them
+	// right after the first identifier made `Lib.Pool[int]` a syntax error, which left a generic
+	// class usable only inside its own file.
+	int chain_index = 1;
+	while (match(GDScriptTokenizer::Token::PERIOD)) {
+		make_completion_context(COMPLETION_TYPE_ATTRIBUTE, type, chain_index++);
+		if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected inner type name after ".".)")) {
+			type_element = parse_identifier();
+			type->type_chain.push_back(type_element);
+		}
+	}
+
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
-		// Typed collection (like Array[int], Dictionary[String, int]).
+		// Typed collection (like Array[int], Dictionary[String, int]), or the arguments of a
+		// generic class (`Pool[int]`, `Lib.Pool[int]`).
 		bool first_pass = true;
 		do {
 			TypeNode *container_type = parse_type(false); // Don't allow void for element type.
@@ -4291,15 +4304,6 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 			complete_extents(type);
 		}
 		return type;
-	}
-
-	int chain_index = 1;
-	while (match(GDScriptTokenizer::Token::PERIOD)) {
-		make_completion_context(COMPLETION_TYPE_ATTRIBUTE, type, chain_index++);
-		if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected inner type name after ".".)")) {
-			type_element = parse_identifier();
-			type->type_chain.push_back(type_element);
-		}
 	}
 
 	type->is_nullable = match(GDScriptTokenizer::Token::QUESTION_MARK);
