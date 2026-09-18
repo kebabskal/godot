@@ -811,6 +811,28 @@ group are independent and can proceed in any order.
   cold, exited 0 with no crash in the log, so it is recorded rather than
   explained away. Worth watching if it recurs when several new `class_name`
   files appear at once.
+- Trait-provided properties landed, the second half of feedback item 5, so a
+  derived value in a trait no longer has to be a method:
+  `trait Mortal: var is_alive: bool: get: return hp > 0`. Built as the
+  property-shaped twin of a default method, and that choice is what makes it
+  sound: the accessors are analyzed once in the trait's context, so `hp` is a
+  by-name `self` access and one compiled accessor is right in every using
+  class even though `hp` sits at a different member index in each (checked
+  with two classes that place it differently). The alternative, injecting the
+  property into each class's member list, looked simpler and was rejected on
+  exactly that point: a shared node resolved in class context would carry the
+  *first* class's member index into every other one. Design and the rest of
+  the rules are in `TRAITS_DESIGN.md`.
+  One footgun found by testing rather than by reading, and fixed: a property
+  with only a getter accepted `guy.is_alive = false`, which wrote a slot every
+  read bypasses, so the assignment appeared to work and did nothing. It is now
+  read-only through the flag native getter-only properties already use.
+  Tooling turned up a pre-existing gap wider than this feature: nothing a trait
+  contributes to a class -- default methods included -- was offered by
+  completion on a class value or inside the class, and hover and
+  go-to-definition walked past it. Both are fixed for everything a trait
+  contributes, and the new LSP fixture markers were checked to fail with the
+  lookup fix removed, so they are not decoration.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
@@ -851,8 +873,8 @@ work are recorded as such so they are not "fixed" twice.
    class and through a trait-typed value. Landed with the rest of trait
    increment 3; no work needed. What traits cannot do is *require* a signal of
    the using class, which is a different feature and has not been asked for.
-5. **Accessor defaults in traits.** *(First half done: the one-line accessor
-   form, see Progress. The trait half is still open.)* Asked for `var is_alive: get(): return hp > 1`
+5. **Accessor defaults in traits.** *(Done: the one-line accessor form and
+   trait-provided properties, see Progress.)* Asked for `var is_alive: get(): return hp > 1`
    in a trait, so a derived property does not have to be a method. Two separate
    gaps: a trait may not declare a property with an accessor body at all
    (traits hold no state, and required properties must be matched exactly by

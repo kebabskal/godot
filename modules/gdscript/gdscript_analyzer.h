@@ -57,6 +57,7 @@ class GDScriptAnalyzer {
 	bool static_context = false;
 	GDScriptParser::StructNode *current_struct = nullptr; // Set while resolving a struct method: `self` is the struct value and bare field names are its fields.
 	GDScriptParser::TraitNode *current_trait = nullptr; // Set while resolving a trait's default method: `self` is the trait type, so only the trait's methods exist on it.
+	const GDScriptParser::VariableNode *current_trait_property = nullptr; // Set while resolving the accessors of a property a trait provides.
 
 	// Tests for detecting invalid overloading of script members
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_script_class(const StringName &p_name, const GDScriptParser::ClassNode *p_current_class_node, const GDScriptParser::Node *p_member);
@@ -92,6 +93,7 @@ class GDScriptAnalyzer {
 	// The type of an instance property of the class: a member variable of the chain, a property of
 	// a script base, or a native property.
 	bool find_class_property_type(GDScriptParser::ClassNode *p_class, const StringName &p_name, GDScriptParser::DataType &r_type);
+	static bool base_chain_gets_trait_property(const GDScriptParser::ClassNode *p_class, const StringName &p_name);
 	void check_property_conforms(const GDScriptParser::VariableNode *p_required, const GDScriptParser::TraitNode *p_trait, bool p_found, const GDScriptParser::DataType &p_actual, const String &p_who, const GDScriptParser::Node *p_source);
 	// Resolves a `uses` list; entries that are not traits are reported and left unset.
 	void resolve_used_traits(const Vector<GDScriptParser::TypeNode *> &p_used_traits, Vector<GDScriptParser::DataType> &r_types);

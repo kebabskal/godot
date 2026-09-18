@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 10: Class "Lich" gets the property "is_alive" from two traits. Declare it in the class to choose.

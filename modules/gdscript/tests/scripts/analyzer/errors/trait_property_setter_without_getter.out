@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 3: Trait property "health" has a setter but no getter. A trait has nowhere to keep the value, so it has to say how to read it.

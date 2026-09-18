@@ -3456,6 +3456,28 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 		}
 	}
 
+	// Properties used traits provide with inline accessors. Registered like a member variable of
+	// this class, so everything that finds members by name, the fast paths included, sees them;
+	// every read and write goes through an accessor.
+	for (const GDScriptParser::VariableNode *property : p_class->trait_default_properties) {
+		const StringName name = property->identifier->name;
+		GDScript::MemberInfo minfo;
+		if (property->getter != nullptr) {
+			minfo.getter = "@" + name + "_getter";
+		}
+		if (property->setter != nullptr) {
+			minfo.setter = "@" + name + "_setter";
+		}
+		minfo.data_type = _gdtype_from_datatype(property->type_constraint, p_script);
+		PropertyInfo prop_info = property->type_constraint.to_property_info(name);
+		prop_info.usage |= PROPERTY_USAGE_SCRIPT_VARIABLE;
+		minfo.property_info = prop_info;
+		minfo.name = name;
+		minfo.index = p_script->member_indices.size();
+		p_script->member_indices[name] = minfo;
+		p_script->members.insert(name);
+	}
+
 	p_script->static_variables.resize(p_script->static_variables_indices.size());
 
 	parsed_classes.insert(p_script);
@@ -3550,6 +3572,16 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 		_parse_function(err, p_script, p_class, method);
 		if (err) {
 			return err;
+		}
+	}
+
+	// Accessors of properties used traits provide; analyzed once, in the trait's context.
+	for (const GDScriptParser::VariableNode *property : p_class->trait_default_properties) {
+		if (property->setter != nullptr) {
+			RETURN_IF_ERROR(_parse_setter_getter(p_script, p_class, property, true));
+		}
+		if (property->getter != nullptr) {
+			RETURN_IF_ERROR(_parse_setter_getter(p_script, p_class, property, false));
 		}
 	}
 

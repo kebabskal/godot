@@ -360,6 +360,46 @@ class Person:
     uses Lib.Greeter
 ```
 
+### Properties a trait provides
+
+A trait property with an accessor is one the trait supplies, so a derived
+value does not have to be a method:
+
+```gdscript
+trait Mortal:
+    var hp: int                                  # required: the class declares it
+    var is_alive: bool: get: return hp > 0       # provided by the trait
+    var health: int:
+        get:
+            return hp
+        set(value):
+            hp = clampi(value, 0, 100)
+
+class Guy:
+    uses Mortal
+    var hp: int = 5
+
+func _ready():
+    var guy := Guy.new()
+    print(guy.is_alive)      # true
+    guy.health = 500
+    print(guy.hp)            # 100
+```
+
+It works on the class value, inside the class, and through a `Mortal`-typed
+value. A class that declares the property itself keeps its own.
+
+A trait still holds no state, so a provided property has none either: its
+accessors cannot read or write it, a setter needs a getter, and a property
+with only a getter is read-only:
+
+```gdscript
+guy.is_alive = false   # error: Cannot assign a new value to a read-only property.
+```
+
+Structs cannot use such a trait, since a struct has fields rather than
+properties.
+
 ---
 
 ## Typed Callables

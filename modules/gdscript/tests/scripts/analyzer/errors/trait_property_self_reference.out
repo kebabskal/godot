@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 2: Trait property "count" has no storage of its own, so its accessors cannot read or write it. Keep the value in a property of the type that uses the trait.

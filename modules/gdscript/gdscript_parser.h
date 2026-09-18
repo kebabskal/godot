@@ -932,6 +932,7 @@ public:
 		Vector<DataType> used_trait_types; // Resolved by the analyzer, same order; unset entries failed.
 		Vector<FunctionNode *> trait_default_methods; // Default methods of used traits that no class in the chain implements; compiled into this class.
 		Vector<SignalNode *> trait_signals; // Signals of used traits that no class in the chain declares; added to this class.
+		Vector<VariableNode *> trait_default_properties; // Properties used traits provide with inline accessors, that no class in the chain declares; compiled into this class.
 		bool onready_used = false;
 		bool is_abstract = false;
 		bool has_static_data = false;

@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: Struct "Blob" cannot use trait "Mortal": it provides the property "is_alive" with an accessor, and a struct has fields, not properties.

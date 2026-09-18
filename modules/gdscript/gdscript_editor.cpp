@@ -1383,6 +1383,48 @@ static void _find_identifiers_in_class(const GDScriptParser::ClassNode *p_class,
 				}
 				r_result.insert(option.display, option);
 			}
+			if (!outer && !p_types_only) {
+				// What the class's traits contribute: default methods, provided properties and signals are
+				// compiled into the class without being members of its node, so the loop above misses
+				// them. Required members are declared by the class and already listed; the map dedupes.
+				const int location = p_recursion_depth == 0 ? classes_processed : (p_recursion_depth | EditorLanguage::CompletionLocation::PARENT_MASK);
+				for (const GDScriptParser::DataType &used : clss->used_trait_types) {
+					if (used.kind != GDScriptParser::DataType::TRAIT || used.trait_type == nullptr) {
+						continue;
+					}
+					Vector<const GDScriptParser::TraitNode *> closure;
+					GDScriptAnalyzer::collect_trait_closure(used.trait_type, closure);
+					for (const GDScriptParser::TraitNode *trait : closure) {
+						for (const GDScriptParser::FunctionNode *method : trait->methods) {
+							if (method->identifier == nullptr || method->is_static || p_static) {
+								continue;
+							}
+							EditorLanguage::CompletionOption option(method->identifier->name, EditorLanguage::CompletionKind::FUNCTION, location);
+							if (p_add_braces) {
+								if (method->parameters.size() > 0 || method->is_vararg()) {
+									option.insert_text += "(";
+									option.display += U"(\u2026)";
+								} else {
+									option.insert_text += "()";
+									option.display += "()";
+								}
+							}
+							r_result.insert(option.display, option);
+						}
+						if (p_only_functions || p_static) {
+							continue;
+						}
+						for (const GDScriptParser::VariableNode *property : trait->properties) {
+							EditorLanguage::CompletionOption option(property->identifier->name, EditorLanguage::CompletionKind::MEMBER_VARIABLE, location);
+							r_result.insert(option.display, option);
+						}
+						for (const GDScriptParser::SignalNode *signal : trait->signals) {
+							EditorLanguage::CompletionOption option(signal->identifier->name, EditorLanguage::CompletionKind::SIGNAL, location);
+							r_result.insert(option.display, option);
+						}
+					}
+				}
+			}
 			if (p_types_only) {
 				break; // Otherwise, it will fill the results with types from the outer class (which is undesired for that case).
 			}
@@ -4272,6 +4314,40 @@ static Error _lookup_symbol_from_base(const GDScriptParser::DataType &p_base, co
 				}
 
 				if (!base_type.class_type->has_member(name)) {
+					// Default methods, provided properties and signals are compiled into the class
+					// from its traits without being members of its node: go to where the trait
+					// declares them.
+					for (const GDScriptParser::DataType &used : base_type.class_type->used_trait_types) {
+						if (used.kind != GDScriptParser::DataType::TRAIT || used.trait_type == nullptr) {
+							continue;
+						}
+						Vector<const GDScriptParser::TraitNode *> closure;
+						GDScriptAnalyzer::collect_trait_closure(used.trait_type, closure);
+						for (const GDScriptParser::TraitNode *trait : closure) {
+							int line = -1;
+							for (const GDScriptParser::FunctionNode *method : trait->methods) {
+								if (method->identifier != nullptr && method->identifier->name == name) {
+									line = method->start_line;
+								}
+							}
+							for (const GDScriptParser::VariableNode *property : trait->properties) {
+								if (property->identifier->name == name) {
+									line = property->start_line;
+								}
+							}
+							for (const GDScriptParser::SignalNode *signal : trait->signals) {
+								if (signal->identifier->name == name) {
+									line = signal->start_line;
+								}
+							}
+							if (line >= 0) {
+								r_result.type = EditorLanguage::LookupResult::Type::SCRIPT_LOCATION;
+								r_result.script_path = trait->trait_type.script_path;
+								r_result.location = line;
+								return OK;
+							}
+						}
+					}
 					base_type = base_type.class_type->base_type;
 					break;
 				}

@@ -2647,8 +2647,11 @@ void GDScriptAnalyzer::resolve_trait(GDScriptParser::TraitNode *p_trait, GDScrip
 			push_error(vformat(R"(Trait property "%s" cannot have a value: traits hold no state. Set the default in the type that uses the trait.)", name), property->initializer);
 			property->initializer = nullptr;
 		}
-		if (property->property != GDScriptParser::VariableNode::PROP_NONE) {
-			push_error(vformat(R"(Trait property "%s" cannot have a setter or getter.)", name), property);
+		if (property->property == GDScriptParser::VariableNode::PROP_SETGET) {
+			push_error(vformat(R"(Trait property "%s" must write its accessors inline ("get:", "set(value):"), not name them with "get =" or "set =".)", name), property);
+		} else if (property->property == GDScriptParser::VariableNode::PROP_INLINE && property->getter == nullptr) {
+			// Reads would fall through to the using class's slot, which nothing ever writes.
+			push_error(vformat(R"(Trait property "%s" has a setter but no getter. A trait has nowhere to keep the value, so it has to say how to read it.)", name), property);
 		}
 		if (property->is_static) {
 			push_error(vformat(R"(Trait property "%s" cannot be static.)", name), property);
@@ -2672,6 +2675,24 @@ void GDScriptAnalyzer::resolve_trait(GDScriptParser::TraitNode *p_trait, GDScrip
 		}
 		resolve_function_signature(method);
 	}
+}
+
+// Whether a class further up the chain already gets `p_name` as a property one of its own traits
+// provides. Looked up through the base classes' traits rather than their `trait_default_properties`,
+// so it does not depend on the order in which the classes were checked.
+bool GDScriptAnalyzer::base_chain_gets_trait_property(const GDScriptParser::ClassNode *p_class, const StringName &p_name) {
+	for (const GDScriptParser::ClassNode *c = p_class->base_type.class_type; c != nullptr; c = c->base_type.class_type) {
+		for (const GDScriptParser::DataType &used : c->used_trait_types) {
+			if (used.kind != GDScriptParser::DataType::TRAIT || used.trait_type == nullptr) {
+				continue;
+			}
+			const GDScriptParser::VariableNode *property = find_trait_property(used.trait_type, p_name);
+			if (property != nullptr && property->property != GDScriptParser::VariableNode::PROP_NONE) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 void GDScriptAnalyzer::collect_trait_closure(const GDScriptParser::TraitNode *p_trait, Vector<const GDScriptParser::TraitNode *> &r_closure) {
@@ -2807,6 +2828,26 @@ GDScriptParser::FunctionNode *GDScriptAnalyzer::find_trait_method(const GDScript
 // Default methods are analyzed once, here, with `self` typed as the trait: they can call the
 // trait's methods and nothing else of the using type, which is what makes them valid for every user.
 void GDScriptAnalyzer::resolve_trait_method_bodies(GDScriptParser::TraitNode *p_trait) {
+	// Accessors of the properties the trait provides, set up the way a class's inline accessors are.
+	for (GDScriptParser::VariableNode *property : p_trait->properties) {
+		if (property->property != GDScriptParser::VariableNode::PROP_INLINE) {
+			continue;
+		}
+		const GDScriptParser::VariableNode *previous_property = current_trait_property;
+		current_trait_property = property;
+		if (property->getter != nullptr) {
+			property->getter->return_type = property->datatype_specifier;
+			property->getter->return_type_constraint = property->type_constraint;
+			resolve_function_body(property->getter);
+		}
+		if (property->setter != nullptr && !property->setter->parameters.is_empty()) {
+			property->setter->parameters[0]->datatype_specifier = property->datatype_specifier;
+			property->setter->parameters[0]->type_constraint = property->type_constraint;
+			resolve_function_body(property->setter);
+		}
+		current_trait_property = previous_property;
+	}
+
 	for (GDScriptParser::FunctionNode *method : p_trait->methods) {
 		if (method->body == nullptr || method->body->statements.is_empty()) {
 			continue; // Required method.
@@ -2992,7 +3033,28 @@ void GDScriptAnalyzer::check_class_trait_conformance(GDScriptParser::ClassNode *
 		for (const GDScriptParser::VariableNode *required : trait->properties) {
 			GDScriptParser::DataType actual;
 			const bool found = find_class_property_type(p_class, required->identifier->name, actual);
-			check_property_conforms(required, trait, found, actual, who, source);
+			if (required->property == GDScriptParser::VariableNode::PROP_NONE || found) {
+				// Required, or provided but declared by the class anyway: what the class has must fit.
+				check_property_conforms(required, trait, found, actual, who, source);
+				continue;
+			}
+			// Provided by the trait and not declared anywhere in the chain: compiled into this class,
+			// unless a base class already gets it from a trait of its own.
+			const StringName property_name = required->identifier->name;
+			if (base_chain_gets_trait_property(p_class, property_name)) {
+				continue;
+			}
+			GDScriptParser::VariableNode *provided = const_cast<GDScriptParser::VariableNode *>(required);
+			bool conflict = false;
+			for (const GDScriptParser::VariableNode *other : p_class->trait_default_properties) {
+				if (other != provided && other->identifier->name == property_name) {
+					push_error(vformat(R"(%s gets the property "%s" from two traits. Declare it in the class to choose.)", who, property_name), source);
+					conflict = true;
+				}
+			}
+			if (!conflict && !p_class->trait_default_properties.has(provided)) {
+				p_class->trait_default_properties.push_back(provided);
+			}
 		}
 
 		for (GDScriptParser::SignalNode *signal : trait->signals) {
@@ -3111,6 +3173,10 @@ void GDScriptAnalyzer::check_struct_trait_conformance(GDScriptParser::StructNode
 		}
 
 		for (const GDScriptParser::VariableNode *required : trait->properties) {
+			if (required->property != GDScriptParser::VariableNode::PROP_NONE) {
+				push_error(vformat(R"(%s cannot use trait "%s": it provides the property "%s" with an accessor, and a struct has fields, not properties.)", who, trait->identifier->name, required->identifier->name), source);
+				continue;
+			}
 			GDScriptParser::DataType actual;
 			bool found = false;
 			for (const GDScriptParser::VariableNode *field : p_struct->fields) {
@@ -6435,6 +6501,28 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 		}
 	}
 
+	// A property a used trait provides, compiled into the class that uses the trait (or into one of
+	// its bases). It is not a member of the class node, so the loop above cannot see it.
+	if (base.kind == GDScriptParser::DataType::CLASS && !base.is_meta_type) {
+		for (const GDScriptParser::ClassNode *c = base.class_type; c != nullptr; c = c->base_type.class_type) {
+			for (GDScriptParser::VariableNode *property : c->trait_default_properties) {
+				if (property->identifier->name != name) {
+					continue;
+				}
+				GDScriptParser::DataType property_type = property->type_constraint;
+				property_type.is_constant = false;
+				property_type.is_meta_type = false;
+				// Without a setter a write would land in a slot nothing reads, since every read goes
+				// through the getter. Read-only, the same way a native property without a setter is.
+				property_type.is_read_only = property->setter == nullptr;
+				p_identifier->type_constraint = property_type;
+				p_identifier->source = GDScriptParser::IdentifierNode::MEMBER_VARIABLE;
+				p_identifier->variable_source = property;
+				return;
+			}
+		}
+	}
+
 	// Check non-GDScript scripts.
 	Ref<Script> script_type = base.script_type;
 
@@ -6653,10 +6741,14 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 		// A required property of the trait, reached by name through `self` in whatever type uses it.
 		const GDScriptParser::VariableNode *property = find_trait_property(current_trait, p_identifier->name);
 		if (property != nullptr) {
+			if (property == current_trait_property) {
+				push_error(vformat(R"(Trait property "%s" has no storage of its own, so its accessors cannot read or write it. Keep the value in a property of the type that uses the trait.)", p_identifier->name), p_identifier);
+			}
 			p_identifier->source = GDScriptParser::IdentifierNode::TRAIT_PROPERTY;
 			GDScriptParser::DataType property_type = property->type_constraint;
 			property_type.is_constant = false;
 			property_type.is_meta_type = false;
+			property_type.is_read_only = property->property == GDScriptParser::VariableNode::PROP_INLINE && property->setter == nullptr;
 			p_identifier->type_constraint = property_type;
 			return;
 		}
@@ -7143,6 +7235,7 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 				result_type = property->type_constraint;
 				result_type.is_constant = false;
 				result_type.is_meta_type = false;
+				result_type.is_read_only = property->property == GDScriptParser::VariableNode::PROP_INLINE && property->setter == nullptr;
 				p_subscript->attribute->type_constraint = result_type;
 				valid = true;
 			} else {

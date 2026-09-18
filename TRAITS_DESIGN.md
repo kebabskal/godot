@@ -1,6 +1,6 @@
 # Traits (roadmap item 7)
 
-Status: increments 1 (interfaces), 2 (default methods) and 3 (properties, constants, signals, traits using traits) landed. Global `trait_name` files are deliberately not done.
+Status: increments 1 (interfaces), 2 (default methods) and 3 (properties, constants, signals, traits using traits) landed, plus properties a trait provides with inline accessors. Global `trait_name` files are deliberately not done.
 
 ## Goal
 
@@ -209,6 +209,59 @@ traits (`trait_name` files) are out of scope for now.
   `const Lib = preload("lib.gd")`, then `uses Lib.Greeter` and
   `var g: Lib.Greeter`. This already worked through the normal member
   lookup and is covered by a test.
+
+## As built (provided properties)
+
+```
+trait Mortal:
+    var hp: int                                   # required: the class declares it
+    var is_alive: bool: get: return hp > 0        # provided: the trait supplies it
+    var health: int:
+        get:
+            return hp
+        set(value):
+            hp = clampi(value, 0, 100)
+```
+
+A trait property with inline accessors is one the trait *provides*; without
+them it is still a requirement. This is the property-shaped counterpart of a
+default method, and it is built the same way.
+
+- **Analyzed once, in the trait's context.** The accessors are tagged with the
+  trait as their owner, so `resolve_trait_method_bodies()` resolves them with
+  `self` typed as the trait, exactly as for a default method. Everything they
+  touch on `self` is therefore reached *by name* (`TRAIT_PROPERTY`), which is
+  what makes one compiled accessor correct in every class that uses the trait:
+  `hp` can sit at a different member index in each of them.
+- **Compiled into each using class** that does not declare the property,
+  through `trait_default_properties` beside `trait_default_methods`. The
+  compiler registers it as a member of the class, so every lookup that goes by
+  name, the 4b fast paths included, finds it; its accessors are compiled with
+  the same `_parse_setter_getter()` a class's inline accessors use.
+- **A declaration in the class wins**, and then has to fit the trait's type,
+  the same rule as a required property. A subclass does not get a second copy
+  when a base class already gets it from its own trait.
+- **No state.** A trait still holds none, so a provided property has no storage:
+  its accessors may not read or write it (an error that says where to keep the
+  value instead), a setter needs a getter, and a property with only a getter is
+  read-only. The last one matters: without it, `guy.is_alive = false` would
+  write a slot nothing ever reads and appear to succeed. It reuses the
+  `is_read_only` flag native getter-only properties already set, so the error
+  and its reach (class values, inside the class, trait-typed values) come for
+  free, and a copy taken with `var x := guy.is_alive` is an ordinary variable.
+- Errors for the cases that cannot work: a struct using such a trait (fields,
+  not properties), two traits providing the same property (declare it in the
+  class to choose), and `get = f` / `set = f` accessors, which have no methods
+  of the using class to name.
+
+Tooling came with a pre-existing gap attached: *nothing* a trait contributes to
+a class, default methods included, was offered by completion on a class value
+or inside the class, and hover / go-to-definition walked straight past it,
+because all of it is compiled into the class without being a member of its
+node. `_find_identifiers_in_class()` now lists the used traits' methods,
+properties and signals, and `_lookup_symbol_from_base()` sends a trait member
+to the trait's declaration. The LSP fixture `lsp/traits.gd` covers the lookup,
+and was checked to fail without the fix.
 
 ## Global traits
 

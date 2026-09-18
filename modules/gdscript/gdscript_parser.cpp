@@ -1863,9 +1863,18 @@ GDScriptParser::TraitNode *GDScriptParser::parse_trait(bool p_is_static) {
 				trait_node->methods.push_back(method);
 			}
 		} else if (match(GDScriptTokenizer::Token::VAR)) {
-			// A required property: the type that uses the trait provides the variable.
-			VariableNode *property = parse_variable(false, false);
+			// Without accessors, a required property: the type that uses the trait provides the
+			// variable. With inline accessors (`var alive: bool: get: return hp > 0`), a property the
+			// trait provides itself; its accessors are analyzed once in the trait's context, like a
+			// default method, so everything they touch on `self` is reached by name.
+			VariableNode *property = parse_variable(false, true);
 			if (property != nullptr) {
+				if (property->getter != nullptr) {
+					property->getter->trait_owner = trait_node;
+				}
+				if (property->setter != nullptr) {
+					property->setter->trait_owner = trait_node;
+				}
 				trait_node->properties.push_back(property);
 			}
 		} else if (match(GDScriptTokenizer::Token::TK_CONST)) {
