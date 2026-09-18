@@ -3686,6 +3686,12 @@ void EditorPropertyResource::_viewport_selected(const NodePath &p_path) {
 	update_property();
 }
 
+void EditorPropertyResource::set_scene_root_type(const String &p_type) {
+	if (resource_picker) {
+		resource_picker->set_scene_root_type(p_type);
+	}
+}
+
 void EditorPropertyResource::setup(Object *p_object, const String &p_path, const String &p_base_type) {
 	if (resource_picker) {
 		memdelete(resource_picker);
@@ -4347,6 +4353,12 @@ EditorProperty *EditorInspectorDefaultPlugin::get_editor_for_property(Object *p_
 				return editor;
 			} else {
 				EditorPropertyResource *editor = memnew(EditorPropertyResource);
+				if (p_hint == PROPERTY_HINT_SCENE_ROOT_TYPE) {
+					// `@export var enemy: PackedScene[Enemy]`.
+					editor->setup(p_object, p_path, "PackedScene");
+					editor->set_scene_root_type(p_hint_text);
+					return editor;
+				}
 				editor->setup(p_object, p_path, p_hint == PROPERTY_HINT_RESOURCE_TYPE ? p_hint_text : "Resource");
 
 				if (p_hint == PROPERTY_HINT_RESOURCE_TYPE) {

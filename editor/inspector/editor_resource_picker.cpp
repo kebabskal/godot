@@ -55,6 +55,7 @@
 #include "scene/resources/3d/sky_material.h"
 #include "scene/resources/gradient_texture.h"
 #include "scene/resources/image_texture.h"
+#include "scene/resources/packed_scene.h"
 #include "servers/audio/audio_server.h"
 #include "servers/rendering/rendering_server.h"
 
@@ -267,6 +268,11 @@ void EditorResourcePicker::_file_selected(const String &p_path) {
 			EditorNode::get_singleton()->show_warning(vformat(TTR("The selected resource (%s) does not match any type expected for this property (%s)."), res_type, base_type));
 			return;
 		}
+	}
+
+	if (!_is_scene_root_valid(loaded_resource)) {
+		EditorNode::get_singleton()->show_warning(vformat(TTR("The root node of the selected scene is not a %s, which this property requires."), scene_root_type));
+		return;
 	}
 
 	edited_resource = loaded_resource;
@@ -901,13 +907,13 @@ bool EditorResourcePicker::_is_drop_valid(const Dictionary &p_drag_data) const {
 	String res_type = _get_resource_type(res);
 
 	if (_is_type_valid(res_type, allowed_types)) {
-		return true;
+		return _is_scene_root_valid(res);
 	}
 
 	if (res->get_script()) {
 		StringName custom_class = EditorNode::get_singleton()->get_object_custom_type_name(res->get_script());
 		if (_is_type_valid(custom_class, allowed_types)) {
-			return true;
+			return _is_scene_root_valid(res);
 		}
 	}
 	return false;
@@ -1059,6 +1065,8 @@ void EditorResourcePicker::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_base_type", "base_type"), &EditorResourcePicker::set_base_type);
 	ClassDB::bind_method(D_METHOD("get_base_type"), &EditorResourcePicker::get_base_type);
 	ClassDB::bind_method(D_METHOD("get_allowed_types"), &EditorResourcePicker::get_allowed_types);
+	ClassDB::bind_method(D_METHOD("set_scene_root_type", "type"), &EditorResourcePicker::set_scene_root_type);
+	ClassDB::bind_method(D_METHOD("get_scene_root_type"), &EditorResourcePicker::get_scene_root_type);
 	ClassDB::bind_method(D_METHOD("set_edited_resource", "resource"), &EditorResourcePicker::set_edited_resource);
 	ClassDB::bind_method(D_METHOD("get_edited_resource"), &EditorResourcePicker::get_edited_resource);
 	ClassDB::bind_method(D_METHOD("set_toggle_mode", "enable"), &EditorResourcePicker::set_toggle_mode);
@@ -1071,6 +1079,7 @@ void EditorResourcePicker::_bind_methods() {
 	GDVIRTUAL_BIND(_handle_menu_selected, "id");
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "base_type"), "set_base_type", "get_base_type");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "scene_root_type"), "set_scene_root_type", "get_scene_root_type");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "edited_resource", PROPERTY_HINT_RESOURCE_TYPE, Resource::get_class_static(), PROPERTY_USAGE_NONE), "set_edited_resource", "get_edited_resource");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editable"), "set_editable", "is_editable");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "toggle_mode"), "set_toggle_mode", "is_toggle_mode");
@@ -1192,6 +1201,26 @@ void EditorResourcePicker::make_passthrough(bool p_passthrough) {
 	}
 }
 
+bool EditorResourcePicker::_is_scene_root_valid(const Ref<Resource> &p_resource) const {
+	if (scene_root_type.is_empty() || p_resource.is_null()) {
+		return true;
+	}
+	const Ref<PackedScene> scene = p_resource;
+	if (scene.is_null()) {
+		return false;
+	}
+	const Ref<SceneState> state = scene->get_state();
+	return state.is_valid() && state->is_root_of_type(scene_root_type);
+}
+
+void EditorResourcePicker::set_scene_root_type(const String &p_type) {
+	scene_root_type = p_type;
+}
+
+String EditorResourcePicker::get_scene_root_type() const {
+	return scene_root_type;
+}
+
 bool EditorResourcePicker::is_resource_allowed(const Ref<Resource> &p_resource) {
 	if (p_resource.is_null()) {
 		return true;
@@ -1212,11 +1241,16 @@ bool EditorResourcePicker::is_resource_allowed(const Ref<Resource> &p_resource) 
 			return false;
 		}
 	}
-	return true;
+	return _is_scene_root_valid(p_resource);
 }
 
 void EditorResourcePicker::set_edited_resource(Ref<Resource> p_resource) {
 	if (!is_resource_allowed(p_resource)) {
+		const Ref<PackedScene> scene = p_resource;
+		if (scene.is_valid() && !_is_scene_root_valid(p_resource)) {
+			// The type is right; the type error below would say "only accepts PackedScene" about a PackedScene.
+			ERR_FAIL_MSG(vformat("Failed to set the scene '%s' because its root node is not a '%s', which this EditorResourcePicker requires.", scene->get_path(), scene_root_type));
+		}
 		StringName custom_class;
 		if (p_resource->get_script()) {
 			custom_class = EditorNode::get_singleton()->get_object_custom_type_name(p_resource->get_script());

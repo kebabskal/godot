@@ -5030,6 +5030,25 @@ static String _get_annotation_error_string(const StringName &p_annotation_name, 
 	return vformat(R"("%s" annotation requires a variable of type %s, but type "%s" was given instead.)", p_annotation_name, string, p_provided_type.to_string());
 }
 
+// How the inspector is told which root a `PackedScene[Enemy]` export takes: a global class name
+// where there is one, the script's path where there is not (a scene script without `class_name`),
+// and the native class otherwise. See `SceneState::is_root_of_type()`, which reads it.
+static String _scene_root_hint(const GDScriptParser::DataType &p_root) {
+	if (p_root.kind == GDScriptParser::DataType::CLASS && p_root.class_type != nullptr && p_root.class_type->outer == nullptr) {
+		if (p_root.class_type->identifier != nullptr) {
+			return p_root.class_type->identifier->name;
+		}
+		if (!p_root.script_path.is_empty()) {
+			return p_root.script_path;
+		}
+	}
+	if (p_root.kind == GDScriptParser::DataType::SCRIPT && p_root.script_type.is_valid()) {
+		const StringName global_name = p_root.script_type->get_global_name();
+		return global_name != StringName() ? String(global_name) : p_root.script_type->get_path();
+	}
+	return p_root.native_type;
+}
+
 static StringName _find_narrowest_native_or_global_class(const GDScriptParser::DataType &p_type) {
 	switch (p_type.kind) {
 		case GDScriptParser::DataType::NATIVE: {
@@ -5245,6 +5264,11 @@ bool GDScriptParser::export_annotations(AnnotationNode *p_annotation, Node *p_ta
 					variable->export_info.type = Variant::OBJECT;
 					variable->export_info.hint = PROPERTY_HINT_RESOURCE_TYPE;
 					variable->export_info.hint_string = class_name;
+					if (export_type.kind == GDScriptParser::DataType::NATIVE && export_type.native_type == SNAME("PackedScene") && export_type.has_container_element_types()) {
+						// `@export var enemy: PackedScene[Enemy]`: the inspector only takes scenes whose root is one.
+						variable->export_info.hint = PROPERTY_HINT_SCENE_ROOT_TYPE;
+						variable->export_info.hint_string = _scene_root_hint(export_type.get_container_element_type(0));
+					}
 				} else if (ClassDB::is_parent_class(export_type.native_type, SNAME("Node"))) {
 					variable->export_info.type = Variant::OBJECT;
 					variable->export_info.hint = PROPERTY_HINT_NODE_TYPE;
@@ -5815,6 +5839,9 @@ String GDScriptParser::DataType::base_to_string() const {
 		case NATIVE:
 			if (is_meta_type) {
 				return GDScriptNativeClass::get_class_static();
+			}
+			if (native_type == SNAME("PackedScene") && has_container_element_types()) {
+				return vformat("PackedScene[%s]", get_container_element_type(0).to_string());
 			}
 			return native_type.string();
 		case CLASS: {

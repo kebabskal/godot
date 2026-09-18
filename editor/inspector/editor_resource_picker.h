@@ -45,6 +45,7 @@ class EditorResourcePicker : public HBoxContainer {
 	GDCLASS(EditorResourcePicker, HBoxContainer);
 
 	String base_type;
+	String scene_root_type; // `PackedScene[Enemy]`: only scenes whose root is this are accepted.
 	Ref<Resource> edited_resource;
 
 	bool editable = true;
@@ -136,9 +137,13 @@ protected:
 	GDVIRTUAL1(_set_create_options, Object *)
 	GDVIRTUAL1R(bool, _handle_menu_selected, int)
 
+	bool _is_scene_root_valid(const Ref<Resource> &p_resource) const;
+
 public:
 	void set_base_type(const String &p_base_type);
 	String get_base_type() const;
+	void set_scene_root_type(const String &p_type);
+	String get_scene_root_type() const;
 	Vector<String> get_allowed_types() const;
 
 	void make_passthrough(bool p_passthrough);

@@ -35,6 +35,8 @@
 
 #include "core/object/ref_counted.h"
 
+class PackedScene;
+
 class GDScriptAnalyzer {
 	GDScriptParser *parser = nullptr;
 
@@ -94,6 +96,7 @@ class GDScriptAnalyzer {
 	// a script base, or a native property.
 	bool find_class_property_type(GDScriptParser::ClassNode *p_class, const StringName &p_name, GDScriptParser::DataType &r_type);
 	static bool base_chain_gets_trait_property(const GDScriptParser::ClassNode *p_class, const StringName &p_name);
+	GDScriptParser::DataType scene_root_type(const Ref<PackedScene> &p_scene, const GDScriptParser::Node *p_source);
 	void check_property_conforms(const GDScriptParser::VariableNode *p_required, const GDScriptParser::TraitNode *p_trait, bool p_found, const GDScriptParser::DataType &p_actual, const String &p_who, const GDScriptParser::Node *p_source);
 	// Resolves a `uses` list; entries that are not traits are reported and left unset.
 	void resolve_used_traits(const Vector<GDScriptParser::TypeNode *> &p_used_traits, Vector<GDScriptParser::DataType> &r_types);

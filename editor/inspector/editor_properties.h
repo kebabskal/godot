@@ -787,6 +787,7 @@ public:
 	virtual void make_passthrough(bool p_passthrough) override;
 	virtual void update_property() override;
 	void setup(Object *p_object, const String &p_path, const String &p_base_type);
+	void set_scene_root_type(const String &p_type);
 	EditorResourcePicker *get_resource_picker() const { return resource_picker; }
 
 	void collapse_all_folding() override;

@@ -1006,6 +1006,51 @@ is, and gives up the fast paths until you narrow it back to `int`.
 
 ---
 
+## Typed scenes
+
+`PackedScene[Enemy]` is a scene whose root node is an `Enemy`, so what
+`instantiate()` makes is typed:
+
+```gdscript
+@export var enemy_scene: PackedScene[Enemy]
+
+func spawn() -> void:
+    var enemy := enemy_scene.instantiate()   # an Enemy
+    enemy.hp = 10
+    add_child(enemy)
+```
+
+`preload()` reads the scene's root while loading it, so a preloaded scene is
+already typed and the annotation can be left out:
+
+```gdscript
+var enemy := preload("res://enemy.tscn").instantiate()   # an Enemy, from the scene itself
+```
+
+A scene with the wrong root is an error where it is named, and the message
+says which roots are involved:
+
+```gdscript
+var scene: PackedScene[Enemy] = preload("res://player.tscn")
+# error: Cannot assign a value of type PackedScene[Player] to variable "scene" with specified type PackedScene[Enemy].
+```
+
+A scene of a subclass is fine: a `PackedScene[Boss]` is a `PackedScene[Enemy]`
+when a `Boss` is an `Enemy`, since a scene is only ever read from. The root can
+be an engine class (`PackedScene[Sprite2D]`), a `class_name` class, or a script
+without one, named through a `preload` constant.
+
+**In the inspector,** an exported `PackedScene[Enemy]` only takes scenes whose
+root is an `Enemy`. A wrong scene is refused when it is picked from the file
+dialog or Quick Load (with a message naming the required root), and cannot be
+dropped onto the slot. The Quick Load list still shows every scene; filtering
+it would mean loading each one to read its root, which is left for later.
+
+**At runtime,** a scene that reaches a typed slot without being checked (from
+`load()`, or an export whose scene was edited afterwards) is caught at
+`instantiate()`, with an error on that line, rather than at the first member
+access on the result.
+
 ## Editor support
 
 Every feature above works in the script editor and in external editors
@@ -1041,13 +1086,10 @@ from the marketplace as usual.
 
 Next, in order:
 
-1. **Typed `PackedScene` exports.** `@export var enemy: PackedScene[Enemy]`,
-   with the scene picker filtered to scenes whose root matches, so dropping
-   the wrong scene into a slot is caught in the editor.
-2. **Enums as real types**, with methods and exhaustive `match`.
-3. **Multiple return values**, including `if var ok, value := parse(text):`
+1. **Enums as real types**, with methods and exhaustive `match`.
+2. **Multiple return values**, including `if var ok, value := parse(text):`
    for error handling.
-4. **String interpolation**, `f"{name} has {hp} HP"`.
+3. **String interpolation**, `f"{name} has {hp} HP"`.
 
 Further out: fixed multidimensional arrays of real numbers, a formatter,
 and direct dispatch for trait methods if profiling asks for it.

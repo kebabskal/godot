@@ -1553,6 +1553,61 @@ Error SceneState::copy_from(const Ref<SceneState> &p_scene_state) {
 	return OK;
 }
 
+void SceneState::get_root_type(StringName &r_native, Ref<Script> &r_script) const {
+	r_native = StringName();
+	r_script = Ref<Script>();
+	Ref<SceneState> state = const_cast<SceneState *>(this);
+	for (int depth = 0; depth < 16 && state.is_valid() && state->get_node_count() > 0; depth++) {
+		if (r_script.is_null()) {
+			for (int i = 0; i < state->get_node_property_count(0); i++) {
+				if (state->get_node_property_name(0, i) == CoreStringName(script)) {
+					r_script = state->get_node_property_value(0, i);
+					break;
+				}
+			}
+		}
+		r_native = state->get_node_type(0);
+		if (r_native != StringName()) {
+			return;
+		}
+		// An inherited scene: the root comes from the base scene.
+		Ref<SceneState> base = state->get_base_scene_state();
+		if (base.is_null()) {
+			const Ref<PackedScene> instance = state->get_node_instance(0);
+			if (instance.is_valid()) {
+				base = instance->get_state();
+			}
+		}
+		state = base;
+	}
+}
+
+bool SceneState::is_root_of_type(const String &p_type) const {
+	StringName native;
+	Ref<Script> script;
+	get_root_type(native, script);
+	if (native == StringName()) {
+		return false;
+	}
+
+	Ref<Script> required_script;
+	if (p_type.begins_with("res://") || p_type.begins_with("uid://")) {
+		required_script = ResourceLoader::load(p_type);
+	} else if (ScriptServer::is_global_class(p_type)) {
+		required_script = ResourceLoader::load(ScriptServer::get_global_class_path(p_type));
+	}
+
+	if (required_script.is_valid()) {
+		for (Ref<Script> s = script; s.is_valid(); s = s->get_base_script()) {
+			if (s == required_script) {
+				return true;
+			}
+		}
+		return false;
+	}
+	return ClassDB::is_parent_class(native, p_type);
+}
+
 Ref<SceneState> SceneState::get_base_scene_state() const {
 	if (base_scene_idx >= 0) {
 		Ref<PackedScene> ps = variants[base_scene_idx];

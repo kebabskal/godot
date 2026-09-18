@@ -84,6 +84,7 @@ enum PropertyHint {
 	PROPERTY_HINT_FILE_PATH,
 	PROPERTY_HINT_AUDIO_BUS,
 	PROPERTY_HINT_STRUCT_TYPE, ///< hint_string is the name of the struct layout (engine layouts only).
+	PROPERTY_HINT_SCENE_ROOT_TYPE, ///< A PackedScene whose root is a hint_string: a native class, a global class name or a script path.
 	PROPERTY_HINT_MAX,
 };
 

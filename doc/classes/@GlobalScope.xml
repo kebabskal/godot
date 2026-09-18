@@ -3016,7 +3016,10 @@
 		<constant name="PROPERTY_HINT_STRUCT_TYPE" value="46" enum="PropertyHint">
 			Hints that a [Struct] property, argument or return value uses the engine struct layout named by the hint string, such as [code]"PhysicsRayResult3D"[/code]. Typed languages use it to know the fields; the value itself is not checked.
 		</constant>
-		<constant name="PROPERTY_HINT_MAX" value="47" enum="PropertyHint">
+		<constant name="PROPERTY_HINT_SCENE_ROOT_TYPE" value="47" enum="PropertyHint">
+			Hints that an [Object] property is a [PackedScene] whose root node is the type given in the hint string: a native class name, a global script class name, or the path of a script. The editor only accepts scenes whose root matches. GDScript uses it for an exported [code]PackedScene[Enemy][/code].
+		</constant>
+		<constant name="PROPERTY_HINT_MAX" value="48" enum="PropertyHint">
 			Represents the size of the [enum PropertyHint] enum.
 		</constant>
 		<constant name="PROPERTY_USAGE_NONE" value="0" enum="PropertyUsageFlags" is_bitfield="true">

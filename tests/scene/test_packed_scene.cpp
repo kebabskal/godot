@@ -33,6 +33,7 @@
 TEST_FORCE_LINK(test_packed_scene)
 
 #include "core/object/callable_mp.h"
+#include "scene/2d/node_2d.h"
 #include "scene/resources/packed_scene.h"
 
 namespace TestPackedScene {
@@ -280,6 +281,64 @@ TEST_CASE("[PackedScene] Recreate State") {
 	CHECK(state->get_node_count() == 0); // Since the state was recreated, it should be empty.
 
 	memdelete(scene);
+}
+
+TEST_CASE("[PackedScene] Root type without instancing") {
+	Node2D *root = memnew(Node2D);
+	root->set_name("Root");
+	Ref<PackedScene> scene;
+	scene.instantiate();
+	CHECK(scene->pack(root) == OK);
+	const Ref<SceneState> state = scene->get_state();
+
+	StringName native;
+	Ref<Script> script;
+	state->get_root_type(native, script);
+	CHECK(native == SNAME("Node2D"));
+	CHECK(script.is_null());
+
+	CHECK(state->is_root_of_type("Node2D"));
+	CHECK(state->is_root_of_type("Node")); // A base class is satisfied.
+	CHECK_FALSE(state->is_root_of_type("Sprite2D")); // A subclass is not.
+	CHECK_FALSE(state->is_root_of_type("Control"));
+
+	memdelete(root);
+}
+
+TEST_CASE("[PackedScene] Root type of an empty scene") {
+	Ref<SceneState> state;
+	state.instantiate();
+	StringName native;
+	Ref<Script> script;
+	state->get_root_type(native, script);
+	CHECK(native == StringName());
+	CHECK_FALSE(state->is_root_of_type("Node"));
+}
+
+TEST_CASE("[PackedScene] Root type of an inherited scene comes from its base") {
+	Node2D *base_root = memnew(Node2D);
+	base_root->set_name("Base");
+	Ref<PackedScene> base_scene;
+	base_scene.instantiate();
+	CHECK(base_scene->pack(base_root) == OK);
+	memdelete(base_root);
+
+	// Instanced as the root of a new scene, the way "New Inherited Scene" does.
+	Node *inherited_root = base_scene->instantiate(PackedScene::GEN_EDIT_STATE_MAIN_INHERITED);
+	REQUIRE(inherited_root != nullptr);
+	Ref<PackedScene> inherited_scene;
+	inherited_scene.instantiate();
+	CHECK(inherited_scene->pack(inherited_root) == OK);
+	const Ref<SceneState> state = inherited_scene->get_state();
+
+	StringName native;
+	Ref<Script> script;
+	state->get_root_type(native, script);
+	CHECK(native == SNAME("Node2D"));
+	CHECK(state->is_root_of_type("Node2D"));
+	CHECK_FALSE(state->is_root_of_type("Control"));
+
+	memdelete(inherited_root);
 }
 
 } // namespace TestPackedScene

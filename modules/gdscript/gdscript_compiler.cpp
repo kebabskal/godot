@@ -214,7 +214,10 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 	// A container whose element type is a type parameter erases to a plain container: the element
 	// type is not known at runtime, and claiming "container of Variant" would reject the caller's
 	// `Array[int]` instead of accepting it.
-	if (!GDScriptAnalyzer::type_has_container_type_parameter(p_datatype)) {
+	// `PackedScene[Enemy]` is a claim the analyzer checks; nothing at runtime could, so the slot stays
+	// a plain `PackedScene`.
+	const bool is_typed_scene = p_datatype.kind == GDScriptParser::DataType::NATIVE && p_datatype.native_type == SNAME("PackedScene");
+	if (!is_typed_scene && !GDScriptAnalyzer::type_has_container_type_parameter(p_datatype)) {
 		for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
 			result.set_container_element_type(i, _gdtype_from_datatype(p_datatype.get_container_element_type_or_variant(i), p_owner, false));
 		}
@@ -707,6 +710,14 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				result = codegen.add_temporary();
 			}
 
+			// `PackedScene[Enemy].instantiate()` returns whatever the scene's root really is: land it in an
+			// untyped temporary and assign it into the typed one, which checks it.
+			GDScriptCodeGenerator::Address checked_result;
+			if (call->check_result_type && result.mode == GDScriptCodeGenerator::Address::TEMPORARY && result.type.has_type()) {
+				checked_result = result;
+				result = codegen.add_temporary();
+			}
+
 			// The call returns an untyped container whose element type is only known here: a generic
 			// function's `Array[T]`, or `Array.map()`. Convert it into that type.
 			GDScriptCodeGenerator::Address generic_container_result;
@@ -944,6 +955,11 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				gen->write_call_builtin_type(GDScriptCodeGenerator::Address(), generic_container_result, generic_container_result.type.builtin_type, SNAME("assign"), assign_args);
 				gen->pop_temporary(); // The untyped call result.
 				return generic_container_result;
+			}
+			if (checked_result.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+				gen->write_assign_with_conversion(checked_result, result);
+				gen->pop_temporary(); // The untyped call result.
+				return checked_result;
 			}
 			return result;
 		} break;

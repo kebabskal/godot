@@ -171,6 +171,13 @@ public:
 
 	Ref<SceneState> get_base_scene_state() const;
 
+	// The class and script of the root node without instancing the scene, following an inherited
+	// scene to its base where it does not set them itself. Both empty for an empty scene.
+	void get_root_type(StringName &r_native, Ref<Script> &r_script) const;
+	// Whether the root node is a `p_type`: a native class, a global script class name, or a script
+	// path. What `PackedScene[Enemy]` checks, in the analyzer and in the inspector.
+	bool is_root_of_type(const String &p_type) const;
+
 	void update_instance_resource(String p_path, Ref<PackedScene> p_packed_scene);
 
 	//unbuild API

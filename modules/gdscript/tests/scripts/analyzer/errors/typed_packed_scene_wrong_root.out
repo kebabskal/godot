@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 3: Cannot assign a value of type PackedScene[Sprite2D] to variable "nodes" with specified type PackedScene[Node3D].

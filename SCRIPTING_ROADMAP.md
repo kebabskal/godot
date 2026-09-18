@@ -69,7 +69,7 @@ Syntax:
 
 Editor and tooling:
 
-14. Typed `PackedScene` exports (slot only accepts a given root type).
+14. Typed `PackedScene` exports (slot only accepts a given root type). **Done.**
 15. A formatter.
 
 Critical path: 1 -> 5 -> 4d. Items 4a-4c, the syntax group and the editor
@@ -854,6 +854,48 @@ group are independent and can proceed in any order.
   that gives the fix, and the fix was checked to compile and run. A plain
   `Callable`, including anything through `unbind()` or `bind()`, stays
   unchecked, the same rule as assigning one.
+- 14 (typed `PackedScene` exports) landed. `PackedScene[Enemy]` is a type
+  whose `instantiate()` makes an `Enemy`; `preload()` of a scene reads the root
+  from the scene it just loaded, so it is typed without an annotation; a wrong
+  root is a compile error naming both (`PackedScene[Player]` vs
+  `PackedScene[Enemy]`). Covariant in the root, unlike `Array[T]`, because a
+  scene is only read from. A plain `PackedScene` fits a typed slot unchecked,
+  the rule a plain `Callable` already follows. The root has to be a node.
+  - Runtime: the argument is erased, so the slot is a plain `PackedScene`, and
+    the one place a wrong root could slip in unnoticed is checked instead:
+    `instantiate()` on a typed scene lands in an untyped temporary and is
+    assigned into the typed one, the same call-site pattern the generic
+    container conversion uses. Before that, a wrong scene got through
+    `instantiate()` and failed at the first member access as a misleading
+    "Invalid access to property 'hp'"; now it fails on the `instantiate()` line.
+  - Shared lookup: `SceneState::get_root_type()` reads the root's class and
+    script without instancing, following an inherited scene to its base, and
+    `SceneState::is_root_of_type()` matches it against a native class, a global
+    class name or a script path. The analyzer and the inspector both use them;
+    C++ tests cover native, empty and inherited scenes.
+  - Editor: a new `PROPERTY_HINT_SCENE_ROOT_TYPE` (added at the end of the enum,
+    as the struct hint was, with `PROPERTY_HINT_MAX`'s documented value moved
+    up) carries the root, as a global class name where there is one and the
+    script path where there is not. The inspector gives such a property an
+    `EditorResourcePicker` with the new `scene_root_type`, which refuses a
+    wrong scene in `is_resource_allowed()`, the file/Quick Load selection and
+    drag-and-drop. Verified by driving the real picker and
+    `EditorInspector.instantiate_property_editor()` from a headless editor
+    plugin: Player refused, Boss and Enemy accepted, a script-path root
+    honoured, the plain export untouched. That run also caught a wrong message
+    ("only accepts 'PackedScene'" about a `PackedScene`), now specific to the
+    root.
+  - Not done: filtering the Quick Load *list*. Wrong scenes are refused on
+    every path but still listed; filtering needs each candidate's root, which
+    means loading each scene, and wants a cache in `EditorFileSystem` rather
+    than a slow dialog.
+  - Trap for anyone writing tests with resources: `--gdscript-generate-tests`
+    builds its runner without initializing the project, so `res://` is the repo
+    root there and the tests folder in the doctest suite. A fixture that names
+    a resource by an absolute `res://` path, or an error message that prints
+    one, differs between the two. Use paths relative to the scene
+    (`path="enemy.notest.gd"` in the `.tscn`) and keep paths out of expected
+    messages.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

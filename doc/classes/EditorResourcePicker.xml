@@ -50,6 +50,9 @@
 		<member name="edited_resource" type="Resource" setter="set_edited_resource" getter="get_edited_resource">
 			The edited resource value.
 		</member>
+		<member name="scene_root_type" type="String" setter="set_scene_root_type" getter="get_scene_root_type" default="&quot;&quot;">
+			If not empty, only a [PackedScene] whose root node is of this type is accepted: a native class name, a global script class name, or the path of a script. This is how an exported [code]PackedScene[Enemy][/code] property restricts its scene. Scenes that do not match are refused when picked, dropped or assigned.
+		</member>
 		<member name="toggle_mode" type="bool" setter="set_toggle_mode" getter="is_toggle_mode" default="false">
 			If [code]true[/code], the main button with the resource preview works in the toggle mode. Use [method set_toggle_pressed] to manually set the state.
 		</member>

@@ -605,6 +605,7 @@ public:
 		bool is_static = false;
 		bool trait_self_call = false; // A bare call to another method of the trait, inside a trait's default method.
 		bool validate_callable_result = false; // `f.call()` on a typed callable: the declared return type is checked where the call returns.
+		bool check_result_type = false; // `PackedScene[Enemy].instantiate()`: the engine returns a `Node`, and the root only really is an `Enemy` if the scene was checked, so the result is checked here.
 		bool convert_result_container = false; // The call returns an untyped container that this call site knows the element type of (a generic function's `Array[T]`, or `Array.map()`): it is converted here.
 		// Resolved struct method (`p.length()`, or a bare `length()` inside a struct method).
 		FunctionNode *struct_method = nullptr;

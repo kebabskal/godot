@@ -44,6 +44,7 @@
 #include "core/templates/hash_map.h"
 #include "core/variant/struct_db.h"
 #include "scene/main/node.h"
+#include "scene/resources/packed_scene.h"
 
 #include "modules/gdscript/gdscript_parser.h"
 
@@ -1719,6 +1720,21 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 				}
 				result.set_container_element_type((int)i, argument);
 			}
+		} else if (result.kind == GDScriptParser::DataType::NATIVE && result.native_type == SNAME("PackedScene")) {
+			// `PackedScene[Enemy]`: a scene whose root is an `Enemy`, so `instantiate()` makes one. Kept on
+			// the analyzer's type only; at runtime the slot is a plain `PackedScene`.
+			if (p_type->container_types.size() != 1) {
+				push_error(R"(A typed "PackedScene" takes exactly one type argument: the type of the scene's root node.)", p_type);
+				return bad_type;
+			}
+			GDScriptParser::DataType root = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
+			root.is_constant = false;
+			const bool is_node = (root.kind == GDScriptParser::DataType::NATIVE || root.kind == GDScriptParser::DataType::SCRIPT || root.kind == GDScriptParser::DataType::CLASS) && ClassDB::is_parent_class(root.native_type, SNAME("Node"));
+			if (!is_node) {
+				push_error(vformat(R"(The root of a scene is a node, so "PackedScene[%s]" cannot be satisfied.)", root.to_string()), p_type->get_container_type_or_null(0));
+				return bad_type;
+			}
+			result.set_container_element_type(0, root);
 		} else {
 			push_error(R"(Only arrays and dictionaries can specify collection element types.)", p_type);
 			return bad_type;
@@ -5746,6 +5762,13 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 			}
 		}
 
+		// A typed scene can hold one whose root is not what it says, if it came from `load()` or an export
+		// that was edited later: check the result of `instantiate()` so the error is at the call that is
+		// wrong, rather than at the first member access on it.
+		if (base_type.kind == GDScriptParser::DataType::NATIVE && !base_type.is_meta_type && base_type.native_type == SNAME("PackedScene") && base_type.has_container_element_types() && p_call->function_name == SNAME("instantiate")) {
+			p_call->check_result_type = true;
+		}
+
 		// A handler connected to a statically known signal has to be callable with what the signal
 		// passes. Checked after the lambda block above, so a lambda has its inferred types by now.
 		if (base_type.kind == GDScriptParser::DataType::BUILTIN && base_type.builtin_type == Variant::SIGNAL && !base_type.is_meta_type && p_call->function_name == SNAME("connect") && base_type.method_info.name != StringName() && !p_call->arguments.is_empty()) {
@@ -7099,6 +7122,29 @@ void GDScriptAnalyzer::reduce_literal(GDScriptParser::LiteralNode *p_literal) {
 	p_literal->type_constraint = type_from_variant(p_literal->reduced_value, p_literal);
 }
 
+// The type of a scene's root node, read from its state rather than by instancing it. The root's
+// script wins over its native type; an inherited scene takes both from its base where it does not set
+// them itself. Unset when it cannot be told: no state, an empty scene, or a chain of bases too long.
+GDScriptParser::DataType GDScriptAnalyzer::scene_root_type(const Ref<PackedScene> &p_scene, const GDScriptParser::Node *p_source) {
+	StringName native;
+	Ref<Script> script;
+	const Ref<SceneState> state = p_scene->get_state();
+	if (state.is_valid()) {
+		state->get_root_type(native, script);
+	}
+
+	GDScriptParser::DataType result;
+	if (script.is_valid()) {
+		result = type_from_metatype(type_from_variant(script, p_source));
+	} else if (native != StringName() && class_exists(native)) {
+		result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+		result.kind = GDScriptParser::DataType::NATIVE;
+		result.builtin_type = Variant::OBJECT;
+		result.native_type = native;
+	}
+	return result;
+}
+
 void GDScriptAnalyzer::reduce_preload(GDScriptParser::PreloadNode *p_preload) {
 	if (!p_preload->path) {
 		return;
@@ -7157,6 +7203,16 @@ void GDScriptAnalyzer::reduce_preload(GDScriptParser::PreloadNode *p_preload) {
 	p_preload->is_constant = true;
 	p_preload->reduced_value = p_preload->resource;
 	p_preload->type_constraint = type_from_variant(p_preload->reduced_value, p_preload);
+
+	// The scene is loaded right here, so its root is known: `preload("enemy.tscn")` is a
+	// `PackedScene[Enemy]`, and `instantiate()` on it makes an `Enemy`.
+	const Ref<PackedScene> preloaded_scene = p_preload->resource;
+	if (preloaded_scene.is_valid() && p_preload->type_constraint.kind == GDScriptParser::DataType::NATIVE) {
+		const GDScriptParser::DataType root = scene_root_type(preloaded_scene, p_preload);
+		if (root.is_set() && !root.is_variant()) {
+			p_preload->type_constraint.set_container_element_type(0, root);
+		}
+	}
 
 	// TODO: Not sure if this is necessary anymore.
 	// 'type_from_variant()' should call 'resolve_class_inheritance()' which would call 'ensure_cached_external_parser_for_class()'
@@ -8833,6 +8889,12 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 	MethodInfo info;
 	if (ClassDB::get_method_info(base_native, function_name, &info)) {
 		bool valid = function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags, p_source);
+		if (valid && base_native == SNAME("PackedScene") && function_name == SNAME("instantiate") && p_base_type.kind == GDScriptParser::DataType::NATIVE && !p_base_type.is_meta_type && p_base_type.has_container_element_types()) {
+			// `PackedScene[Enemy].instantiate()` makes an `Enemy`.
+			r_return_type = p_base_type.get_container_element_type(0);
+			r_return_type.is_meta_type = false;
+			r_return_type.is_constant = false;
+		}
 		if (valid && Engine::get_singleton()->has_singleton(base_native)) {
 			r_method_flags.set_flag(METHOD_FLAG_STATIC);
 		}
@@ -9234,6 +9296,16 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 	if (p_source.kind == GDScriptParser::DataType::VARIANT) {
 		// TODO: This is acceptable but unsafe. Make sure unsafe line is set.
 		return true;
+	}
+
+	if (p_target.kind == GDScriptParser::DataType::NATIVE && p_source.kind == GDScriptParser::DataType::NATIVE && !p_target.is_meta_type && !p_source.is_meta_type && p_target.native_type == SNAME("PackedScene") && p_source.native_type == SNAME("PackedScene") && p_target.has_container_element_types()) {
+		// A scene is only ever read from, so a `PackedScene[Boss]` is a `PackedScene[Enemy]` when a Boss is
+		// an Enemy: covariant, unlike a typed array. A plain `PackedScene` claims nothing about its root
+		// and fits unchecked, the same rule as a plain `Callable` in a typed callable slot.
+		if (!p_source.has_container_element_types()) {
+			return true;
+		}
+		return check_type_compatibility(p_target.get_container_element_type(0), p_source.get_container_element_type(0), false, p_source_node);
 	}
 
 	if (p_target.is_nullable && p_source.kind == GDScriptParser::DataType::BUILTIN && p_source.builtin_type == Variant::NIL) {
