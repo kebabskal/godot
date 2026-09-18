@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 8: Signal "hit" passes 1 argument(s), but the handler takes 0. Use "unbind()" to drop the extra ones.

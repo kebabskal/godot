@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 7: Signal "hit" passes a "int" as argument 1, but the handler takes a "String".

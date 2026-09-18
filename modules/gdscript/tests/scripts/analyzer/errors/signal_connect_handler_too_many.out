@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 4: The handler needs 2 argument(s), but signal "hit" passes 1.

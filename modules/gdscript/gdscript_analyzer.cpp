@@ -221,6 +221,55 @@ GDScriptParser::DataType GDScriptAnalyzer::expected_callable_for_signal(const GD
 	return expected;
 }
 
+// Whether a handler can take what `p_signal` passes. Deliberately looser than
+// `callable_signatures_compatible()`, which is contravariant: a handler that narrows an object
+// parameter (`func _on_body_entered(body: CharacterBody2D)` for a `Node2D` argument) is how Godot
+// handlers are normally written, and is checked when it is called, like any other object downcast.
+// What is rejected is what can never work: the wrong number of arguments, and a parameter type
+// that is unrelated to the argument in both directions.
+void GDScriptAnalyzer::check_signal_handler(const MethodInfo &p_signal, const GDScriptParser::ExpressionNode *p_handler) {
+	const GDScriptParser::DataType &handler = p_handler->type_constraint;
+	if (!handler.has_callable_signature || handler.callable_signature.is_empty()) {
+		return; // A plain `Callable` is connected unchecked, as it is assigned unchecked.
+	}
+
+	const int passed = p_signal.arguments.size();
+	const int parameters = handler.callable_signature.size() - 1;
+	const int required = parameters - handler.callable_optional_params;
+	if (required > passed) {
+		push_error(vformat(R"(The handler needs %d argument(s), but signal "%s" passes %d.)", required, p_signal.name, passed), p_handler);
+		return;
+	}
+	if (parameters < passed && !handler.callable_is_vararg) {
+		push_error(vformat(R"*(Signal "%s" passes %d argument(s), but the handler takes %d. Use "unbind()" to drop the extra ones.)*", p_signal.name, passed, parameters), p_handler);
+		return;
+	}
+
+	int index = 0;
+	for (const PropertyInfo &argument : p_signal.arguments) {
+		if (index >= parameters) {
+			break;
+		}
+		const GDScriptParser::DataType given = type_from_property(argument, true, nullptr);
+		const GDScriptParser::DataType &accepted = handler.callable_signature[index + 1];
+		index++;
+		if (!given.is_set() || given.is_variant() || !given.is_hard_type() || !accepted.is_set() || accepted.is_variant() || !accepted.is_hard_type()) {
+			continue;
+		}
+		if (is_type_compatible(accepted, given, true) || is_type_compatible(given, accepted, true)) {
+			continue; // Fits, or narrows a class: a class parameter is checked when the handler is called.
+		}
+		if (accepted.kind == GDScriptParser::DataType::TRAIT) {
+			// Not the same as narrowing a class: a trait parameter is *not* checked on the way in, so
+			// an object that does not use the trait would reach the body. Assignment asks for `as`
+			// for the same reason, and so does this.
+			push_error(vformat(R"(Signal "%s" passes a "%s" as argument %d, but the handler takes the trait "%s". A trait parameter is not checked when the handler is called, so take a "%s" and use "as %s" inside.)", p_signal.name, given.to_string(), index, accepted.to_string(), given.to_string(), accepted.to_string()), p_handler);
+			continue;
+		}
+		push_error(vformat(R"(Signal "%s" passes a "%s" as argument %d, but the handler takes a "%s".)", p_signal.name, given.to_string(), index, accepted.to_string()), p_handler);
+	}
+}
+
 void GDScriptAnalyzer::apply_expected_lambda_signature(GDScriptParser::ExpressionNode *p_argument, const GDScriptParser::DataType &p_expected) {
 	if (p_argument == nullptr || p_argument->type != GDScriptParser::Node::LAMBDA) {
 		return;
@@ -5695,6 +5744,12 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				apply_expected_lambda_signature(p_call->arguments[i], expected);
 				i++;
 			}
+		}
+
+		// A handler connected to a statically known signal has to be callable with what the signal
+		// passes. Checked after the lambda block above, so a lambda has its inferred types by now.
+		if (base_type.kind == GDScriptParser::DataType::BUILTIN && base_type.builtin_type == Variant::SIGNAL && !base_type.is_meta_type && p_call->function_name == SNAME("connect") && base_type.method_info.name != StringName() && !p_call->arguments.is_empty()) {
+			check_signal_handler(base_type.method_info, p_call->arguments[0]);
 		}
 
 		// Type parameters come from two places: the class the method belongs to (`Pool[int]`), and the

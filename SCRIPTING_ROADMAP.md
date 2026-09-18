@@ -833,6 +833,27 @@ group are independent and can proceed in any order.
   go-to-definition walked past it. Both are fixed for everything a trait
   contributes, and the new LSP fixture markers were checked to fail with the
   lookup fix removed, so they are not decoration.
+- 9 (typed signals) is complete: `connect()` now checks the handler, which was
+  the last part left. The first design would have reused
+  `callable_signatures_compatible()`, and it is worth recording why it could
+  not: that check is contravariant, so it rejects
+  `func _on_body_entered(body: CharacterBody2D)` for a `Node2D` argument,
+  which is how Godot handlers are normally written. The handler check is its
+  own, and rejects only what can never work: the wrong number of arguments,
+  and a parameter unrelated to the argument in both directions. Arity is the
+  valuable half -- verified that a handler taking too few arguments never runs
+  at all, leaving one "expected 0 argument(s), but called with 1" line in the
+  output -- and the message points at `unbind()`.
+  Traits turned out to be the interesting edge. Allowing class narrowing is
+  sound because a class parameter is checked when the function is called
+  (verified: a `Node2D` passed to a `CharacterBody2D` parameter never enters
+  the body). A trait parameter is *not* checked (verified: a `Rock` that does
+  not use `Damageable` entered the body and only failed at `take_damage()`),
+  which is also why assigning an object to a trait-typed variable already
+  needs `as`. So a trait-typed handler parameter is refused with a message
+  that gives the fix, and the fix was checked to compile and run. A plain
+  `Callable`, including anything through `unbind()` or `bind()`, stays
+  unchecked, the same rule as assigning one.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

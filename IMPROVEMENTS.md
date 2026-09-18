@@ -837,6 +837,32 @@ The array literal matters: a handler that knows the element type rejects a
 plain `Array` at runtime, so `emit` builds the typed one, the same way a call
 to an ordinary function does.
 
+`connect` checks the handler too, for the mistakes that otherwise only show
+up as an error line in the output while the handler silently never runs:
+
+```gdscript
+signal hit(damage: int)
+
+func on_hit(who: String) -> void: ...
+func on_anything() -> void: ...
+
+func _ready():
+    hit.connect(on_hit)        # error: passes a "int" as argument 1, but the handler takes a "String"
+    hit.connect(on_anything)   # error: passes 1 argument(s), but the handler takes 0. Use "unbind()"
+    hit.connect(on_anything.unbind(1))   # fine
+```
+
+Narrowing a class parameter stays allowed, because that is how handlers are
+normally written and a class parameter is checked when the handler is called:
+
+```gdscript
+func _on_body_entered(body: CharacterBody2D) -> void: ...   # fine for a Node2D argument
+```
+
+A **trait** parameter is different: it is not checked on the way in, so an
+object that does not use the trait would reach the body. That is refused, and
+the message says what to write instead: take the object, then `as` it.
+
 ## One-line property accessors
 
 An inline getter or setter had to go in an indented block, which turns a
@@ -1018,13 +1044,10 @@ Next, in order:
 1. **Typed `PackedScene` exports.** `@export var enemy: PackedScene[Enemy]`,
    with the scene picker filtered to scenes whose root matches, so dropping
    the wrong scene into a slot is caught in the editor.
-2. **Typed signals**: connecting types the handler and `emit` is checked
-   against the signal (above); what is left is rejecting a handler whose
-   signature does not fit the signal.
-3. **Enums as real types**, with methods and exhaustive `match`.
-4. **Multiple return values**, including `if var ok, value := parse(text):`
+2. **Enums as real types**, with methods and exhaustive `match`.
+3. **Multiple return values**, including `if var ok, value := parse(text):`
    for error handling.
-5. **String interpolation**, `f"{name} has {hp} HP"`.
+4. **String interpolation**, `f"{name} has {hp} HP"`.
 
 Further out: fixed multidimensional arrays of real numbers, a formatter,
 and direct dispatch for trait methods if profiling asks for it.

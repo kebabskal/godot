@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 11: Signal "found" passes a "Node" as argument 1, but the handler takes the trait "Damageable". A trait parameter is not checked when the handler is called, so take a "Node" and use "as Damageable" inside.

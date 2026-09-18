@@ -277,6 +277,7 @@ public:
 	static void set_callable_signature_from_function(GDScriptParser::DataType &r_type, const GDScriptParser::FunctionNode *p_function);
 	void set_callable_signature_from_info(GDScriptParser::DataType &r_type, const MethodInfo &p_info) const;
 	GDScriptParser::DataType expected_callable_for_signal(const GDScriptParser::DataType &p_base_type, const StringName &p_method) const;
+	void check_signal_handler(const MethodInfo &p_signal, const GDScriptParser::ExpressionNode *p_handler);
 	static bool callable_signatures_compatible(const GDScriptParser::DataType &p_target, const GDScriptParser::DataType &p_source);
 
 	// Struct methods: index in the declaration order, which is also the index on the layout.

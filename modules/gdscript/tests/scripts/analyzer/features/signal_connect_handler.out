@@ -1,0 +1,7 @@
+GDTEST_OK
+~~ WARNING at line 17: (RETURN_VALUE_DISCARDED) The function "connect()" returns a value that will be discarded if not used.
+~~ WARNING at line 18: (RETURN_VALUE_DISCARDED) The function "connect()" returns a value that will be discarded if not used.
+~~ WARNING at line 20: (RETURN_VALUE_DISCARDED) The function "connect()" returns a value that will be discarded if not used.
+found Sprite2D
+hit 3.0 false
+anything
