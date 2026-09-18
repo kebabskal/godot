@@ -39,6 +39,18 @@
 
 class ResourceLoaderText {
 public:
+	// A scene's root node as the file states it. References are kept as written, the UID beside
+	// the path, so that whoever uses them resolves the UID against the current UID map.
+	struct SceneRoot {
+		bool has_root = false;
+		String type; // Empty when the root is an instance of the base scene.
+		String script_uid;
+		String script_path;
+		bool builtin_script = false; // A script saved inside the scene, which has no file.
+		String base_scene_uid;
+		String base_scene_path;
+	};
+
 	enum {
 		// Version 2: Changed names for Basis, AABB, Vectors, etc.
 		// Version 3: New string ID for ext/subresources, breaks forward compat.
@@ -142,6 +154,8 @@ public:
 	void get_dependencies(Ref<FileAccess> p_f, List<String> *p_dependencies, bool p_add_types);
 	Error rename_dependencies(Ref<FileAccess> p_f, const String &p_path, const HashMap<String, String> &p_map);
 	Error get_classes_used(HashSet<StringName> *r_classes);
+	struct SceneRoot;
+	Error get_scene_root(SceneRoot &r_root);
 
 	ResourceLoaderText();
 };
@@ -156,6 +170,8 @@ public:
 	virtual void get_recognized_extensions(List<String> *p_extensions) const override;
 	virtual bool handles_type(const String &p_type) const override;
 	virtual void get_classes_used(const String &p_path, HashSet<StringName> *r_classes) override;
+	// Reads a text scene's root node (its type, script and base scene) without loading anything.
+	static Error get_scene_root(const String &p_path, ResourceLoaderText::SceneRoot &r_root);
 
 	virtual String get_resource_type(const String &p_path) const override;
 	virtual String get_resource_script_class(const String &p_path) const override;

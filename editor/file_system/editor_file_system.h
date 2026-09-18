@@ -37,6 +37,7 @@
 #include "core/os/thread_safe.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/safe_refcount.h"
+#include "editor/file_system/editor_scene_root_index.h"
 #include "scene/main/node.h"
 
 class ResourceFormatImporter;
@@ -227,6 +228,8 @@ class EditorFileSystem : public Node {
 	};
 
 	HashMap<String, FileCache> file_cache;
+	EditorSceneRootIndex scene_root_index;
+	bool scene_root_index_loaded = false;
 	HashSet<String> dep_update_list;
 
 	struct ScanProgress {
@@ -382,6 +385,10 @@ public:
 	static inline String CACHE_FILE_NAME = "filesystem_cache10";
 
 	static EditorFileSystem *get_singleton() { return singleton; }
+
+	// Scene roots, for lists that only offer scenes of a given root type. Always current: see
+	// EditorSceneRootIndex.
+	EditorSceneRootIndex &get_scene_root_index();
 
 	EditorFileSystemDirectory *get_filesystem();
 	bool is_scanning() const;

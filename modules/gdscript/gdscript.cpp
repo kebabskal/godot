@@ -2845,6 +2845,54 @@ String GDScriptLanguage::_get_global_class_name(const String &p_path, String *r_
 	return c->identifier != nullptr ? String(c->identifier->name) : String();
 }
 
+bool GDScriptLanguage::get_script_file_extends(const String &p_path, String *r_class_name, String *r_base_path, String *r_base_name) const {
+	Error err;
+	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::READ, &err);
+	if (err) {
+		return false;
+	}
+
+	// Parse only, as `get_global_class_name()` does: tolerant of errors, and blind to other files.
+	GDScriptParser parser;
+	parser.parse(f->get_as_utf8_string(), p_path, false, false);
+	const GDScriptParser::ClassNode *c = parser.get_tree();
+	if (!c) {
+		return false;
+	}
+
+	if (r_class_name) {
+		*r_class_name = c->identifier != nullptr ? String(c->identifier->name) : String();
+	}
+	String base_path;
+	String base_name;
+	if (!c->extends_used) {
+		base_name = "RefCounted";
+	} else if (!c->extends_path.is_empty()) {
+		if (!c->extends.is_empty()) {
+			return false; // An inner class of another file: not a file of its own.
+		}
+		base_path = c->extends_path;
+		// A UID is left as written, to be looked up when it is used: the file it names can move.
+		if (!base_path.begins_with("uid://") && base_path.is_relative_path()) {
+			base_path = p_path.get_base_dir().path_join(base_path).simplify_path();
+		}
+	} else if (c->extends.size() == 1) {
+		base_name = c->extends[0]->name;
+	} else {
+		return false; // `extends Outer.Inner`.
+	}
+	if (base_path.is_empty() && base_name.is_empty()) {
+		return false;
+	}
+	if (r_base_path) {
+		*r_base_path = base_path;
+	}
+	if (r_base_name) {
+		*r_base_name = base_name;
+	}
+	return true;
+}
+
 thread_local GDScriptLanguage::CallLevel *GDScriptLanguage::_call_stack = nullptr;
 thread_local uint32_t GDScriptLanguage::_call_stack_size = 0;
 

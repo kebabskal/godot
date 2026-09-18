@@ -484,9 +484,9 @@ void EditorResourcePicker::_edit_menu_cbk(int p_which) {
 
 			EditorQuickOpenDialog *quick_open = EditorNode::get_singleton()->get_quick_open_dialog();
 			if (resource_owner) {
-				quick_open->popup_dialog_for_property(base_types, resource_owner, property_path, callable_mp(this, &EditorResourcePicker::_file_selected));
+				quick_open->popup_dialog_for_property(base_types, resource_owner, property_path, callable_mp(this, &EditorResourcePicker::_file_selected), scene_root_type);
 			} else {
-				quick_open->popup_dialog(base_types, callable_mp(this, &EditorResourcePicker::_file_selected));
+				quick_open->popup_dialog(base_types, callable_mp(this, &EditorResourcePicker::_file_selected), false, scene_root_type);
 			}
 
 		} break;

@@ -2383,7 +2383,18 @@ void EditorFileSystem::update_file(const String &p_file) {
 	update_files({ p_file });
 }
 
+EditorSceneRootIndex &EditorFileSystem::get_scene_root_index() {
+	if (!scene_root_index_loaded) {
+		scene_root_index.load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("scene_root_index"));
+		scene_root_index_loaded = true;
+	}
+	return scene_root_index;
+}
+
 void EditorFileSystem::update_files(const Vector<String> &p_script_paths) {
+	for (const String &file : p_script_paths) {
+		scene_root_index.forget(file); // Checked against the disk anyway; this just drops it sooner.
+	}
 	bool updated = false;
 	bool update_files_icon_cache = false;
 	Vector<EditorFileSystemDirectory::FileInfo *> files_to_update_icon_path;

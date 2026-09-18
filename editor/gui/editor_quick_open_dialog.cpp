@@ -153,7 +153,7 @@ String EditorQuickOpenDialog::get_dialog_title(const Vector<StringName> &p_base_
 	return vformat(TTR("Select %s"), p_base_types[0]);
 }
 
-void EditorQuickOpenDialog::popup_dialog(const Vector<StringName> &p_base_types, const Callable &p_item_selected_callback, bool p_allow_type_switching) {
+void EditorQuickOpenDialog::popup_dialog(const Vector<StringName> &p_base_types, const Callable &p_item_selected_callback, bool p_allow_type_switching, const String &p_scene_root_type) {
 	ERR_FAIL_COND(p_base_types.is_empty());
 	ERR_FAIL_COND(!p_item_selected_callback.is_valid());
 
@@ -163,12 +163,12 @@ void EditorQuickOpenDialog::popup_dialog(const Vector<StringName> &p_base_types,
 	allow_type_switching = p_allow_type_switching;
 
 	is_cycling_items = false;
-	container->init(p_base_types);
+	container->init(p_base_types, p_scene_root_type);
 	container->set_instant_preview_toggle_visible(false);
 	_finish_dialog_setup(p_base_types);
 }
 
-void EditorQuickOpenDialog::popup_dialog_for_property(const Vector<StringName> &p_base_types, Object *p_obj, const StringName &p_path, const Callable &p_item_selected_callback) {
+void EditorQuickOpenDialog::popup_dialog_for_property(const Vector<StringName> &p_base_types, Object *p_obj, const StringName &p_path, const Callable &p_item_selected_callback, const String &p_scene_root_type) {
 	ERR_FAIL_NULL(p_obj);
 	ERR_FAIL_COND(p_base_types.is_empty());
 	ERR_FAIL_COND(!p_item_selected_callback.is_valid());
@@ -183,7 +183,7 @@ void EditorQuickOpenDialog::popup_dialog_for_property(const Vector<StringName> &
 	// the window.
 	initial_selection_performed = false;
 
-	container->init(p_base_types);
+	container->init(p_base_types, p_scene_root_type);
 	container->set_instant_preview_toggle_visible(true);
 	_finish_dialog_setup(p_base_types);
 }
@@ -507,9 +507,10 @@ void QuickOpenResultContainer::_ensure_result_vector_capacity() {
 	}
 }
 
-void QuickOpenResultContainer::init(const Vector<StringName> &p_base_types) {
+void QuickOpenResultContainer::init(const Vector<StringName> &p_base_types, const String &p_scene_root_type) {
 	_ensure_result_vector_capacity();
 	base_types = p_base_types;
+	scene_root_type = p_scene_root_type;
 
 	const int display_mode_behavior = EDITOR_GET("filesystem/quick_open_dialog/default_display_mode");
 	const bool adaptive_display_mode = (display_mode_behavior == 0);
@@ -649,6 +650,7 @@ void QuickOpenResultContainer::_create_initial_results() {
 	uids.clear();
 	filetypes.clear();
 	history_set.clear();
+	excluded_uids.clear();
 
 	Vector<ResourceUID::ID> *history = _get_history();
 	if (history) {
@@ -658,6 +660,9 @@ void QuickOpenResultContainer::_create_initial_results() {
 	}
 
 	_find_uids_in_folder(EditorFileSystem::get_singleton()->get_filesystem(), include_addons_toggle->is_pressed());
+	if (!scene_root_type.is_empty()) {
+		EditorFileSystem::get_singleton()->get_scene_root_index().save();
+	}
 	_sort_uids(result_items.size());
 	max_total_results = MIN(uids.size(), result_items.size());
 	update_results();
@@ -685,6 +690,15 @@ void QuickOpenResultContainer::_find_uids_in_folder(EditorFileSystemDirectory *p
 		for (const StringName &parent_type : base_types) {
 			bool is_valid = ClassDB::is_parent_class(engine_type, parent_type) || (!is_engine_type && EditorNode::get_editor_data().script_class_is_parent(script_type, parent_type));
 
+			if (is_valid && !scene_root_type.is_empty() && ClassDB::is_parent_class(engine_type, SNAME("PackedScene"))) {
+				// Only a scene known to have another root is left out; one that cannot be told
+				// is offered, and checked when picked.
+				EditorSceneRootIndex &index = EditorFileSystem::get_singleton()->get_scene_root_index();
+				if (index.match(p_directory->get_file_path(i), scene_root_type) == EditorSceneRootIndex::NO_MATCH) {
+					excluded_uids.insert(uid);
+					break;
+				}
+			}
 			if (is_valid) {
 				uids.push_back(uid);
 				filetypes.insert(uid, actual_type);
@@ -733,6 +747,9 @@ QuickOpenResultCandidate QuickOpenResultCandidate::from_result(Ref<FuzzySearchMa
 
 void QuickOpenResultContainer::_add_candidate(QuickOpenResultCandidate &p_candidate) {
 	ERR_FAIL_COND(!ResourceUID::get_singleton()->has_id(p_candidate.uid));
+	if (excluded_uids.has(p_candidate.uid)) {
+		return; // A recently picked scene, whose root does not fit this time.
+	}
 
 	StringName actual_type;
 	{

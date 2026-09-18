@@ -1043,8 +1043,14 @@ without one, named through a `preload` constant.
 **In the inspector,** an exported `PackedScene[Enemy]` only takes scenes whose
 root is an `Enemy`. A wrong scene is refused when it is picked from the file
 dialog or Quick Load (with a message naming the required root), and cannot be
-dropped onto the slot. The Quick Load list still shows every scene; filtering
-it would mean loading each one to read its root, which is left for later.
+dropped onto the slot. Quick Load from such a slot only lists scenes whose root
+fits.
+
+That list stays right when files change outside the editor, say by a script or
+a coding agent, without waiting for a rescan. What it knows about each file is
+read from that file alone and checked against the file on disk every time the
+list opens. A scene it cannot vouch for either way (one with a built-in script,
+or a class the editor has not seen yet) is listed, and checked when picked.
 
 **At runtime,** a scene that reaches a typed slot without being checked (from
 `load()`, or an export whose scene was edited afterwards) is caught at

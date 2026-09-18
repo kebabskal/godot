@@ -885,10 +885,34 @@ group are independent and can proceed in any order.
     honoured, the plain export untouched. That run also caught a wrong message
     ("only accepts 'PackedScene'" about a `PackedScene`), now specific to the
     root.
-  - Not done: filtering the Quick Load *list*. Wrong scenes are refused on
-    every path but still listed; filtering needs each candidate's root, which
-    means loading each scene, and wants a cache in `EditorFileSystem` rather
-    than a slow dialog.
+  - Quick Load from a typed slot lists only matching scenes, through
+    `EditorSceneRootIndex` (owned by `EditorFileSystem`, persisted in
+    `.godot/editor/scene_root_index`). The requirement was that it never goes
+    stale, including when files are changed outside the editor, by coding
+    agents in particular, with no rescan. How:
+    - Only facts about a file's own contents are kept: a scene's root type,
+      root script and base scene (read by
+      `ResourceFormatLoaderText::get_scene_root()`, which parses up to the
+      root node and loads nothing); a script's class name and what it extends
+      (the new `ScriptLanguage::get_script_file_extends()`, which unlike
+      `get_global_class_name()`'s base type never reads another file).
+      Chains are walked when asked, one file per link, so a change anywhere
+      in a chain is seen. UIDs are kept as written and resolved when asked, so
+      a moved file is followed.
+    - Every fact is checked against its file's modification time on every
+      use, so nothing depends on the editor having rescanned.
+    - Times have one-second resolution, so a fact read in the same second the
+      file was written could hide a second write in that second (git's
+      "racily clean" problem). Such facts are used but not kept.
+    - Three answers, not two: only a proven mismatch hides a scene. A built-in
+      script, a C# script (no `get_script_file_extends()` yet), or a class
+      name the editor's list lacks or that its file no longer declares gives
+      UNKNOWN, and the scene is listed; picking it still runs the real check.
+    - Binary `.scn` scenes have no cheap reader and are loaded fresh
+      (`CACHE_MODE_IGNORE`) once per change.
+    Tests in `modules/gdscript/tests/test_scene_root_index.h`, including
+    files rewritten behind the index's back and a saved cache that is stale
+    by the next session.
   - Trap for anyone writing tests with resources: `--gdscript-generate-tests`
     builds its runner without initializing the project, so `res://` is the repo
     root there and the tests folder in the doctest suite. A fixture that names

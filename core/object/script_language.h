@@ -333,6 +333,11 @@ public:
 
 	virtual bool handles_global_class_type(const String &p_type) const { return false; }
 	virtual String get_global_class_name(const String &p_path, String *r_base_type = nullptr, String *r_icon_path = nullptr, bool *r_is_abstract = nullptr, bool *r_is_tool = nullptr) const { return String(); }
+	// What a script file itself says it extends, read from that file alone: either another script
+	// file (`r_base_path`, a path or a UID as written) or a class by name (`r_base_name`, a global or engine class). Unlike
+	// `get_global_class_name()`'s base type, this never looks into other files, so the answer only
+	// changes when this file does. Returns false when the language cannot tell.
+	virtual bool get_script_file_extends(const String &p_path, String *r_class_name, String *r_base_path, String *r_base_name) const { return false; }
 
 	virtual ~ScriptLanguage() {}
 };

@@ -1296,6 +1296,103 @@ Error ResourceLoaderText::get_classes_used(HashSet<StringName> *r_classes) {
 	return OK;
 }
 
+Error ResourceLoaderText::get_scene_root(SceneRoot &r_root) {
+	r_root = SceneRoot();
+	if (error) {
+		return error;
+	}
+	if (!is_scene) {
+		return ERR_INVALID_DATA;
+	}
+
+	ignore_resource_parsing = true;
+
+	// Every reference parses to a stand-in resource, which is mapped back to what it names.
+	struct Reference {
+		String uid;
+		String path;
+	};
+	DummyReadData dummy_read;
+	HashMap<Ref<Resource>, Reference> references;
+	VariantParser::ResourceParser rp_new;
+	rp_new.ext_func = _parse_ext_resource_dummys;
+	rp_new.sub_func = _parse_sub_resource_dummys;
+	rp_new.userdata = &dummy_read;
+
+	while (next_tag.name == "ext_resource") {
+		Reference ref;
+		ref.path = next_tag.fields.has("path") ? String(next_tag.fields["path"]) : String();
+		if (!ref.path.contains("://") && ref.path.is_relative_path()) {
+			ref.path = ProjectSettings::get_singleton()->localize_path(local_path.get_base_dir().path_join(ref.path));
+		}
+		if (next_tag.fields.has("uid")) {
+			ref.uid = next_tag.fields["uid"];
+		}
+		Ref<Resource> dummy;
+		dummy.instantiate();
+		dummy_read.rev_external_resources[next_tag.fields.has("id") ? String(next_tag.fields["id"]) : String()] = dummy;
+		references[dummy] = ref;
+
+		error = VariantParser::parse_tag(&stream, lines, error_text, next_tag, &rp_new);
+		ERR_FAIL_COND_V_MSG(error, error, _get_error_string());
+	}
+
+	while (next_tag.name == "sub_resource" || next_tag.name == "resource") {
+		if (next_tag.fields.has("id")) {
+			Ref<Resource> dummy;
+			dummy.instantiate();
+			dummy_read.resource_map[next_tag.fields["id"]] = dummy;
+		}
+		while (true) {
+			String assign;
+			Variant value;
+			error = VariantParser::parse_tag_assign_eof(&stream, lines, error_text, next_tag, assign, value, &rp_new);
+			if (error) {
+				// A scene with no nodes, or one cut short: either way there is no root to report.
+				return error == ERR_FILE_EOF ? OK : error;
+			}
+			if (assign.is_empty()) {
+				break;
+			}
+		}
+	}
+
+	if (next_tag.name != "node") {
+		return OK;
+	}
+	r_root.has_root = true;
+	if (next_tag.fields.has("type")) {
+		r_root.type = next_tag.fields["type"];
+	}
+	if (next_tag.fields.has("instance")) {
+		const Ref<Resource> instance = next_tag.fields["instance"];
+		if (references.has(instance)) {
+			r_root.base_scene_uid = references[instance].uid;
+			r_root.base_scene_path = references[instance].path;
+		}
+	}
+
+	while (true) {
+		String assign;
+		Variant value;
+		error = VariantParser::parse_tag_assign_eof(&stream, lines, error_text, next_tag, assign, value, &rp_new);
+		if (error || assign.is_empty()) {
+			break; // The root's properties end at the next tag, or at the end of the file.
+		}
+		if (assign == "script") {
+			const Ref<Resource> script = value;
+			if (references.has(script)) {
+				r_root.script_uid = references[script].uid;
+				r_root.script_path = references[script].path;
+			} else if (script.is_valid()) {
+				r_root.builtin_script = true;
+			}
+		}
+	}
+	error = OK;
+	return OK;
+}
+
 String ResourceLoaderText::recognize_script_class(Ref<FileAccess> p_f) {
 	error = OK;
 
@@ -1482,6 +1579,21 @@ void ResourceFormatLoaderText::get_classes_used(const String &p_path, HashSet<St
 	loader.res_path = loader.local_path;
 	loader.open(f);
 	loader.get_classes_used(r_classes);
+}
+
+Error ResourceFormatLoaderText::get_scene_root(const String &p_path, ResourceLoaderText::SceneRoot &r_root) {
+	r_root = ResourceLoaderText::SceneRoot();
+	Error err;
+	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::READ, &err);
+	if (f.is_null()) {
+		return err;
+	}
+
+	ResourceLoaderText loader;
+	loader.local_path = ProjectSettings::get_singleton()->localize_path(p_path);
+	loader.res_path = loader.local_path;
+	loader.open(f);
+	return loader.get_scene_root(r_root);
 }
 
 String ResourceFormatLoaderText::get_resource_type(const String &p_path) const {
