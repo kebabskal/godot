@@ -1,0 +1,8 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 7: Cannot tell which enum ".IDLE" belongs to here. Write the enum's name in front of it ("MyEnum.IDLE").
+>> ERROR at line 8: Enum "State" has no value named "JUMP".
+>> ERROR at line 9: Cannot use ".IDLE" here: a value of type "int" is expected, not an enum value.
+>> ERROR at line 10: Cannot use ".IDLE" here: a value of type "int" is expected, not an enum value.
+>> ERROR at line 11: Cannot tell which enum ".IDLE" belongs to here. Write the enum's name in front of it ("MyEnum.IDLE").
+>> ERROR at line 12: Cannot tell which enum ".WALK" belongs to here. Write the enum's name in front of it ("MyEnum.WALK").
+>> ERROR at line 12: Cannot infer the type of "d" variable because the value doesn't have a set type.

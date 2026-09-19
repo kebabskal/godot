@@ -1100,6 +1100,32 @@ engine APIs all see what they saw before. The methods are found through the
 static type. On an untyped variable, `state.is_moving()` is a runtime error,
 because the value is just an integer there.
 
+**The enum's name can be left out** wherever the enum is already known:
+a typed variable or constant, an assignment, an argument, a default value, a
+`return`, either side of `==` and `!=`, a `match` pattern, and the elements of
+a typed array. Engine enums work the same way.
+
+```gdscript
+var state: State = .IDLE
+
+func set_state(s: State = .IDLE) -> void:
+    state = s
+
+func _ready():
+    set_state(.RUN)
+    if state == .RUN:
+        print("running")             # running
+    match state:
+        .IDLE: print("idle")
+        .WALK, .RUN, .JUMP: print("busy")   # busy
+    process_mode = .PROCESS_MODE_ALWAYS
+```
+
+Where nothing says which enum is meant (`var x = .IDLE`, or an argument to
+`print()`), it is an error that asks for the name. Typing `.` in one of these
+places lists the enum's values in the script editor, and in external editors
+through the language server.
+
 **`match` notices a missing value.** A `match` on an enum value that has no
 branch for some of its values, and no `_` branch, gets a warning naming them:
 

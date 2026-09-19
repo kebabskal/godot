@@ -1148,6 +1148,9 @@ public:
 		};
 		bool function_source_is_static = false; // For non-GDScript scripts.
 		int struct_field_index = -1; // For `STRUCT_FIELD`.
+		// `.WALK`: a value of whatever enum is expected where it stands, resolved by the analyzer
+		// from that context (a typed variable, a parameter, the other side of `==`, ...).
+		bool is_implicit_enum_value = false;
 
 		FunctionNode *source_function = nullptr; // TODO: Rename to disambiguate `function_source`.
 
@@ -1560,6 +1563,7 @@ public:
 		COMPLETION_TYPE_ATTRIBUTE, // Attribute in type name (Type.|).
 		COMPLETION_TYPE_NAME, // Name of type (after :).
 		COMPLETION_TYPE_NAME_OR_VOID, // Same as TYPE_NAME, but allows void (in function return type).
+		COMPLETION_IMPLICIT_ENUM_VALUE, // After a leading `.`: the values of the enum the context expects (`state = .|`).
 	};
 
 	struct CompletionCall {
@@ -1582,6 +1586,7 @@ public:
 		Object *base = nullptr;
 		GDScriptParser *parser = nullptr;
 		CompletionCall call;
+		DataType expected_type; // For COMPLETION_IMPLICIT_ENUM_VALUE: filled in by the analyzer, which knows what the context expects.
 	};
 
 private:
@@ -1861,6 +1866,7 @@ private:
 	LiteralNode *parse_literal();
 	ExpressionNode *parse_self(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_identifier(ExpressionNode *p_previous_operand, bool p_can_assign);
+	ExpressionNode *parse_implicit_enum_value(ExpressionNode *p_previous_operand, bool p_can_assign);
 	IdentifierNode *parse_identifier();
 	ExpressionNode *parse_builtin_constant(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_unary_operator(ExpressionNode *p_previous_operand, bool p_can_assign);

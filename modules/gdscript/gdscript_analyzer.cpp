@@ -3824,7 +3824,11 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 	}
 
 	if (p_assignable->initializer != nullptr) {
-		reduce_expression(p_assignable->initializer);
+		if (has_specified_type) {
+			reduce_expression_expecting(p_assignable->initializer, specified_type);
+		} else {
+			reduce_expression(p_assignable->initializer);
+		}
 
 		if (p_assignable->initializer->type == GDScriptParser::Node::ARRAY) {
 			GDScriptParser::ArrayNode *array = static_cast<GDScriptParser::ArrayNode *>(p_assignable->initializer);
@@ -4322,7 +4326,11 @@ void GDScriptAnalyzer::resolve_match_pattern(GDScriptParser::PatternNode *p_matc
 		case GDScriptParser::PatternNode::PT_EXPRESSION:
 			if (p_match_pattern->expression) {
 				GDScriptParser::ExpressionNode *expr = p_match_pattern->expression;
-				reduce_expression(expr);
+				if (p_match_test != nullptr) {
+					reduce_expression_expecting(expr, p_match_test->type_constraint);
+				} else {
+					reduce_expression(expr);
+				}
 				if (!expr->is_constant) {
 					while (expr && expr->type == GDScriptParser::Node::SUBSCRIPT) {
 						GDScriptParser::SubscriptNode *sub = static_cast<GDScriptParser::SubscriptNode *>(expr);
@@ -4399,6 +4407,8 @@ void GDScriptAnalyzer::resolve_return(GDScriptParser::ReturnNode *p_return) {
 			reduce_call(static_cast<GDScriptParser::CallNode *>(p_return->return_value), false, true);
 		} else if (is_arrow_lambda_body && is_call) {
 			reduce_call(static_cast<GDScriptParser::CallNode *>(p_return->return_value), false, false, true);
+		} else if (has_expected_type && expected_type.is_hard_type()) {
+			reduce_expression_expecting(p_return->return_value, expected_type);
 		} else {
 			reduce_expression(p_return->return_value);
 		}
@@ -4735,7 +4745,10 @@ void GDScriptAnalyzer::update_dictionary_literal_element_type(GDScriptParser::Di
 }
 
 void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assignment) {
-	reduce_expression(p_assignment->assigned_value);
+	const bool implicit_value = is_unresolved_implicit_enum_value(p_assignment->assigned_value);
+	if (!implicit_value) {
+		reduce_expression(p_assignment->assigned_value);
+	}
 
 #ifdef DEBUG_ENABLED
 	// Increment assignment count for local variables.
@@ -4752,6 +4765,9 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 #endif // DEBUG_ENABLED
 
 	reduce_expression(p_assignment->assignee);
+	if (implicit_value) {
+		reduce_expression_expecting(p_assignment->assigned_value, p_assignment->assignee->type_constraint);
+	}
 
 	if (!narrowed_locals.is_empty() && p_assignment->assignee->type == GDScriptParser::Node::IDENTIFIER) {
 		// Whatever an earlier test proved about this local, the new value need not honour it.
@@ -5016,6 +5032,24 @@ void GDScriptAnalyzer::reduce_null_coalescing(GDScriptParser::BinaryOpNode *p_bi
 }
 
 void GDScriptAnalyzer::reduce_binary_op(GDScriptParser::BinaryOpNode *p_binary_op) {
+	// `state == .WALK`: an implicit value on one side takes its enum from the other.
+	const bool left_implicit = is_unresolved_implicit_enum_value(p_binary_op->left_operand);
+	const bool right_implicit = is_unresolved_implicit_enum_value(p_binary_op->right_operand);
+	if (left_implicit || right_implicit) {
+		if (!left_implicit) {
+			reduce_expression(p_binary_op->left_operand);
+		}
+		if (!right_implicit) {
+			reduce_expression(p_binary_op->right_operand);
+		}
+		if (left_implicit && p_binary_op->right_operand != nullptr) {
+			reduce_expression_expecting(p_binary_op->left_operand, p_binary_op->right_operand->type_constraint);
+		}
+		if (right_implicit && p_binary_op->left_operand != nullptr) {
+			reduce_expression_expecting(p_binary_op->right_operand, p_binary_op->left_operand->type_constraint);
+		}
+	}
+
 	reduce_expression(p_binary_op->left_operand);
 
 	const bool is_and = p_binary_op->operation == GDScriptParser::BinaryOpNode::OP_LOGIC_AND;
@@ -5288,6 +5322,105 @@ GDScriptParser::DataType GDScriptAnalyzer::enum_value_type(const GDScriptParser:
 	return type;
 }
 
+bool GDScriptAnalyzer::is_unresolved_implicit_enum_value(const GDScriptParser::ExpressionNode *p_expression) {
+	return p_expression != nullptr && p_expression->type == GDScriptParser::Node::IDENTIFIER && !p_expression->reduced &&
+			static_cast<const GDScriptParser::IdentifierNode *>(p_expression)->is_implicit_enum_value;
+}
+
+void GDScriptAnalyzer::get_enum_values(const GDScriptParser::DataType &p_type, HashMap<StringName, int64_t> &r_values) {
+	// A script enum's value type does not always carry the values; its declaration does.
+	r_values = p_type.enum_values;
+	if (r_values.is_empty() && p_type.class_type == nullptr) {
+		// An engine enum reached through a property or a method's signature, which only names it:
+		// `Node.ProcessMode`, `Vector3.Axis`, or a global one such as `Key`.
+		const String full_name = p_type.native_type;
+		const int separator = full_name.rfind(ENUM_SEPARATOR);
+		const StringName owner = separator >= 0 ? StringName(full_name.substr(0, separator)) : StringName();
+		const StringName name = separator >= 0 ? StringName(full_name.substr(separator + String(ENUM_SEPARATOR).length())) : StringName(full_name);
+		if (owner != StringName() && ClassDB::class_exists(owner)) {
+			r_values = make_native_enum_type(name, owner, false).enum_values;
+		} else if (owner != StringName() && GDScriptParser::get_builtin_type(owner) < Variant::VARIANT_MAX) {
+			r_values = make_builtin_enum_type(name, GDScriptParser::get_builtin_type(owner), false).enum_values;
+		} else if (CoreConstants::is_global_enum(full_name)) {
+			r_values = make_global_enum_type(full_name, StringName(), false).enum_values;
+		}
+	}
+	if (r_values.is_empty()) {
+		const GDScriptParser::EnumNode *enum_node = find_enum_node(p_type);
+		if (enum_node != nullptr) {
+			for (const GDScriptParser::EnumNode::Value &element : enum_node->values) {
+				if (element.resolved) {
+					r_values[element.identifier->name] = element.value;
+				}
+			}
+		}
+	}
+}
+
+void GDScriptAnalyzer::resolve_implicit_enum_value(GDScriptParser::IdentifierNode *p_identifier, const GDScriptParser::DataType &p_expected) {
+	if (parser->for_completion && parser->completion_context.node == p_identifier) {
+		parser->completion_context.expected_type = p_expected; // For completing `.|`.
+	}
+	p_identifier->reduced = true;
+	GDScriptParser::DataType variant_type;
+	variant_type.kind = GDScriptParser::DataType::VARIANT;
+	p_identifier->type_constraint = variant_type;
+
+	if (p_expected.kind != GDScriptParser::DataType::ENUM || p_expected.is_meta_type) {
+		if (p_expected.is_hard_type() && !p_expected.is_variant()) {
+			push_error(vformat(R"(Cannot use ".%s" here: a value of type "%s" is expected, not an enum value.)", p_identifier->name, p_expected.to_string()), p_identifier);
+		} else {
+			push_error(vformat(R"(Cannot tell which enum ".%s" belongs to here. Write the enum's name in front of it ("MyEnum.%s").)", p_identifier->name, p_identifier->name), p_identifier);
+		}
+		return;
+	}
+
+	HashMap<StringName, int64_t> values;
+	get_enum_values(p_expected, values);
+	const int64_t *value = values.getptr(p_identifier->name);
+	if (value == nullptr) {
+		push_error(vformat(R"(Enum "%s" has no value named "%s".)", p_expected.enum_type, p_identifier->name), p_identifier);
+		return;
+	}
+
+	GDScriptParser::DataType type = p_expected;
+	type.is_meta_type = false;
+	type.is_nullable = false;
+	type.is_constant = true;
+	type.builtin_type = Variant::INT;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	p_identifier->type_constraint = type;
+	p_identifier->is_constant = true;
+	p_identifier->reduced_value = *value;
+}
+
+void GDScriptAnalyzer::reduce_expression_expecting(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_expected) {
+	if (p_expression == nullptr) {
+		return;
+	}
+	if (is_unresolved_implicit_enum_value(p_expression)) {
+		resolve_implicit_enum_value(static_cast<GDScriptParser::IdentifierNode *>(p_expression), p_expected);
+		return;
+	}
+	// The expectation passes through to where the value comes from.
+	if (p_expression->type == GDScriptParser::Node::TERNARY_OPERATOR && !p_expression->reduced) {
+		GDScriptParser::TernaryOpNode *ternary = static_cast<GDScriptParser::TernaryOpNode *>(p_expression);
+		if (is_unresolved_implicit_enum_value(ternary->true_expr)) {
+			resolve_implicit_enum_value(static_cast<GDScriptParser::IdentifierNode *>(ternary->true_expr), p_expected);
+		}
+		if (is_unresolved_implicit_enum_value(ternary->false_expr)) {
+			resolve_implicit_enum_value(static_cast<GDScriptParser::IdentifierNode *>(ternary->false_expr), p_expected);
+		}
+	} else if (p_expression->type == GDScriptParser::Node::ARRAY && !p_expression->reduced && p_expected.kind == GDScriptParser::DataType::BUILTIN && p_expected.builtin_type == Variant::ARRAY && p_expected.has_container_element_type(0)) {
+		for (GDScriptParser::ExpressionNode *element : static_cast<GDScriptParser::ArrayNode *>(p_expression)->elements) {
+			if (is_unresolved_implicit_enum_value(element)) {
+				resolve_implicit_enum_value(static_cast<GDScriptParser::IdentifierNode *>(element), p_expected.get_container_element_type(0));
+			}
+		}
+	}
+	reduce_expression(p_expression);
+}
+
 void GDScriptAnalyzer::resolve_enum_methods(GDScriptParser::EnumNode *p_enum) {
 	HashSet<StringName> seen;
 	for (GDScriptParser::FunctionNode *method : p_enum->methods) {
@@ -5352,7 +5485,24 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 	bool all_is_constant = true;
 	HashMap<int, GDScriptParser::ArrayNode *> arrays; // For array literal to potentially type when passing.
 	HashMap<int, GDScriptParser::DictionaryNode *> dictionaries; // Same, but for dictionaries.
+	// An implicit enum argument waits for the parameter type (see `validate_call_arg()`); if no
+	// signature ever gives one, it is reported when the call is done.
+	struct ImplicitArgumentCheck {
+		GDScriptAnalyzer *analyzer;
+		GDScriptParser::CallNode *call;
+		~ImplicitArgumentCheck() {
+			for (GDScriptParser::ExpressionNode *argument : call->arguments) {
+				if (is_unresolved_implicit_enum_value(argument)) {
+					analyzer->reduce_expression(argument);
+				}
+			}
+		}
+	} implicit_argument_check{ this, p_call };
 	for (uint32_t i = 0; i < p_call->arguments.size(); i++) {
+		if (is_unresolved_implicit_enum_value(p_call->arguments[i])) {
+			all_is_constant = false;
+			continue;
+		}
 		reduce_expression(p_call->arguments[i]);
 		if (p_call->arguments[i]->type == GDScriptParser::Node::ARRAY) {
 			arrays[i] = static_cast<GDScriptParser::ArrayNode *>(p_call->arguments[i]);
@@ -6907,6 +7057,14 @@ void GDScriptAnalyzer::reduce_identifier_from_base(GDScriptParser::IdentifierNod
 
 void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_identifier, bool can_be_builtin) {
 	// TODO: This is an opportunity to further infer types.
+
+	if (p_identifier->is_implicit_enum_value) {
+		if (!p_identifier->is_constant) {
+			GDScriptParser::DataType no_expectation;
+			resolve_implicit_enum_value(p_identifier, no_expectation); // Reports that nothing says which enum.
+		}
+		return;
+	}
 
 	// Check if we are inside an enum. This allows enum values to access other elements of the same enum.
 	if (current_enum) {
@@ -9155,6 +9313,10 @@ void GDScriptAnalyzer::validate_call_arg(const List<GDScriptParser::DataType> &p
 			break;
 		}
 		GDScriptParser::DataType par_type = *par_itr;
+
+		if (is_unresolved_implicit_enum_value(p_call->arguments[i])) {
+			reduce_expression_expecting(p_call->arguments[i], par_type);
+		}
 
 		if (par_type.is_hard_type() && p_call->arguments[i]->is_constant) {
 			update_const_expression_builtin_type(p_call->arguments[i], par_type, "pass");

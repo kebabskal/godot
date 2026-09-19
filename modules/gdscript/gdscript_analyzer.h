@@ -93,6 +93,9 @@ class GDScriptAnalyzer {
 	void resolve_enum_method_bodies(GDScriptParser::EnumNode *p_enum);
 	void reduce_enum_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, bool p_is_await, bool p_is_root, bool p_allow_void);
 	void check_match_exhaustive(GDScriptParser::MatchNode *p_match);
+	static bool is_unresolved_implicit_enum_value(const GDScriptParser::ExpressionNode *p_expression);
+	void resolve_implicit_enum_value(GDScriptParser::IdentifierNode *p_identifier, const GDScriptParser::DataType &p_expected);
+	void reduce_expression_expecting(GDScriptParser::ExpressionNode *p_expression, const GDScriptParser::DataType &p_expected);
 	void resolve_trait(GDScriptParser::TraitNode *p_trait, GDScriptParser::ClassNode *p_class);
 	void resolve_trait_method_bodies(GDScriptParser::TraitNode *p_trait);
 	// A method declared by a class in the chain, a script base or the native base: not a trait default.
@@ -293,6 +296,8 @@ public:
 	static GDScriptParser::EnumNode *find_enum_node(const GDScriptParser::DataType &p_type);
 	static GDScriptParser::FunctionNode *find_enum_method(const GDScriptParser::EnumNode *p_enum, const StringName &p_name);
 	static GDScriptParser::DataType enum_value_type(const GDScriptParser::EnumNode *p_enum);
+	// The values of an enum type, whether a script declared it or the engine did.
+	static void get_enum_values(const GDScriptParser::DataType &p_type, HashMap<StringName, int64_t> &r_values);
 	// A trait and every trait it uses, directly or not. The trait itself comes first. Members are
 	// looked up across the whole closure.
 	static void collect_trait_closure(const GDScriptParser::TraitNode *p_trait, Vector<const GDScriptParser::TraitNode *> &r_closure);

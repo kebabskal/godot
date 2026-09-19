@@ -3957,6 +3957,19 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				r_forced = true;
 			}
 		} break;
+		case GDScriptParser::COMPLETION_IMPLICIT_ENUM_VALUE: {
+			// The analyzer recorded what the context expects; offer that enum's values, bare.
+			const GDScriptParser::DataType &expected = completion_context.expected_type;
+			if (expected.kind == GDScriptParser::DataType::ENUM && !expected.is_meta_type) {
+				HashMap<StringName, int64_t> values;
+				GDScriptAnalyzer::get_enum_values(expected, values);
+				for (const KeyValue<StringName, int64_t> &value : values) {
+					EditorLanguage::CompletionOption option(value.key, EditorLanguage::CompletionKind::ENUM);
+					options.insert(option.display, option);
+				}
+			}
+			r_forced = true;
+		} break;
 		case GDScriptParser::COMPLETION_METHOD:
 			is_function = true;
 			[[fallthrough]];

@@ -940,6 +940,25 @@ group are independent and can proceed in any order.
   - Strict mode now makes `INT_AS_ENUM_WITHOUT_CAST`,
     `INT_AS_ENUM_WITHOUT_MATCH` and the new warning errors. Enum to `int`
     stays implicit.
+  - Implicit enum values, Odin/Swift style: `.WALK` where an enum is
+    expected. Parsed as an `IdentifierNode` with `is_implicit_enum_value`
+    (a prefix rule for `.`; after an operand `.` stays attribute access, so
+    there is no ambiguity, and `.5` is still a number). Nothing resolves it
+    by default: each context that knows its expected type does, through
+    `reduce_expression_expecting()` (typed declarations and parameter
+    defaults, `return`, assignment after the target is reduced, `==` and
+    other binary operators from the other side, `match` patterns from the
+    tested value, typed array literals, ternaries), and call arguments are
+    skipped when the call reduces its arguments and resolved in
+    `validate_call_arg()` once the parameter types are known. A leftover one
+    is an error asking for the enum name. Resolved, it is a plain constant,
+    so the compiler needed nothing. Engine enums reached through a property
+    or signature carry no values in their `DataType`, so
+    `get_enum_values()` looks them up by name.
+    Completion: `.` makes a `COMPLETION_IMPLICIT_ENUM_VALUE` context, and the
+    analyzer, which is what knows every one of those contexts, records the
+    expected type in the completion context when it meets the node, so the
+    editor (and the LSP) list that enum's bare value names.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

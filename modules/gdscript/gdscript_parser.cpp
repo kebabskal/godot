@@ -374,6 +374,9 @@ void GDScriptParser::override_completion_context(const Node *p_for_node, Complet
 	if (p_for_node == nullptr || completion_context.node != p_for_node) {
 		return;
 	}
+	if (completion_context.type == COMPLETION_IMPLICIT_ENUM_VALUE) {
+		return; // `x = .|`: the values of the expected enum, not whatever the enclosing context offers.
+	}
 	CompletionContext context;
 	context.type = p_type;
 	context.current_class = current_class;
@@ -3134,6 +3137,29 @@ GDScriptParser::IdentifierNode *GDScriptParser::parse_identifier() {
 	return static_cast<IdentifierNode *>(parse_identifier(nullptr, false));
 }
 
+GDScriptParser::ExpressionNode *GDScriptParser::parse_implicit_enum_value(ExpressionNode *p_previous_operand, bool p_can_assign) {
+	// A leading `.`, where an operand is expected: `.WALK` names a value of the enum the context
+	// expects. After an operand, `.` is attribute access and never gets here.
+	IdentifierNode *identifier = alloc_node<IdentifierNode>();
+	// Before the name is consumed, while the cursor token is still ahead, as for attributes; forced
+	// over the plain identifier context the start of the expression already claimed.
+	make_completion_context(COMPLETION_IMPLICIT_ENUM_VALUE, identifier, -1, true);
+	if (current.is_node_name()) {
+		current.type = GDScriptTokenizer::Token::IDENTIFIER;
+	}
+	identifier->is_implicit_enum_value = true;
+	identifier->suite = current_suite;
+	if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected an enum value name after "." (as in ".IDLE").)")) {
+		complete_extents(identifier);
+		// Completing `x = .|`, where nothing follows the dot yet: the analyzer still has to see the
+		// node to work out which enum is expected.
+		return completion_context.node == identifier ? identifier : nullptr;
+	}
+	identifier->name = previous.get_identifier();
+	complete_extents(identifier);
+	return identifier;
+}
+
 GDScriptParser::ExpressionNode *GDScriptParser::parse_identifier(ExpressionNode *p_previous_operand, bool p_can_assign) {
 	if (!previous.is_identifier()) {
 		ERR_FAIL_V_MSG(nullptr, "Parser bug: parsing identifier node without identifier token.");
@@ -4824,7 +4850,7 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // PARENTHESIS_CLOSE,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // COMMA,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // SEMICOLON,
-		{ nullptr,                                          &GDScriptParser::parse_attribute,            	PREC_ATTRIBUTE }, // PERIOD,
+		{ &GDScriptParser::parse_implicit_enum_value,       &GDScriptParser::parse_attribute,            	PREC_ATTRIBUTE }, // PERIOD,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // PERIOD_PERIOD,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // PERIOD_PERIOD_PERIOD,
 		{ nullptr,                                          &GDScriptParser::parse_attribute,            	PREC_ATTRIBUTE }, // QUESTION_PERIOD,
