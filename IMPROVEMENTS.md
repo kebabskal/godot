@@ -1171,8 +1171,8 @@ about structs, traits and generics.
 
 The one thing the extension answers by itself is syntax colouring, from a
 grammar file baked into it. That grammar predates these features, so
-`struct`, `uses`, `=>` and type parameters come out looking like ordinary
-identifiers. [`misc/vscode/gdscript-fork-syntax`](misc/vscode/gdscript-fork-syntax)
+`struct`, `uses`, `=>`, type parameters and `.IDLE` come out looking like
+ordinary identifiers or stray punctuation. [`misc/vscode/gdscript-fork-syntax`](misc/vscode/gdscript-fork-syntax)
 fixes that: copy it into `~/.vscode/extensions/` and restart. It layers on
 top of godot-tools rather than replacing it, so the extension still updates
 from the marketplace as usual.

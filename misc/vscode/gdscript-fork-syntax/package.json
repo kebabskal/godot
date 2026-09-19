@@ -1,7 +1,7 @@
 {
 	"name": "gdscript-fork-syntax",
 	"displayName": "GDScript fork syntax",
-	"description": "Syntax highlighting for the GDScript additions in this fork: structs, traits, generics and short lambdas.",
+	"description": "Syntax highlighting for the GDScript additions in this fork: structs, traits, generics, short lambdas, nullable types and implicit enum values.",
 	"version": "0.1.0",
 	"publisher": "local",
 	"private": true,

@@ -211,6 +211,8 @@ static void test_directory(const String &p_dir) {
 			CHECK_MESSAGE(include.is_empty(), "An autocompletion option is missing for '", path.path_join(next), "'.");
 
 			String expected_call_hint = conf.get_value("output", "call_hint", call_hint);
+			// As in the scripts, ➡ stands for 0xFFFF, which marks the current argument in a call hint.
+			expected_call_hint = expected_call_hint.replace(String::chr(0x27A1), String::chr(0xFFFF));
 			bool expected_forced = conf.get_value("output", "forced", forced);
 
 			CHECK(expected_call_hint == call_hint);

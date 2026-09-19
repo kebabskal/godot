@@ -3969,6 +3969,14 @@ static void _find_call_arguments(GDScriptParser::CompletionContext &p_context, c
 				}
 			}
 			r_forced = true;
+			// Inside a call's arguments, keep showing the call's signature. Its own suggestions
+			// (qualified enum names, every identifier) are not what goes after the dot.
+			const GDScriptParser::Node *call = completion_context.call.call;
+			if (call != nullptr && call->type == GDScriptParser::Node::CALL) {
+				HashMap<String, EditorLanguage::CompletionOption> call_options;
+				bool call_forced = false;
+				_find_call_arguments(completion_context, call, completion_context.call.argument, call_options, call_forced, r_call_hint);
+			}
 		} break;
 		case GDScriptParser::COMPLETION_METHOD:
 			is_function = true;

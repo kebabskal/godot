@@ -5,6 +5,9 @@
 	"injectionSelector": "L:source.gdscript -comment -string",
 	"patterns": [
 		{
+			"include": "#implicit_enum_value"
+		},
+		{
 			"include": "#inline_accessor"
 		},
 		{
@@ -177,6 +180,18 @@
 					"include": "source.gdscript"
 				}
 			]
+		},
+		"implicit_enum_value": {
+			"comment": "`.IDLE`, a value of whichever enum the context expects. Only a dot that cannot be attribute access: not after a name, a closing bracket, a string or another dot, not a number (`.5`), and not a call, so a method chain that starts a line (`.bar()`) stays what it is.",
+			"match": "(?<![\\w\\)\\]\\}\"'.])(\\.)([A-Za-z_]\\w*)\\b(?!\\s*\\()",
+			"captures": {
+				"1": {
+					"name": "punctuation.accessor.gdscript"
+				},
+				"2": {
+					"name": "variable.other.enummember.gdscript"
+				}
+			}
 		}
 	}
 }
