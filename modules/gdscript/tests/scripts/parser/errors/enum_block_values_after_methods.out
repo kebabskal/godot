@@ -1,0 +1,2 @@
+GDTEST_PARSER_ERROR
+Enum values must come before the enum's methods.

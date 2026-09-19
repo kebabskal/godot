@@ -773,6 +773,38 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					// A trait's default method compiled into a struct: the other trait methods are the
 					// struct's methods, reached by name through the value (with write-back into `self`).
 					gen->write_call(result, codegen.struct_self, call->function_name, arguments);
+				} else if (call->enum_method != nullptr) {
+					// An enum method: a static function of the class that declares the enum, with the
+					// value as the first argument unless the method is static.
+					const GDScriptParser::FunctionNode *method = call->enum_method;
+					Vector<GDScriptCodeGenerator::Address> enum_arguments;
+					GDScriptCodeGenerator::Address value;
+					if (method->enum_self) {
+						if (callee->type == GDScriptParser::Node::IDENTIFIER) {
+							value = codegen.struct_self; // A bare call inside another method of the enum.
+						} else if (safe_callee != nullptr) {
+							value = safe_base;
+						} else {
+							value = _parse_expression(codegen, r_error, static_cast<const GDScriptParser::SubscriptNode *>(callee)->base);
+							if (r_error) {
+								return GDScriptCodeGenerator::Address();
+							}
+						}
+						enum_arguments.push_back(value);
+					}
+					enum_arguments.append_array(arguments);
+
+					GDScriptCodeGenerator::Address owner = _enum_owner_address(codegen, method->enum_owner);
+					if (owner.mode == GDScriptCodeGenerator::Address::NIL) {
+						_set_error(vformat(R"(Could not find the class that declares enum "%s".)", method->enum_owner->identifier->name), call);
+						r_error = ERR_COMPILATION_FAILED;
+						return GDScriptCodeGenerator::Address();
+					}
+					gen->write_call(result, owner, String(method->enum_owner->identifier->name) + "." + String(method->identifier->name), enum_arguments);
+
+					if (safe_callee == nullptr && value.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+						gen->pop_temporary();
+					}
 				} else if (call->struct_method != nullptr && call->struct_method_index >= 0) {
 					// A struct method: the value is the implicit first argument. A mutating method writes
 					// its final `self` back into the address it was given (see `_struct_self_writeback`),
@@ -2700,6 +2732,33 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 	return OK;
 }
 
+GDScriptCodeGenerator::Address GDScriptCompiler::_enum_owner_address(CodeGen &codegen, const GDScriptParser::EnumNode *p_enum) {
+	const GDScriptParser::DataType &enum_type = p_enum->enum_type;
+	const GDScriptParser::ClassNode *owner_class = enum_type.class_type;
+	if (owner_class == nullptr) {
+		return GDScriptCodeGenerator::Address();
+	}
+	if (owner_class == codegen.class_node) {
+		return GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::CLASS);
+	}
+	// Another class of this file, or of another file, found the way class types are.
+	Ref<GDScript> script;
+	if (parser->has_class(owner_class)) {
+		script = Ref<GDScript>(main_script);
+	} else {
+		Error err = OK;
+		script = GDScriptCache::get_shallow_script(enum_type.script_path, err, codegen.script->path);
+		if (err) {
+			return GDScriptCodeGenerator::Address();
+		}
+	}
+	GDScript *owner_script = script.is_valid() ? script->find_class(owner_class->fqcn) : nullptr;
+	if (owner_script == nullptr) {
+		return GDScriptCodeGenerator::Address();
+	}
+	return codegen.add_constant(Ref<GDScript>(owner_script));
+}
+
 GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_script, const GDScriptParser::ClassNode *p_class, const GDScriptParser::FunctionNode *p_func, bool p_for_ready, bool p_for_lambda, const GDScriptParser::StructNode *p_struct_context) {
 	r_error = OK;
 	// The struct this function is a method of: its own, or the struct a trait's default method is
@@ -2725,6 +2784,9 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 	if (p_func) {
 		if (struct_owner != nullptr) {
 			func_name = String(struct_owner->identifier->name) + "." + String(p_func->identifier->name);
+		} else if (p_func->enum_owner != nullptr) {
+			// Beside the class's own functions; the dot keeps it apart from any of them.
+			func_name = String(p_func->enum_owner->identifier->name) + "." + String(p_func->identifier->name);
 		} else if (p_func->identifier) {
 			func_name = p_func->identifier->name;
 		} else {
@@ -2781,6 +2843,13 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 		GDScriptParser::DataType self_type = struct_owner->struct_type;
 		self_type.is_meta_type = false;
 		self_type.is_constant = false;
+		const GDScriptDataType self_gdtype = _gdtype_from_datatype(self_type, p_script);
+		const uint32_t self_addr = codegen.generator->add_parameter(SNAME("self"), false, self_gdtype);
+		codegen.struct_self = GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::FUNCTION_PARAMETER, self_addr, self_gdtype);
+		method_info.arguments.push_back(self_type.to_property_info("self"));
+	} else if (p_func != nullptr && p_func->enum_self) {
+		// The enum value the method was called on, as the first parameter.
+		GDScriptParser::DataType self_type = GDScriptAnalyzer::enum_value_type(p_func->enum_owner);
 		const GDScriptDataType self_gdtype = _gdtype_from_datatype(self_type, p_script);
 		const uint32_t self_addr = codegen.generator->add_parameter(SNAME("self"), false, self_gdtype);
 		codegen.struct_self = GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::FUNCTION_PARAMETER, self_addr, self_gdtype);
@@ -3547,6 +3616,14 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 			_parse_function(err, p_script, p_class, function);
 			if (err) {
 				return err;
+			}
+		} else if (member.type == member.ENUM) {
+			for (const GDScriptParser::FunctionNode *method : member.m_enum->methods) {
+				Error err = OK;
+				_parse_function(err, p_script, p_class, method);
+				if (err) {
+					return err;
+				}
 			}
 		} else if (member.type == member.STRUCT) {
 			const GDScriptParser::StructNode *struct_n = member.m_struct;

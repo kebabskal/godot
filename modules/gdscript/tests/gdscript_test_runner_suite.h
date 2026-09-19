@@ -255,6 +255,35 @@ TEST_CASE("[Modules][GDScript] Strict mode") {
 				"\treturn anything.some_property\n");
 		CHECK(errors.is_empty());
 	}
+	// An enum is its own type: a bare integer where one is expected is an error, as is a match on
+	// one that leaves values unhandled. Casting, and a "_" branch, are the ways out.
+	{
+		const Vector<String> errors = analyze_in_strict_mode(
+				"enum State {IDLE, WALK, RUN}\n"
+				"func f(s: State) -> State:\n"
+				"\tvar t: State = 1\n"
+				"\tvar u: State = 7 as State\n"
+				"\tmatch s:\n"
+				"\t\tState.IDLE:\n"
+				"\t\t\tpass\n"
+				"\treturn t\n");
+		CHECK(has_strict_error(errors, "Integer used when an enum value is expected"));
+		CHECK(has_strict_error(errors, "\"RUN\""));
+		CHECK(errors.size() == 3); // Also the cast of 7, which is not a value of the enum.
+	}
+	{
+		const Vector<String> errors = analyze_in_strict_mode(
+				"enum State {IDLE, WALK}\n"
+				"func f(s: State) -> int:\n"
+				"\tvar t: State = 1 as State\n"
+				"\tmatch s:\n"
+				"\t\tState.IDLE:\n"
+				"\t\t\tpass\n"
+				"\t\t_:\n"
+				"\t\t\tpass\n"
+				"\treturn t\n");
+		CHECK(errors.is_empty());
+	}
 	// With the setting off, the same code only produces warnings.
 	{
 		GDScriptParser parser;

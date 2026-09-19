@@ -21,6 +21,8 @@ Contents:
 - [Short lambdas](#short-lambdas)
 - [`for` loops with two variables](#for-loops-with-two-variables)
 - [Nullable types](#nullable-types)
+- [Typed scenes](#typed-scenes)
+- [Enums with methods](#enums-with-methods)
 - [Editor support](#editor-support)
 - [Roadmap](#roadmap)
 
@@ -1057,6 +1059,69 @@ or a class the editor has not seen yet) is listed, and checked when picked.
 `instantiate()`, with an error on that line, rather than at the first member
 access on the result.
 
+## Enums with methods
+
+An enum can be written as a block, and then it can have methods:
+
+```gdscript
+enum State:
+    IDLE
+    WALK, RUN
+    JUMP = 10
+
+    func is_moving() -> bool:
+        return self == WALK or self == RUN
+
+    func next() -> State:
+        match self:
+            IDLE: return WALK
+            WALK: return RUN
+            RUN: return JUMP
+            JUMP: return IDLE
+        return IDLE
+
+    static func from_speed(speed: float) -> State:
+        return IDLE if speed <= 0.0 else (WALK if speed < 5.0 else RUN)
+
+func _ready():
+    var state := State.WALK
+    print(state.is_moving())            # true
+    print(state.next())                 # 2, which is RUN
+    print(State.from_speed(9.0))        # 2
+```
+
+Inside the block, `self` is the value the method was called on, and the
+enum's own values need no `State.` in front. A `static func` is called on the
+enum itself. The one-line `enum State {IDLE, WALK}` form still works; it just
+has no room for methods.
+
+A value is still a plain `int` at runtime, so saved data, `@export`, and
+engine APIs all see what they saw before. The methods are found through the
+static type. On an untyped variable, `state.is_moving()` is a runtime error,
+because the value is just an integer there.
+
+**`match` notices a missing value.** A `match` on an enum value that has no
+branch for some of its values, and no `_` branch, gets a warning naming them:
+
+```gdscript
+match state:   # warning: This "match" on "State" does not handle "RUN" and "JUMP".
+    State.IDLE:
+        pass
+    State.WALK:
+        pass
+```
+
+A branch with a `when` guard doesn't count, since it may not run. This is
+only checked for enums declared in scripts. Engine enums such as `Key` are
+rarely matched in full, and listing what is missing would bury the code in
+names.
+
+**Strict mode treats an enum as its own type.** A bare integer where an enum
+is expected (`var s: State = 1`) and a non-exhaustive `match` are both errors.
+Write `1 as State` when the number is intended, and add a `_` branch when
+the other values really don't matter. Using an enum value as an `int` stays
+allowed, since nothing is lost.
+
 ## Editor support
 
 Every feature above works in the script editor and in external editors
@@ -1092,10 +1157,9 @@ from the marketplace as usual.
 
 Next, in order:
 
-1. **Enums as real types**, with methods and exhaustive `match`.
-2. **Multiple return values**, including `if var ok, value := parse(text):`
+1. **Multiple return values**, including `if var ok, value := parse(text):`
    for error handling.
-3. **String interpolation**, `f"{name} has {hp} HP"`.
+2. **String interpolation**, `f"{name} has {hp} HP"`.
 
 Further out: fixed multidimensional arrays of real numbers, a formatter,
 and direct dispatch for trait methods if profiling asks for it.

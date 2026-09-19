@@ -179,6 +179,9 @@ String GDScriptWarning::get_message() const {
 		case UNSAFE_NULLABLE_ACCESS:
 			CHECK_SYMBOLS(2);
 			return vformat(R"*(Accessing "%s" on a value of type "%s", which may be null. Use "?.", or check it against null first.)*", symbols[0], symbols[1]);
+		case ENUM_MATCH_NOT_EXHAUSTIVE:
+			CHECK_SYMBOLS(2);
+			return vformat(R"*(This "match" on "%s" does not handle %s. Add a branch for each, or a "_" branch.)*", symbols[0], symbols[1]);
 		case REDUNDANT_NULL_CHECK:
 			CHECK_SYMBOLS(2);
 			return vformat(R"(The "%s" is redundant because "%s" can never be null.)", symbols[0], symbols[1]);
@@ -221,6 +224,9 @@ bool GDScriptWarning::is_strict_mode_error(Code p_code) {
 		case UNSAFE_VOID_RETURN:
 		case NULL_ASSIGNED_TO_NON_NULLABLE:
 		case UNSAFE_NULLABLE_ACCESS:
+		case INT_AS_ENUM_WITHOUT_CAST:
+		case INT_AS_ENUM_WITHOUT_MATCH:
+		case ENUM_MATCH_NOT_EXHAUSTIVE:
 			return true;
 		default:
 			return false;
@@ -281,6 +287,7 @@ String GDScriptWarning::get_name_from_code(Code p_code) {
 		PNAME("NULL_ASSIGNED_TO_NON_NULLABLE"),
 		PNAME("UNSAFE_NULLABLE_ACCESS"),
 		PNAME("REDUNDANT_NULL_CHECK"),
+		PNAME("ENUM_MATCH_NOT_EXHAUSTIVE"),
 #ifndef DISABLE_DEPRECATED
 		"PROPERTY_USED_AS_FUNCTION",
 		"CONSTANT_USED_AS_FUNCTION",

@@ -58,6 +58,7 @@ class GDScriptAnalyzer {
 	HashMap<const GDScriptParser::ClassNode *, Ref<GDScriptParserRef>> external_class_parser_cache;
 	bool static_context = false;
 	GDScriptParser::StructNode *current_struct = nullptr; // Set while resolving a struct method: `self` is the struct value and bare field names are its fields.
+	GDScriptParser::EnumNode *current_enum_owner = nullptr; // Set while resolving an enum method: bare value names are the enum's values, and `self` is the value unless the method is static.
 	GDScriptParser::TraitNode *current_trait = nullptr; // Set while resolving a trait's default method: `self` is the trait type, so only the trait's methods exist on it.
 	const GDScriptParser::VariableNode *current_trait_property = nullptr; // Set while resolving the accessors of a property a trait provides.
 
@@ -88,6 +89,10 @@ class GDScriptAnalyzer {
 	void resolve_variable(GDScriptParser::VariableNode *p_variable, bool p_is_local);
 	void resolve_struct(GDScriptParser::StructNode *p_struct, GDScriptParser::ClassNode *p_class);
 	void resolve_struct_methods(GDScriptParser::StructNode *p_struct);
+	void resolve_enum_methods(GDScriptParser::EnumNode *p_enum);
+	void resolve_enum_method_bodies(GDScriptParser::EnumNode *p_enum);
+	void reduce_enum_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, bool p_is_await, bool p_is_root, bool p_allow_void);
+	void check_match_exhaustive(GDScriptParser::MatchNode *p_match);
 	void resolve_trait(GDScriptParser::TraitNode *p_trait, GDScriptParser::ClassNode *p_class);
 	void resolve_trait_method_bodies(GDScriptParser::TraitNode *p_trait);
 	// A method declared by a class in the chain, a script base or the native base: not a trait default.
@@ -285,6 +290,9 @@ public:
 
 	// Struct methods: index in the declaration order, which is also the index on the layout.
 	static GDScriptParser::FunctionNode *find_struct_method(const GDScriptParser::StructNode *p_struct, const StringName &p_name, int *r_index = nullptr);
+	static GDScriptParser::EnumNode *find_enum_node(const GDScriptParser::DataType &p_type);
+	static GDScriptParser::FunctionNode *find_enum_method(const GDScriptParser::EnumNode *p_enum, const StringName &p_name);
+	static GDScriptParser::DataType enum_value_type(const GDScriptParser::EnumNode *p_enum);
 	// A trait and every trait it uses, directly or not. The trait itself comes first. Members are
 	// looked up across the whole closure.
 	static void collect_trait_closure(const GDScriptParser::TraitNode *p_trait, Vector<const GDScriptParser::TraitNode *> &r_closure);

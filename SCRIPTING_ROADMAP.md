@@ -59,7 +59,7 @@ Type system:
 7. Interfaces via `trait`. Structs can implement them.
 8. Nullable types with `?.` and `??`. Only meaningful with strict mode.
 9. Typed signals checked at emit and connect.
-10. Enums as real types with methods; exhaustive `match`.
+10. Enums as real types with methods; exhaustive `match`. **Done.**
 
 Syntax:
 
@@ -920,6 +920,26 @@ group are independent and can proceed in any order.
     one, differs between the two. Use paths relative to the scene
     (`path="enemy.notest.gd"` in the `.tscn`) and keep paths out of expected
     messages.
+- 10 (enums as real types) landed, in three parts.
+  - Methods: an `enum Name:` block form holds values (one or more per line) and
+    `func` / `static func` methods. The brace form is unchanged. Values stay
+    plain `int` at runtime, so there is nothing to dispatch on: a method is a
+    static function of the class that declares the enum, named `Name.method`
+    (the dot keeps it apart from the class's own functions, and
+    `get_method_list()` skips such names), and a call is resolved statically
+    from the enum type and compiled as a call on that class with the value as
+    the first argument. That makes an enum method on an untyped variable a
+    runtime error, the one real limitation. Inside the block `self` is the
+    value (the struct-method machinery, `codegen.struct_self`, reused as is)
+    and bare value names resolve to the enum's values. The owning class is
+    reached as `Address::CLASS` when it is the current class, else as a
+    constant of its script, the way outer-class static variables already are.
+  - `ENUM_MATCH_NOT_EXHAUSTIVE`, a new warning for a `match` on a value of a
+    script enum that leaves values unhandled with no `_` or bind branch. A
+    guarded branch covers nothing. Engine enums are left out on purpose.
+  - Strict mode now makes `INT_AS_ENUM_WITHOUT_CAST`,
+    `INT_AS_ENUM_WITHOUT_MATCH` and the new warning errors. Enum to `int`
+    stays implicit.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

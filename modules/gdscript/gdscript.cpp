@@ -302,6 +302,9 @@ void GDScript::_get_script_method_list(List<MethodInfo> *r_list, bool p_include_
 	const GDScript *current = this;
 	while (current) {
 		for (const KeyValue<StringName, GDScriptFunction *> &E : current->member_functions) {
+			if (String(E.key).contains_char('.')) {
+				continue; // An enum's method (`State.is_moving`): reached through the enum, not the class.
+			}
 			r_list->push_back(E.value->get_method_info());
 		}
 
@@ -1930,6 +1933,9 @@ void GDScriptInstance::get_method_list(List<MethodInfo> *r_list) const {
 	const GDScript *sptr = script.ptr();
 	while (sptr) {
 		for (const KeyValue<StringName, GDScriptFunction *> &E : sptr->member_functions) {
+			if (String(E.key).contains_char('.')) {
+				continue; // An enum's method: see `GDScript::_get_script_method_list()`.
+			}
 			r_list->push_back(E.value->get_method_info());
 		}
 		sptr = sptr->base.ptr();

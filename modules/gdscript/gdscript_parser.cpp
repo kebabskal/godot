@@ -1655,59 +1655,111 @@ GDScriptParser::EnumNode *GDScriptParser::parse_enum(bool p_is_static) {
 		named = true;
 	}
 
-	push_multiline(true);
-	consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" after %s.)", named ? "enum name" : R"("enum")"));
+	// `enum Name:` with an indented block, which can also hold methods.
+	const bool is_block = named && match(GDScriptTokenizer::Token::COLON);
+
 #ifdef TOOLS_ENABLED
 	int min_enum_value_doc_line = previous.end_line + 1;
 #endif
 
 	HashMap<StringName, int> elements;
 
-#ifdef DEBUG_ENABLED
-	List<MethodInfo> gdscript_funcs;
-	GDScriptLanguage::get_singleton()->get_public_functions(&gdscript_funcs);
+	// One `NAME` or `NAME = value` entry; the current token is its identifier.
+	auto parse_value = [&]() {
+		GDScriptParser::IdentifierNode *identifier = parse_identifier();
+
+		EnumNode::Value item;
+		item.identifier = identifier;
+		item.parent_enum = enum_node;
+		item.line = previous.start_line;
+		item.start_column = previous.start_column;
+		item.end_column = previous.end_column;
+
+		if (elements.has(item.identifier->name)) {
+			push_error(vformat(R"(Name "%s" was already in this enum (at line %d).)", item.identifier->name, elements[item.identifier->name]), item.identifier);
+		} else if (!named) {
+			if (current_class->members_indices.has(item.identifier->name)) {
+				push_error(vformat(R"(Name "%s" is already used as a class %s.)", item.identifier->name, current_class->get_member(item.identifier->name).get_type_name()));
+			}
+		}
+
+		elements[item.identifier->name] = item.line;
+
+		if (match(GDScriptTokenizer::Token::EQUAL)) {
+			ExpressionNode *value = parse_expression(false);
+			if (value == nullptr) {
+				push_error(R"(Expected expression value after "=".)");
+			}
+			item.custom_value = value;
+		}
+
+		item.index = enum_node->values.size();
+		enum_node->values.push_back(item);
+		if (!named) {
+			// Add as member of current class.
+			current_class->add_member(item);
+		}
+	};
+
+	if (is_block) {
+		consume(GDScriptTokenizer::Token::NEWLINE, R"(Expected a newline after the enum declaration.)");
+		if (!consume(GDScriptTokenizer::Token::INDENT, R"(Expected an indented block with the enum values.)")) {
+			complete_extents(enum_node);
+			return enum_node;
+		}
+		while (!check(GDScriptTokenizer::Token::DEDENT) && !is_at_end()) {
+			if (check(GDScriptTokenizer::Token::IDENTIFIER)) {
+				if (!enum_node->methods.is_empty()) {
+					push_error(R"(Enum values must come before the enum's methods.)");
+				}
+				// One or more values on a line, separated by commas.
+				do {
+					if (check(GDScriptTokenizer::Token::NEWLINE)) {
+						break; // Trailing comma.
+					}
+					if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected identifier for enum key.)")) {
+						parse_value();
+					}
+				} while (match(GDScriptTokenizer::Token::COMMA));
+				end_statement("enum value");
+			} else if (check(GDScriptTokenizer::Token::FUNC) || check(GDScriptTokenizer::Token::STATIC)) {
+				const bool is_static = match(GDScriptTokenizer::Token::STATIC);
+				if (!consume(GDScriptTokenizer::Token::FUNC, R"(Expected "func" after "static".)")) {
+					continue;
+				}
+				FunctionNode *method = parse_function(is_static);
+				if (method != nullptr) {
+					method->enum_owner = enum_node;
+					method->enum_self = !is_static;
+					method->is_static = true; // No instance either way.
+					enum_node->methods.push_back(method);
+				}
+			} else if (match(GDScriptTokenizer::Token::NEWLINE)) {
+				// Blank line.
+			} else {
+				push_error(vformat(R"(Unexpected "%s" in an enum body: only values and "func" methods are allowed.)", current.get_name()));
+				advance();
+			}
+		}
+		consume(GDScriptTokenizer::Token::DEDENT, R"(Missing unindent at the end of the enum body.)");
+		if (enum_node->values.is_empty()) {
+			push_error(R"(An enum needs at least one value.)", enum_node);
+		}
+	} else {
+		push_multiline(true);
+		consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" or ":" after %s.)", named ? "enum name" : R"("enum")"));
+#ifdef TOOLS_ENABLED
+		min_enum_value_doc_line = previous.end_line + 1;
 #endif
-
-	do {
-		if (check(GDScriptTokenizer::Token::BRACE_CLOSE)) {
-			break; // Allow trailing comma.
-		}
-		if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected identifier for enum key.)")) {
-			GDScriptParser::IdentifierNode *identifier = parse_identifier();
-
-			EnumNode::Value item;
-			item.identifier = identifier;
-			item.parent_enum = enum_node;
-			item.line = previous.start_line;
-			item.start_column = previous.start_column;
-			item.end_column = previous.end_column;
-
-			if (elements.has(item.identifier->name)) {
-				push_error(vformat(R"(Name "%s" was already in this enum (at line %d).)", item.identifier->name, elements[item.identifier->name]), item.identifier);
-			} else if (!named) {
-				if (current_class->members_indices.has(item.identifier->name)) {
-					push_error(vformat(R"(Name "%s" is already used as a class %s.)", item.identifier->name, current_class->get_member(item.identifier->name).get_type_name()));
-				}
+		do {
+			if (check(GDScriptTokenizer::Token::BRACE_CLOSE)) {
+				break; // Allow trailing comma.
 			}
-
-			elements[item.identifier->name] = item.line;
-
-			if (match(GDScriptTokenizer::Token::EQUAL)) {
-				ExpressionNode *value = parse_expression(false);
-				if (value == nullptr) {
-					push_error(R"(Expected expression value after "=".)");
-				}
-				item.custom_value = value;
+			if (consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected identifier for enum key.)")) {
+				parse_value();
 			}
-
-			item.index = enum_node->values.size();
-			enum_node->values.push_back(item);
-			if (!named) {
-				// Add as member of current class.
-				current_class->add_member(item);
-			}
-		}
-	} while (match(GDScriptTokenizer::Token::COMMA));
+		} while (match(GDScriptTokenizer::Token::COMMA));
+	}
 
 #ifdef TOOLS_ENABLED
 	// Enum values documentation.
@@ -1735,6 +1787,11 @@ GDScriptParser::EnumNode *GDScriptParser::parse_enum(bool p_is_static) {
 		min_enum_value_doc_line = enum_value_line + 1; // Prevent multiple enum values from using the same doc comment.
 	}
 #endif // TOOLS_ENABLED
+
+	if (is_block) {
+		complete_extents(enum_node);
+		return enum_node;
+	}
 
 	pop_multiline();
 	consume(GDScriptTokenizer::Token::BRACE_CLOSE, R"(Expected closing "}" for enum.)");

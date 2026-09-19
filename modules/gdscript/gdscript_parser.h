@@ -610,6 +610,10 @@ public:
 		// Resolved struct method (`p.length()`, or a bare `length()` inside a struct method).
 		FunctionNode *struct_method = nullptr;
 		int struct_method_index = -1;
+		// A method declared in an `enum Name:` block. Enum values are plain integers at runtime, so
+		// the call goes to the static function on the class that declares the enum, with the value
+		// as the first argument unless the method is static.
+		FunctionNode *enum_method = nullptr;
 
 		CallNode() {
 			type = CALL;
@@ -653,6 +657,9 @@ public:
 
 		IdentifierNode *identifier = nullptr;
 		LocalVector<Value> values;
+		// Declared in the `enum Name:` block form. Compiled as static functions of the class that
+		// declares the enum; one without `static` takes the value as its implicit `self`.
+		Vector<FunctionNode *> methods;
 		Variant dictionary;
 #ifdef TOOLS_ENABLED
 		MemberDocData doc_data;
@@ -1072,6 +1079,8 @@ public:
 		bool is_coroutine = false;
 		StructNode *struct_owner = nullptr; // Set for a method declared in a `struct` body: `self` is the struct value, passed as the implicit first parameter.
 		TraitNode *trait_owner = nullptr; // Set for a signature declared in a `trait` body; no body means "required".
+		EnumNode *enum_owner = nullptr; // Set for a method declared in an `enum Name:` block. Always static: there is no instance.
+		bool enum_self = false; // An enum method declared without `static`: `self` is the enum value, passed as the implicit first parameter.
 		bool mutates_self = false; // A struct method that assigns to a field of `self`, directly or through another mutating method. The call site writes the result back.
 		Variant rpc_config;
 		MethodInfo info;

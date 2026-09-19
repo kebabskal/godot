@@ -1,0 +1,8 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 12: Cannot call "is_moving()" without a value: it is not static, and "broken()" is.
+>> ERROR at line 14: Enum "State" already has a value named "WALK".
+>> ERROR at line 17: The static method "keys()" of enum "State" would hide the dictionary method of the same name.
+>> ERROR at line 21: Cannot call "is_moving()" on the enum "State" itself: it takes a value. Call it on one, as in "State.IDLE.is_moving()".
+>> ERROR at line 22: Cannot call the static method "first()" on a value. Call it on the enum, as in "State.first()".
+>> ERROR at line 23: Cannot call function on enum value.
+>> ERROR at line 23: Cannot get property from enum value.

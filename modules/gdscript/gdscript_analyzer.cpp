@@ -1985,6 +1985,7 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 				dictionary.make_read_only();
 				member.m_enum->enum_type = enum_type;
 				member.m_enum->dictionary = dictionary;
+				resolve_enum_methods(member.m_enum);
 
 				// Apply annotations.
 				for (GDScriptParser::AnnotationNode *&E : member.m_enum->annotations) {
@@ -2220,6 +2221,8 @@ void GDScriptAnalyzer::resolve_class_body(GDScriptParser::ClassNode *p_class, co
 			resolve_function_body(member.function);
 		} else if (member.type == GDScriptParser::ClassNode::Member::STRUCT) {
 			resolve_struct_method_bodies(member.m_struct);
+		} else if (member.type == GDScriptParser::ClassNode::Member::ENUM) {
+			resolve_enum_method_bodies(member.m_enum);
 		} else if (member.type == GDScriptParser::ClassNode::Member::TRAIT) {
 			resolve_trait_method_bodies(member.m_trait);
 		} else if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->property != GDScriptParser::VariableNode::PROP_NONE) {
@@ -3372,6 +3375,8 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	bool previous_static_context = static_context;
 	GDScriptParser::StructNode *previous_struct = current_struct;
 	current_struct = p_function->struct_owner; // A lambda inside a struct method sees no fields.
+	GDScriptParser::EnumNode *previous_enum_owner = current_enum_owner;
+	current_enum_owner = p_function->enum_owner;
 	GDScriptParser::TraitNode *previous_trait = current_trait;
 	current_trait = p_function->trait_owner;
 	if (p_is_lambda) {
@@ -3489,7 +3494,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 		int default_par_count = 0;
 		BitField<MethodFlags> method_flags = {};
 		StringName native_base;
-		if (!p_is_lambda && p_function->struct_owner == nullptr && p_function->trait_owner == nullptr && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base)) {
+		if (!p_is_lambda && p_function->struct_owner == nullptr && p_function->trait_owner == nullptr && p_function->enum_owner == nullptr && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base)) {
 			bool valid = p_function->is_static == method_flags.has_flag(METHOD_FLAG_STATIC);
 
 			if (p_function->return_type == nullptr) {
@@ -3621,6 +3626,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	parser->current_function = previous_function;
 	static_context = previous_static_context;
 	current_struct = previous_struct;
+	current_enum_owner = previous_enum_owner;
 	current_trait = previous_trait;
 }
 
@@ -3655,6 +3661,8 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 	static_context = p_function->is_static || p_function->trait_owner != nullptr;
 	GDScriptParser::StructNode *previous_struct = current_struct;
 	current_struct = p_function->struct_owner;
+	GDScriptParser::EnumNode *previous_enum_owner = current_enum_owner;
+	current_enum_owner = p_function->enum_owner;
 	GDScriptParser::TraitNode *previous_trait = current_trait;
 	current_trait = p_function->trait_owner;
 
@@ -3707,6 +3715,7 @@ void GDScriptAnalyzer::resolve_function_body(GDScriptParser::FunctionNode *p_fun
 	parser->current_function = previous_function;
 	static_context = previous_static_context;
 	current_struct = previous_struct;
+	current_enum_owner = previous_enum_owner;
 	current_trait = previous_trait;
 }
 
@@ -4202,6 +4211,73 @@ void GDScriptAnalyzer::resolve_match(GDScriptParser::MatchNode *p_match) {
 	for (GDScriptParser::MatchBranchNode *branch : p_match->branches) {
 		resolve_match_branch(branch, p_match->test);
 	}
+	check_match_exhaustive(p_match);
+}
+
+void GDScriptAnalyzer::check_match_exhaustive(GDScriptParser::MatchNode *p_match) {
+#ifdef DEBUG_ENABLED
+	// Only enums declared in scripts: an engine enum such as `Key` is rarely matched in full, and
+	// listing what is missing would bury the code in names.
+	const GDScriptParser::DataType &test_type = p_match->test->type_constraint;
+	if (test_type.kind != GDScriptParser::DataType::ENUM || test_type.is_meta_type || !test_type.is_hard_type()) {
+		return;
+	}
+	const GDScriptParser::EnumNode *enum_node = find_enum_node(test_type);
+	if (enum_node == nullptr) {
+		return;
+	}
+
+	HashSet<int64_t> handled;
+	for (const GDScriptParser::MatchBranchNode *branch : p_match->branches) {
+		if (branch->guard_body != nullptr) {
+			continue; // A guarded branch may not run, so it handles nothing for sure.
+		}
+		for (const GDScriptParser::PatternNode *pattern : branch->patterns) {
+			if (pattern == nullptr) {
+				continue;
+			}
+			switch (pattern->pattern_type) {
+				case GDScriptParser::PatternNode::PT_WILDCARD:
+				case GDScriptParser::PatternNode::PT_BIND:
+					return; // Handles everything.
+				case GDScriptParser::PatternNode::PT_LITERAL:
+					if (pattern->literal != nullptr && pattern->literal->value.get_type() == Variant::INT) {
+						handled.insert(pattern->literal->value);
+					}
+					break;
+				case GDScriptParser::PatternNode::PT_EXPRESSION:
+					if (pattern->expression != nullptr && pattern->expression->is_constant && pattern->expression->reduced_value.get_type() == Variant::INT) {
+						handled.insert(pattern->expression->reduced_value);
+					}
+					break;
+				default:
+					break;
+			}
+		}
+	}
+
+	PackedStringArray missing;
+	for (const GDScriptParser::EnumNode::Value &element : enum_node->values) {
+		if (element.resolved && !handled.has(element.value)) {
+			missing.push_back(String(element.identifier->name));
+		}
+	}
+	if (missing.is_empty()) {
+		return;
+	}
+	String list;
+	constexpr int SHOWN = 5;
+	for (int i = 0; i < missing.size() && i < SHOWN; i++) {
+		if (i > 0) {
+			list += (i == missing.size() - 1) ? " and " : ", ";
+		}
+		list += "\"" + missing[i] + "\"";
+	}
+	if (missing.size() > SHOWN) {
+		list += vformat(" and %d more", missing.size() - SHOWN);
+	}
+	parser->push_warning(p_match, GDScriptWarning::ENUM_MATCH_NOT_EXHAUSTIVE, String(test_type.enum_type), list);
+#endif // DEBUG_ENABLED
 }
 
 void GDScriptAnalyzer::resolve_match_branch(GDScriptParser::MatchBranchNode *p_match_branch, GDScriptParser::ExpressionNode *p_match_test) {
@@ -5185,6 +5261,93 @@ void GDScriptAnalyzer::reduce_struct_method_call(GDScriptParser::CallNode *p_cal
 	p_call->type_constraint = return_type;
 }
 
+GDScriptParser::EnumNode *GDScriptAnalyzer::find_enum_node(const GDScriptParser::DataType &p_type) {
+	// Only enums declared in a script have methods; engine and global enums have no node.
+	if (p_type.kind != GDScriptParser::DataType::ENUM || p_type.class_type == nullptr || !p_type.class_type->has_member(p_type.enum_type)) {
+		return nullptr;
+	}
+	const GDScriptParser::ClassNode::Member &member = p_type.class_type->get_member(p_type.enum_type);
+	return member.type == GDScriptParser::ClassNode::Member::ENUM ? member.m_enum : nullptr;
+}
+
+GDScriptParser::FunctionNode *GDScriptAnalyzer::find_enum_method(const GDScriptParser::EnumNode *p_enum, const StringName &p_name) {
+	for (GDScriptParser::FunctionNode *method : p_enum->methods) {
+		if (method->identifier != nullptr && method->identifier->name == p_name) {
+			return method;
+		}
+	}
+	return nullptr;
+}
+
+GDScriptParser::DataType GDScriptAnalyzer::enum_value_type(const GDScriptParser::EnumNode *p_enum) {
+	GDScriptParser::DataType type = p_enum->enum_type;
+	type.is_meta_type = false;
+	type.is_constant = false;
+	type.builtin_type = Variant::INT;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	return type;
+}
+
+void GDScriptAnalyzer::resolve_enum_methods(GDScriptParser::EnumNode *p_enum) {
+	HashSet<StringName> seen;
+	for (GDScriptParser::FunctionNode *method : p_enum->methods) {
+		if (method->identifier == nullptr) {
+			continue;
+		}
+		const StringName name = method->identifier->name;
+		if (seen.has(name)) {
+			push_error(vformat(R"(Enum "%s" already has a method named "%s".)", p_enum->identifier->name, name), method->identifier);
+		}
+		seen.insert(name);
+		for (const GDScriptParser::EnumNode::Value &element : p_enum->values) {
+			if (element.identifier->name == name) {
+				push_error(vformat(R"(Enum "%s" already has a value named "%s".)", p_enum->identifier->name, name), method->identifier);
+			}
+		}
+		if (!method->enum_self && Variant::has_builtin_method(Variant::DICTIONARY, name)) {
+			// `Name.keys()` and the like already mean the enum's dictionary.
+			push_error(vformat(R"*(The static method "%s()" of enum "%s" would hide the dictionary method of the same name.)*", name, p_enum->identifier->name), method->identifier);
+		}
+		resolve_function_signature(method);
+	}
+}
+
+void GDScriptAnalyzer::resolve_enum_method_bodies(GDScriptParser::EnumNode *p_enum) {
+	for (GDScriptParser::FunctionNode *method : p_enum->methods) {
+		resolve_function_body(method);
+		if (method->is_coroutine) {
+			push_error(vformat(R"*(Enum method "%s()" cannot use "await".)*", method->identifier->name), method);
+		}
+	}
+}
+
+void GDScriptAnalyzer::reduce_enum_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, bool p_is_await, bool p_is_root, bool p_allow_void) {
+	List<GDScriptParser::DataType> par_types;
+	int default_arg_count = 0;
+	for (const GDScriptParser::ParameterNode *param : p_method->parameters) {
+		par_types.push_back(param->type_constraint);
+		if (param->initializer != nullptr) {
+			default_arg_count++;
+		}
+	}
+	validate_call_arg(par_types, default_arg_count, p_method->is_vararg(), p_call);
+
+	p_call->enum_method = p_method;
+	p_call->is_static = true;
+
+	GDScriptParser::DataType return_type = p_method->return_type_constraint;
+	return_type.is_meta_type = false;
+	if (!p_is_root && !p_is_await && !p_allow_void && return_type.is_hard_type() && return_type.kind == GDScriptParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+		push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", p_call->function_name), p_call);
+	}
+#ifdef DEBUG_ENABLED
+	if (p_is_root && return_type.kind != GDScriptParser::DataType::UNRESOLVED && return_type.builtin_type != Variant::NIL) {
+		parser->push_warning(p_call, GDScriptWarning::RETURN_VALUE_DISCARDED, p_call->function_name);
+	}
+#endif // DEBUG_ENABLED
+	p_call->type_constraint = return_type;
+}
+
 void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_await, bool p_is_root, bool p_allow_void) {
 	bool all_is_constant = true;
 	HashMap<int, GDScriptParser::ArrayNode *> arrays; // For array literal to potentially type when passing.
@@ -5232,6 +5395,19 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 					push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", function_name), p_call);
 				}
 				p_call->type_constraint = return_type;
+				return;
+			}
+		}
+
+		if (current_enum_owner != nullptr && current_lambda == nullptr) {
+			// Another method of the same enum: a static one, or one on the implicit `self`.
+			GDScriptParser::FunctionNode *method = find_enum_method(current_enum_owner, function_name);
+			if (method != nullptr) {
+				const GDScriptParser::FunctionNode *caller = parser->current_function;
+				if (method->enum_self && (caller == nullptr || !caller->enum_self)) {
+					push_error(vformat(R"*(Cannot call "%s()" without a value: it is not static, and "%s()" is.)*", function_name, caller != nullptr && caller->identifier != nullptr ? String(caller->identifier->name) : String("?")), p_call);
+				}
+				reduce_enum_method_call(p_call, method, p_is_await, p_is_root, p_allow_void);
 				return;
 			}
 		}
@@ -5677,6 +5853,20 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				mark_node_unsafe(p_call);
 			}
 			return;
+		}
+
+		if (base_type.kind == GDScriptParser::DataType::ENUM) {
+			GDScriptParser::EnumNode *enum_node = find_enum_node(base_type);
+			GDScriptParser::FunctionNode *method = enum_node != nullptr ? find_enum_method(enum_node, p_call->function_name) : nullptr;
+			if (method != nullptr) {
+				if (base_type.is_meta_type && method->enum_self) {
+					push_error(vformat(R"*(Cannot call "%s()" on the enum "%s" itself: it takes a value. Call it on one, as in "%s.%s.%s()".)*", p_call->function_name, base_type.enum_type, base_type.enum_type, enum_node->values.is_empty() ? String("VALUE") : String(enum_node->values[0].identifier->name), p_call->function_name), p_call);
+				} else if (!base_type.is_meta_type && !method->enum_self) {
+					push_error(vformat(R"*(Cannot call the static method "%s()" on a value. Call it on the enum, as in "%s.%s()".)*", p_call->function_name, base_type.enum_type, p_call->function_name), p_call);
+				}
+				reduce_enum_method_call(p_call, method, p_is_await, p_is_root, p_allow_void);
+				return;
+			}
 		}
 
 		if (base_type.kind == GDScriptParser::DataType::BUILTIN && base_type.builtin_type == Variant::STRUCT && !base_type.is_meta_type && base_type.struct_type != nullptr) {
@@ -6815,6 +7005,20 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 	}
 #endif // DEBUG_ENABLED
 
+	if (!found_source && current_enum_owner != nullptr && p_identifier->source == GDScriptParser::IdentifierNode::UNDEFINED_SOURCE) {
+		// Inside an enum's method its values need no `Name.` in front, as a class's members don't.
+		for (const GDScriptParser::EnumNode::Value &element : current_enum_owner->values) {
+			if (element.identifier->name == p_identifier->name) {
+				GDScriptParser::DataType type = enum_value_type(current_enum_owner);
+				type.is_constant = true;
+				p_identifier->type_constraint = type;
+				p_identifier->is_constant = true;
+				p_identifier->reduced_value = element.value;
+				return;
+			}
+		}
+	}
+
 	if (!found_source && current_trait != nullptr && current_lambda == nullptr && p_identifier->source == GDScriptParser::IdentifierNode::UNDEFINED_SOURCE) {
 		// A required property of the trait, reached by name through `self` in whatever type uses it.
 		const GDScriptParser::VariableNode *property = find_trait_property(current_trait, p_identifier->name);
@@ -7222,6 +7426,11 @@ void GDScriptAnalyzer::reduce_preload(GDScriptParser::PreloadNode *p_preload) {
 
 void GDScriptAnalyzer::reduce_self(GDScriptParser::SelfNode *p_self) {
 	p_self->is_constant = false;
+	if (current_enum_owner != nullptr && current_lambda == nullptr) {
+		// The parser already rejected `self` in a `static func` of the enum.
+		p_self->type_constraint = enum_value_type(current_enum_owner);
+		return;
+	}
 	if (current_struct != nullptr) {
 		p_self->type_constraint = type_from_metatype(current_struct->struct_type);
 		return;
