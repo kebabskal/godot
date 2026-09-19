@@ -5,6 +5,9 @@
 	"injectionSelector": "L:source.gdscript -comment -string",
 	"patterns": [
 		{
+			"include": "#fstring"
+		},
+		{
 			"include": "#tuple_return_type"
 		},
 		{
@@ -241,6 +244,192 @@
 				{
 					"match": "\\b[A-Za-z_]\\w*\\b",
 					"name": "entity.name.type.class.gdscript"
+				}
+			]
+		},
+		"fstring_field": {
+			"comment": "A field: GDScript code, then an optional `=` (print the expression's text too) and `:spec`.",
+			"begin": "\\{",
+			"beginCaptures": {
+				"0": {
+					"name": "punctuation.section.interpolation.begin.gdscript"
+				}
+			},
+			"end": "\\}",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.section.interpolation.end.gdscript"
+				}
+			},
+			"contentName": "meta.interpolation.gdscript",
+			"patterns": [
+				{
+					"match": "=\\s*(?=[:}])",
+					"name": "keyword.operator.fstring.debug.gdscript"
+				},
+				{
+					"match": ":(?=[^{}\\[\\]()]*\\})[^}]*",
+					"name": "storage.type.format.gdscript"
+				},
+				{
+					"include": "source.gdscript"
+				}
+			]
+		},
+		"fstring_triple_double": {
+			"begin": "\\b(f)(\\\"\\\"\\\")",
+			"beginCaptures": {
+				"1": {
+					"name": "storage.type.string.gdscript"
+				},
+				"2": {
+					"name": "string.quoted.gdscript punctuation.definition.string.begin.gdscript"
+				}
+			},
+			"end": "\\\"\\\"\\\"",
+			"endCaptures": {
+				"0": {
+					"name": "string.quoted.gdscript punctuation.definition.string.end.gdscript"
+				}
+			},
+			"name": "meta.fstring.gdscript",
+			"patterns": [
+				{
+					"match": "\\\\.",
+					"name": "string.quoted.gdscript constant.character.escape.gdscript"
+				},
+				{
+					"match": "\\{\\{|\\}\\}",
+					"name": "string.quoted.gdscript constant.character.escape.gdscript"
+				},
+				{
+					"include": "#fstring_field"
+				},
+				{
+					"match": "[^{}\\\\\\\"]+|\\\"",
+					"name": "string.quoted.gdscript"
+				}
+			]
+		},
+		"fstring_triple_single": {
+			"begin": "\\b(f)(\\'\\'\\')",
+			"beginCaptures": {
+				"1": {
+					"name": "storage.type.string.gdscript"
+				},
+				"2": {
+					"name": "string.quoted.gdscript punctuation.definition.string.begin.gdscript"
+				}
+			},
+			"end": "\\'\\'\\'",
+			"endCaptures": {
+				"0": {
+					"name": "string.quoted.gdscript punctuation.definition.string.end.gdscript"
+				}
+			},
+			"name": "meta.fstring.gdscript",
+			"patterns": [
+				{
+					"match": "\\\\.",
+					"name": "string.quoted.gdscript constant.character.escape.gdscript"
+				},
+				{
+					"match": "\\{\\{|\\}\\}",
+					"name": "string.quoted.gdscript constant.character.escape.gdscript"
+				},
+				{
+					"include": "#fstring_field"
+				},
+				{
+					"match": "[^{}\\\\\\']+|\\'",
+					"name": "string.quoted.gdscript"
+				}
+			]
+		},
+		"fstring_double": {
+			"begin": "\\b(f)(\\\")",
+			"beginCaptures": {
+				"1": {
+					"name": "storage.type.string.gdscript"
+				},
+				"2": {
+					"name": "string.quoted.gdscript punctuation.definition.string.begin.gdscript"
+				}
+			},
+			"end": "(\\\")|$",
+			"endCaptures": {
+				"1": {
+					"name": "string.quoted.gdscript punctuation.definition.string.end.gdscript"
+				}
+			},
+			"name": "meta.fstring.gdscript",
+			"patterns": [
+				{
+					"match": "\\\\.",
+					"name": "string.quoted.gdscript constant.character.escape.gdscript"
+				},
+				{
+					"match": "\\{\\{|\\}\\}",
+					"name": "string.quoted.gdscript constant.character.escape.gdscript"
+				},
+				{
+					"include": "#fstring_field"
+				},
+				{
+					"match": "[^{}\\\\\\\"]+",
+					"name": "string.quoted.gdscript"
+				}
+			]
+		},
+		"fstring_single": {
+			"begin": "\\b(f)(\\')",
+			"beginCaptures": {
+				"1": {
+					"name": "storage.type.string.gdscript"
+				},
+				"2": {
+					"name": "string.quoted.gdscript punctuation.definition.string.begin.gdscript"
+				}
+			},
+			"end": "(\\')|$",
+			"endCaptures": {
+				"1": {
+					"name": "string.quoted.gdscript punctuation.definition.string.end.gdscript"
+				}
+			},
+			"name": "meta.fstring.gdscript",
+			"patterns": [
+				{
+					"match": "\\\\.",
+					"name": "string.quoted.gdscript constant.character.escape.gdscript"
+				},
+				{
+					"match": "\\{\\{|\\}\\}",
+					"name": "string.quoted.gdscript constant.character.escape.gdscript"
+				},
+				{
+					"include": "#fstring_field"
+				},
+				{
+					"match": "[^{}\\\\\\']+",
+					"name": "string.quoted.gdscript"
+				}
+			]
+		},
+		"fstring": {
+			"comment": "`f\"{name} has {hp:.1f} HP\"`. The fields are code, so they are coloured as code, and the rule starts at the `f`, before the bundled string rule's quote.",
+			"patterns": [
+				{
+					"include": "#fstring_triple_double"
+				},
+				{
+					"include": "#fstring_triple_single"
+				},
+				{
+					"include": "#fstring_double"
+				},
+				{
+					"include": "#fstring_single"
 				}
 			]
 		}

@@ -31,6 +31,7 @@
 #include "gdscript_utility_functions.h"
 
 #include "gdscript.h"
+#include "gdscript_format.h"
 
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
@@ -98,6 +99,18 @@
 	}
 
 struct GDScriptUtilityFunctionsDefinitions {
+	// `@format(value, spec)`: an f-string field with a format spec, `f"{hp:.1f}"`. Named so that no
+	// script can call or shadow it; the parser has already checked the spec.
+	static inline void fstring_format(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
+		DEBUG_VALIDATE_ARG_COUNT(2, 2);
+		GDScriptFormatSpec spec;
+		String error;
+		GDFUNC_FAIL_COND_MSG(!GDScriptFormatSpec::parse(*p_args[1], spec, error), vformat(R"(Invalid format spec "%s": %s)", String(*p_args[1]), error));
+		String result;
+		GDFUNC_FAIL_COND_MSG(!GDScriptFormatSpec::format(*p_args[0], spec, result, error), error);
+		*r_ret = result;
+	}
+
 #ifndef DISABLE_DEPRECATED
 	static inline void convert(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
 		DEBUG_VALIDATE_ARG_COUNT(2, 2);
@@ -590,6 +603,12 @@ void GDScriptUtilityFunctions::register_functions() {
 	REGISTER_FUNC( len,            true,  RET(INT),           ARGS( ARGVAR("var")                   ), false, varray(     ));
 	REGISTER_FUNC( is_instance_of, true,  RET(BOOL),          ARGS( ARGVAR("value"), ARGVAR("type") ), false, varray(     ));
 	/* clang-format on */
+
+	{
+		MethodInfo info("@format", ARGVAR("value"), ARG("spec", STRING));
+		info.return_val = RET(STRING);
+		_register_function("@format", info, GDScriptUtilityFunctionsDefinitions::fstring_format, true);
+	}
 }
 
 void GDScriptUtilityFunctions::unregister_functions() {
@@ -652,6 +671,9 @@ bool GDScriptUtilityFunctions::function_exists(const StringName &p_function) {
 
 void GDScriptUtilityFunctions::get_function_list(List<StringName> *r_functions) {
 	for (const StringName &E : utility_function_name_table) {
+		if (String(E).begins_with("@")) {
+			continue; // Internal, for code the parser writes (`@format` for f-strings); not for scripts.
+		}
 		r_functions->push_back(E);
 	}
 }

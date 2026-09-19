@@ -162,6 +162,13 @@ public:
 			VCS_CONFLICT_MARKER,
 			BACKTICK,
 			QUESTION_MARK,
+			// F-strings: `f"a {x:.2f} b"` is FSTRING_START("a "), the tokens of `x`, FSTRING_SPEC(".2f"),
+			// then FSTRING_END(" b"). An f-string without fields is a plain string LITERAL.
+			FSTRING_START, // The text before the first field.
+			FSTRING_MIDDLE, // The text between two fields.
+			FSTRING_END, // The text after the last field; ends the f-string.
+			FSTRING_SPEC, // A field's format spec, after `:`.
+			FSTRING_DEBUG, // `{x=}`: the field's source text through the `=`, printed before the value.
 			// Special
 			ERROR,
 			TK_EOF, // "EOF" is reserved
@@ -257,6 +264,17 @@ class GDScriptTokenizerText : public GDScriptTokenizer {
 	List<int> indent_stack;
 	List<List<int>> indent_stack_stack; // For lambdas, which require manipulating the indentation point.
 	List<char32_t> paren_stack;
+	// Open f-strings, innermost last. While a field's expression is read the tokens are the usual
+	// ones; a `}` or `:` at the bracket depth where the field began ends it.
+	struct FStringState {
+		char32_t quote_char = '"';
+		bool is_multiline = false;
+		bool in_field = false;
+		int paren_depth = 0;
+		int field_start = 0; // Source position just after the field's `{`, for `{x=}`.
+	};
+	List<FStringState> fstring_stack;
+	bool fstring_resume_text = false; // After a format spec: the next token is string text again.
 	char32_t indent_char = '\0';
 	int position = 0;
 	int length = 0;
@@ -298,6 +316,13 @@ class GDScriptTokenizerText : public GDScriptTokenizer {
 	Token number();
 	Token potential_identifier();
 	Token string();
+	// The characters of a string up to its closing quote, or for an f-string up to the `{` of a field
+	// (`r_field`). Returns an error token, or an EMPTY one.
+	Token _string_text(char32_t p_quote_char, bool p_is_multiline, bool p_is_raw, bool p_is_fstring, String &r_result, bool &r_field);
+	Token fstring_begin();
+	Token fstring_text(bool p_is_start);
+	Token fstring_spec();
+	bool _at_fstring_field_end() const;
 	Token annotation();
 
 public:

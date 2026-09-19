@@ -526,6 +526,15 @@ void (*type_init_function_table[])(Variant *) = {
 // Kept out of line: inlining the String formatting into each typed opcode that can fail would grow
 // `GDScriptFunction::call()`, whose frame bounds the reachable script call depth.
 #ifdef DEBUG_ENABLED
+// The message of a failed GDScript utility call. Internal ones (named `@...`, called by code the parser
+// writes) are described by what the script wrote instead.
+static GDS_NOINLINE String _utility_error_text(const String &p_name, const Variant &p_message) {
+	if (p_name == "@format") {
+		return vformat(R"*(Cannot format this f-string field: %s)*", p_message);
+	}
+	return vformat(R"*(Error calling GDScript utility function "%s()": %s)*", p_name, p_message);
+}
+
 static GDS_NOINLINE String _typed_op_error(const char *p_message, const char *p_operator) {
 	return String(p_message) + " in operator '" + p_operator + "'.";
 }
@@ -3102,7 +3111,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					String methodstr = gds_utilities_names[_code_ptr[ip + 2]];
 					if (dst->get_type() == Variant::STRING && !dst->operator String().is_empty()) {
 						// Call provided error string.
-						err_text = vformat(R"*(Error calling GDScript utility function "%s()": %s)*", methodstr, *dst);
+						err_text = _utility_error_text(methodstr, *dst);
 					} else {
 						err_text = _get_call_error(vformat(R"*(GDScript utility function "%s()")*", methodstr), (const Variant **)argptrs, argc, *dst, err);
 					}

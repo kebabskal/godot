@@ -53,7 +53,12 @@ int GDScriptTokenizerBuffer::_token_to_binary(const Token &p_token, Vector<uint8
 			token_type |= identifier_pos << TOKEN_BITS;
 		} break;
 		case GDScriptTokenizer::Token::ERROR:
-		case GDScriptTokenizer::Token::LITERAL: {
+		case GDScriptTokenizer::Token::LITERAL:
+		case GDScriptTokenizer::Token::FSTRING_START:
+		case GDScriptTokenizer::Token::FSTRING_MIDDLE:
+		case GDScriptTokenizer::Token::FSTRING_END:
+		case GDScriptTokenizer::Token::FSTRING_SPEC:
+		case GDScriptTokenizer::Token::FSTRING_DEBUG: {
 			// Add literal to map.
 			int constant_pos;
 			if (r_constants_map.has(p_token.literal)) {
@@ -118,7 +123,12 @@ GDScriptTokenizer::Token GDScriptTokenizerBuffer::_binary_to_token(const uint8_t
 			token.literal = identifiers[identifier_pos];
 		} break;
 		case GDScriptTokenizer::Token::ERROR:
-		case GDScriptTokenizer::Token::LITERAL: {
+		case GDScriptTokenizer::Token::LITERAL:
+		case GDScriptTokenizer::Token::FSTRING_START:
+		case GDScriptTokenizer::Token::FSTRING_MIDDLE:
+		case GDScriptTokenizer::Token::FSTRING_END:
+		case GDScriptTokenizer::Token::FSTRING_SPEC:
+		case GDScriptTokenizer::Token::FSTRING_DEBUG: {
 			// Get literal from map.
 			int constant_pos = token_type >> TOKEN_BITS;
 			if (unlikely(constant_pos >= constants.size())) {

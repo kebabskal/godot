@@ -65,7 +65,7 @@ Syntax:
 
 11. Multiple return values. **Done.**
 12. `for key, value in dict` and `for i, item in array`.
-13. String interpolation, `f"{x}"`.
+13. String interpolation, `f"{x}"`. **Done.**
 
 Editor and tooling:
 
@@ -992,6 +992,32 @@ group are independent and can proceed in any order.
     `return x` followed by the next argument, as before.
   - Upstream's `parser/errors/assignment_in_var_if` expected `if var foo = 25:`
     to fail; it is valid syntax here and moved to the features tests.
+- 13 (string interpolation) landed as f-strings with Python's format spec
+  mini-language (`f"{price:,.2f}"`, `{hp:05}`, `{x=}` for debugging).
+  - Tokenizing follows PEP 701: `f"a {x:.2f} b"` is FSTRING_START("a "), the
+    ordinary tokens of `x`, FSTRING_SPEC(".2f"), FSTRING_END(" b"), with a
+    stack of open f-strings so they nest. A `}` or `:` at the bracket depth
+    where a field began ends it; `{`/`}` of a dictionary inside a field
+    nest as usual. Errors inside a field point at the right column and
+    completion works there, since the parser sees real tokens. The string
+    reader's escape handling moved into `_string_text()`, shared by both.
+    The binary token format carries the new tokens' text like literals;
+    `TOKENIZER_VERSION` is 103.
+  - The parser lowers an f-string to one `str(...)` call, a field with a
+    spec to `@format(value, spec)`: an internal GDScript utility whose name
+    no script can write, so it cannot clash with a user function (utility
+    names win over class methods, so a new public global would have
+    silently shadowed any user function of that name). The spec is checked
+    when parsing. `gdscript_format.{h,cpp}` implements the spec; the test
+    compares 35 specs against Python's own output.
+  - Trap found: `parse_fstring` must not turn multiline mode on around the
+    fields. The parser reads one token ahead, so the mode was still on when
+    the token after the f-string was read, and the newline ending the
+    statement vanished (invisible inside `print(...)`, fatal after
+    `var s := f"{x:03}"`).
+  - The binary-token run of the script tests (`--use-binary-tokens`) has
+    eight failures that predate this work (empty files, a class-body error
+    message, `match`, untyped declarations); f-strings pass there.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

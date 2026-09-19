@@ -157,6 +157,11 @@ static const char *token_names[] = {
 	"VCS conflict marker", // VCS_CONFLICT_MARKER,
 	"`", // BACKTICK,
 	"?", // QUESTION_MARK,
+	"f-string", // FSTRING_START,
+	"f-string text", // FSTRING_MIDDLE,
+	"end of f-string", // FSTRING_END,
+	"format spec", // FSTRING_SPEC,
+	"f-string \"=\"", // FSTRING_DEBUG,
 	// Special
 	"Error", // ERROR,
 	"End of file", // EOF,
@@ -852,38 +857,9 @@ GDScriptTokenizer::Token GDScriptTokenizerText::number() {
 	}
 }
 
-GDScriptTokenizer::Token GDScriptTokenizerText::string() {
-	enum StringType {
-		STRING_REGULAR,
-		STRING_NAME,
-		STRING_NODEPATH,
-	};
-
-	bool is_raw = false;
-	bool is_multiline = false;
-	StringType type = STRING_REGULAR;
-
-	if (_peek(-1) == 'r') {
-		is_raw = true;
-		_advance();
-	} else if (_peek(-1) == '&') {
-		type = STRING_NAME;
-		_advance();
-	} else if (_peek(-1) == '^') {
-		type = STRING_NODEPATH;
-		_advance();
-	}
-
-	char32_t quote_char = _peek(-1);
-
-	if (_peek() == quote_char && _peek(1) == quote_char) {
-		is_multiline = true;
-		// Consume all quotes.
-		_advance();
-		_advance();
-	}
-
-	String result;
+GDScriptTokenizer::Token GDScriptTokenizerText::_string_text(char32_t p_quote_char, bool p_is_multiline, bool p_is_raw, bool p_is_fstring, String &r_result, bool &r_field) {
+	r_field = false;
+	String &result = r_result;
 	char32_t prev = 0;
 	int prev_pos = 0;
 	int prev_line = 0;
@@ -898,7 +874,7 @@ GDScriptTokenizer::Token GDScriptTokenizerText::string() {
 
 		if (ch == 0x200E || ch == 0x200F || (ch >= 0x202A && ch <= 0x202E) || (ch >= 0x2066 && ch <= 0x2069)) {
 			Token error;
-			if (is_raw) {
+			if (p_is_raw) {
 				error = make_error("Invisible text direction control character present in the string, use regular string literal instead of r-string.");
 			} else {
 				error = make_error("Invisible text direction control character present in the string, escape it (\"\\u" + String::num_int64(ch, 16) + "\") to avoid confusion.");
@@ -916,14 +892,14 @@ GDScriptTokenizer::Token GDScriptTokenizerText::string() {
 				return make_error("Unterminated string.");
 			}
 
-			if (is_raw) {
-				if (_peek() == quote_char) {
+			if (p_is_raw) {
+				if (_peek() == p_quote_char) {
 					_advance();
 					if (_is_at_end()) {
 						return make_error("Unterminated string.");
 					}
 					result += '\\';
-					result += quote_char;
+					result += p_quote_char;
 				} else if (_peek() == '\\') { // For `\\\"`.
 					_advance();
 					if (_is_at_end()) {
@@ -1077,7 +1053,7 @@ GDScriptTokenizer::Token GDScriptTokenizerText::string() {
 					result += escaped;
 				}
 			}
-		} else if (ch == quote_char) {
+		} else if (ch == p_quote_char) {
 			if (prev != 0) {
 				Token error = make_error("Invalid UTF-16 sequence in string, unpaired lead surrogate");
 				error.start_line = prev_line;
@@ -1088,19 +1064,42 @@ GDScriptTokenizer::Token GDScriptTokenizerText::string() {
 				prev = 0;
 			}
 			_advance();
-			if (is_multiline) {
-				if (_peek() == quote_char && _peek(1) == quote_char) {
+			if (p_is_multiline) {
+				if (_peek() == p_quote_char && _peek(1) == p_quote_char) {
 					// Ended the multiline string. Consume all quotes.
 					_advance();
 					_advance();
 					break;
 				} else {
 					// Not a multiline string termination, add consumed quote.
-					result += quote_char;
+					result += p_quote_char;
 				}
 			} else {
 				// Ended single-line string.
 				break;
+			}
+		} else if (p_is_fstring && ch == '{') {
+			if (_peek(1) == '{') {
+				result += '{'; // `{{` is a brace.
+				_advance();
+				_advance();
+			} else {
+				_advance();
+				r_field = true;
+				break;
+			}
+		} else if (p_is_fstring && ch == '}') {
+			if (_peek(1) == '}') {
+				result += '}';
+				_advance();
+				_advance();
+			} else {
+				Token error = make_error(R"(A single "}" in an f-string: write "}}" for a brace.)");
+				error.start_line = line;
+				error.start_column = column;
+				error.end_column = column + 1;
+				push_error(error);
+				_advance();
 			}
 		} else {
 			if (prev != 0) {
@@ -1129,6 +1128,47 @@ GDScriptTokenizer::Token GDScriptTokenizerText::string() {
 		prev = 0;
 	}
 
+	return Token();
+}
+
+GDScriptTokenizer::Token GDScriptTokenizerText::string() {
+	enum StringType {
+		STRING_REGULAR,
+		STRING_NAME,
+		STRING_NODEPATH,
+	};
+
+	bool is_raw = false;
+	bool is_multiline = false;
+	StringType type = STRING_REGULAR;
+
+	if (_peek(-1) == 'r') {
+		is_raw = true;
+		_advance();
+	} else if (_peek(-1) == '&') {
+		type = STRING_NAME;
+		_advance();
+	} else if (_peek(-1) == '^') {
+		type = STRING_NODEPATH;
+		_advance();
+	}
+
+	char32_t quote_char = _peek(-1);
+
+	if (_peek() == quote_char && _peek(1) == quote_char) {
+		is_multiline = true;
+		// Consume all quotes.
+		_advance();
+		_advance();
+	}
+
+	String result;
+	bool field = false;
+	const Token text_error = _string_text(quote_char, is_multiline, is_raw, false, result, field);
+	if (text_error.type == Token::ERROR) {
+		return text_error;
+	}
+
 	// Make the literal.
 	Variant string;
 	switch (type) {
@@ -1144,6 +1184,74 @@ GDScriptTokenizer::Token GDScriptTokenizerText::string() {
 	}
 
 	return make_literal(string);
+}
+
+GDScriptTokenizer::Token GDScriptTokenizerText::fstring_begin() {
+	// The `f` is consumed and the quote is next.
+	_advance();
+	FStringState state;
+	state.quote_char = _peek(-1);
+	if (_peek() == state.quote_char && _peek(1) == state.quote_char) {
+		state.is_multiline = true;
+		_advance();
+		_advance();
+	}
+	fstring_stack.push_back(state);
+	return fstring_text(true);
+}
+
+GDScriptTokenizer::Token GDScriptTokenizerText::fstring_text(bool p_is_start) {
+	FStringState &state = fstring_stack.back()->get();
+	String text;
+	bool field = false;
+	const Token text_error = _string_text(state.quote_char, state.is_multiline, false, true, text, field);
+	if (text_error.type == Token::ERROR) {
+		fstring_stack.pop_back();
+		return text_error;
+	}
+	if (field) {
+		state.in_field = true;
+		state.paren_depth = paren_stack.size();
+		state.field_start = position;
+		Token token = make_token(p_is_start ? Token::FSTRING_START : Token::FSTRING_MIDDLE);
+		token.literal = text;
+		return token;
+	}
+	fstring_stack.pop_back();
+	if (p_is_start) {
+		return make_literal(text); // No fields: an ordinary string.
+	}
+	Token token = make_token(Token::FSTRING_END);
+	token.literal = text;
+	return token;
+}
+
+GDScriptTokenizer::Token GDScriptTokenizerText::fstring_spec() {
+	// The `:` is consumed. The spec is plain text up to the field's `}`.
+	FStringState &state = fstring_stack.back()->get();
+	String spec;
+	while (!_is_at_end() && _peek() != '}') {
+		if (_peek() == '\n' || _peek() == state.quote_char || _peek() == '{') {
+			fstring_stack.pop_back();
+			return make_error(R"(Expected "}" after the format spec.)");
+		}
+		spec += _peek();
+		_advance();
+	}
+	if (_is_at_end()) {
+		fstring_stack.pop_back();
+		return make_error(R"(Expected "}" after the format spec.)");
+	}
+	_advance();
+	state.in_field = false;
+	fstring_resume_text = true;
+	Token token = make_token(Token::FSTRING_SPEC);
+	token.literal = spec;
+	return token;
+}
+
+bool GDScriptTokenizerText::_at_fstring_field_end() const {
+	return !fstring_stack.is_empty() && fstring_stack.back()->get().in_field && paren_stack.size() == fstring_stack.back()->get().paren_depth;
 }
 
 void GDScriptTokenizerText::check_indent() {
@@ -1378,6 +1486,15 @@ GDScriptTokenizer::Token GDScriptTokenizerText::scan() {
 		return pop_error();
 	}
 
+	if (fstring_resume_text) {
+		// The text of an f-string goes on right after a format spec, whitespace and all.
+		fstring_resume_text = false;
+		_start = _current;
+		start_line = line;
+		start_column = column;
+		return fstring_text(false);
+	}
+
 	_skip_whitespace();
 
 	if (pending_newline) {
@@ -1446,6 +1563,9 @@ GDScriptTokenizer::Token GDScriptTokenizerText::scan() {
 	} else if (c == 'r' && (_peek() == '"' || _peek() == '\'')) {
 		// Raw string literals.
 		return string();
+	} else if (c == 'f' && (_peek() == '"' || _peek() == '\'')) {
+		// F-strings: `f"{name} has {hp:.1f} HP"`.
+		return fstring_begin();
 	} else if (is_unicode_identifier_start(c)) {
 		return potential_identifier();
 	}
@@ -1466,6 +1586,9 @@ GDScriptTokenizer::Token GDScriptTokenizerText::scan() {
 		case ',':
 			return make_token(Token::COMMA);
 		case ':':
+			if (_at_fstring_field_end()) {
+				return fstring_spec();
+			}
 			return make_token(Token::COLON);
 		case ';':
 			return make_token(Token::SEMICOLON);
@@ -1510,6 +1633,10 @@ GDScriptTokenizer::Token GDScriptTokenizerText::scan() {
 			}
 			return make_token(Token::BRACKET_CLOSE);
 		case '}':
+			if (_at_fstring_field_end()) {
+				fstring_stack.back()->get().in_field = false;
+				return fstring_text(false);
+			}
 			if (!pop_paren('{')) {
 				return make_paren_error(c);
 			}
@@ -1631,6 +1758,22 @@ GDScriptTokenizer::Token GDScriptTokenizerText::scan() {
 				_advance();
 				return make_token(Token::ARROW);
 			} else {
+				if (_at_fstring_field_end()) {
+					// `{x=}` or `{x = :.2f}`: the expression's text is printed before its value.
+					int ahead = 0;
+					while (_peek(ahead) == ' ') {
+						ahead++;
+					}
+					if (_peek(ahead) == '}' || _peek(ahead) == ':') {
+						for (int i = 0; i < ahead; i++) {
+							_advance();
+						}
+						const int field_start = fstring_stack.back()->get().field_start;
+						Token token = make_token(Token::FSTRING_DEBUG);
+						token.literal = source.substr(field_start, position - field_start);
+						return token;
+					}
+				}
 				return make_token(Token::EQUAL);
 			}
 		case '<':

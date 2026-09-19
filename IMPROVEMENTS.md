@@ -23,6 +23,7 @@ Contents:
 - [Multiple return values](#multiple-return-values)
 - [Nullable types](#nullable-types)
 - [Typed scenes](#typed-scenes)
+- [String interpolation](#string-interpolation)
 - [Enums with methods](#enums-with-methods)
 - [Editor support](#editor-support)
 - [Roadmap](#roadmap)
@@ -1120,6 +1121,56 @@ or a class the editor has not seen yet) is listed, and checked when picked.
 `instantiate()`, with an error on that line, rather than at the first member
 access on the result.
 
+## String interpolation
+
+An `f` before a string makes it an f-string: anything in `{}` is evaluated and
+put into the text.
+
+```gdscript
+var name := "Bob"
+var hp := 42
+print(f"{name} has {hp} HP")              # Bob has 42 HP
+print(f"{hp * 2} after the potion")       # 84 after the potion
+```
+
+**Formatting numbers** uses a spec after a `:`, the same little language as
+Python, Rust and C#, instead of remembering `%` codes:
+
+```gdscript
+var price := 1234.5
+var ratio := 0.755
+print(f"{price:.2f}")       # 1234.50     two decimals
+print(f"{price:,.2f}")      # 1,234.50    with a thousands separator
+print(f"{hp:05}")           # 00042       zero-padded to five digits
+print(f"{ratio:.1%}")       # 75.5%       as a percentage
+print(f"{hp:x} {hp:#b}")    # 2a 0b101010 hex and binary
+print(f"{name:<8}|")        # Bob     |   left-aligned in 8 columns
+print(f"{name:>8}|")        #      Bob|   right-aligned
+print(f"{name:*^9}")        # ***Bob***   centred, padded with *
+print(f"{-7:+} {7:+}")      # -7 +7       always show the sign
+```
+
+The pieces, in order, all optional: fill and alignment (`<` `>` `^`), sign
+(`+`), `#` for a `0x`/`0b` prefix, `0` for zero padding, the width, `,` or
+`_` to group digits, `.` and a precision, and the type: `f` fixed, `e`
+scientific, `g` general, `%` percent, `d` `b` `o` `x` `X` for integers, `s`
+for text. A spec that makes no sense (`{hp:.2z}`) is an error when the
+script is saved; one that doesn't fit the value at runtime (`{name:.2f}` on
+a String) is an error on that line.
+
+**For debugging**, `{expression=}` prints the expression's text too:
+
+```gdscript
+print(f"{hp=} {price=:.1f}")               # hp=42 price=1234.5
+```
+
+`{{` and `}}` are literal braces, the usual escapes such as `\t` work, and
+f-strings can span lines with `f"""..."""`. There's no separate format
+function: `var label := f"{price:,.2f}"` is the way to format a single value.
+
+Under the hood an f-string becomes one `str()` call with the pieces as
+arguments, so it's no slower than joining the pieces by hand.
+
 ## Enums with methods
 
 An enum can be written as a block, and then it can have methods:
@@ -1232,7 +1283,7 @@ about structs, traits and generics.
 
 The one thing the extension answers by itself is syntax colouring, from a
 grammar file baked into it. That grammar predates these features, so
-`struct`, `uses`, `=>`, type parameters, `.IDLE` and `-> (bool, int)` come out looking like
+`struct`, `uses`, `=>`, type parameters, `.IDLE`, `-> (bool, int)` and f-strings come out looking like
 ordinary identifiers or stray punctuation. [`misc/vscode/gdscript-fork-syntax`](misc/vscode/gdscript-fork-syntax)
 fixes that: copy it into `~/.vscode/extensions/` and restart. It layers on
 top of godot-tools rather than replacing it, so the extension still updates
@@ -1242,9 +1293,7 @@ from the marketplace as usual.
 
 ## Roadmap
 
-Next, in order:
-
-1. **String interpolation**, `f"{name} has {hp} HP"`.
+Everything on the original list is done.
 
 Further out: fixed multidimensional arrays of real numbers, a formatter,
 and direct dispatch for trait methods if profiling asks for it.

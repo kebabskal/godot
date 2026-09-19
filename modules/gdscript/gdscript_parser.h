@@ -1924,6 +1924,7 @@ private:
 	ExpressionNode *parse_self(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_identifier(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_implicit_enum_value(ExpressionNode *p_previous_operand, bool p_can_assign);
+	ExpressionNode *parse_fstring(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_value_list(ExpressionNode *p_first);
 	DestructureNode *parse_destructure_declaration(VariableNode *p_first, bool p_end_statement);
 	DestructureNode *parse_destructure_assignment(ExpressionNode *p_first);

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  gdscript_tokenizer_buffer.h                                           */
+/*  gdscript_format.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,60 +30,30 @@
 
 #pragma once
 
-#include "gdscript_tokenizer.h"
+#include "core/string/ustring.h"
+#include "core/variant/variant.h"
 
-class GDScriptTokenizerBuffer : public GDScriptTokenizer {
-public:
-	enum CompressMode {
-		COMPRESS_NONE,
-		COMPRESS_ZSTD,
-	};
+// The format spec of an f-string field, `f"{price:>10,.2f}"`: Python's format mini-language, which
+// Rust and C# spell nearly the same way.
+//
+//     [[fill]align][sign][#][0][width][grouping][.precision][type]
+//
+// align: `<` left, `>` right, `^` centre, `=` pad after the sign. sign: `+`, `-`, or ` `.
+// `#`: `0b`/`0o`/`0x` prefixes. `0`: pad with zeros after the sign. grouping: `,` or `_`.
+// type: `d` `b` `o` `x` `X` for integers; `f` `F` `e` `E` `g` `G` `%` for numbers; `s` for text.
+struct GDScriptFormatSpec {
+	char32_t fill = ' ';
+	char32_t align = 0; // 0: numbers right, everything else left.
+	char32_t sign = '-';
+	bool alternate = false;
+	bool zero = false;
+	int width = -1;
+	char32_t grouping = 0;
+	int precision = -1;
+	char32_t type = 0;
 
-	static constexpr uint32_t TOKENIZER_VERSION = 103; // 103: f-string tokens.
-	static constexpr uint32_t TOKEN_BYTE_MASK = 0x80;
-	static constexpr uint32_t TOKEN_BITS = 8;
-	static constexpr uint32_t TOKEN_MASK = (1 << (TOKEN_BITS - 1)) - 1;
-
-	Vector<StringName> identifiers;
-	Vector<Variant> constants;
-	Vector<int> continuation_lines;
-	HashMap<int, int> token_lines;
-	HashMap<int, int> token_columns;
-	Vector<Token> tokens;
-	int current = 0;
-	uint32_t current_line = 1;
-
-	bool multiline_mode = false;
-	List<int> indent_stack;
-	List<List<int>> indent_stack_stack; // For lambdas, which require manipulating the indentation point.
-	int pending_indents = 0;
-	bool last_token_was_newline = false;
-
-#ifdef TOOLS_ENABLED
-	HashMap<int, CommentData> dummy;
-#endif // TOOLS_ENABLED
-
-	static int _token_to_binary(const Token &p_token, Vector<uint8_t> &r_buffer, int p_start, HashMap<StringName, uint32_t> &r_identifiers_map, HashMap<Variant, uint32_t> &r_constants_map);
-	Token _binary_to_token(const uint8_t *p_buffer);
-
-public:
-	Error set_code_buffer(const Vector<uint8_t> &p_buffer);
-	static Vector<uint8_t> parse_code_string(const String &p_code, CompressMode p_compress_mode);
-
-	virtual int get_cursor_line() const override;
-	virtual int get_cursor_column() const override;
-	virtual void set_cursor_position(int p_line, int p_column) override;
-	virtual void set_multiline_mode(bool p_state) override;
-	virtual bool is_past_cursor() const override;
-	virtual void push_expression_indented_block() override; // For lambdas, or blocks inside expressions.
-	virtual void pop_expression_indented_block() override; // For lambdas, or blocks inside expressions.
-	virtual bool is_text() override { return false; }
-
-#ifdef TOOLS_ENABLED
-	virtual const HashMap<int, CommentData> &get_comments() const override {
-		return dummy;
-	}
-#endif // TOOLS_ENABLED
-
-	virtual Token scan() override;
+	// Reads a spec; on failure `r_error` says what is wrong with it.
+	static bool parse(const String &p_spec, GDScriptFormatSpec &r_spec, String &r_error);
+	// Formats a value; on failure (a spec that does not fit the value's type) `r_error` says why.
+	static bool format(const Variant &p_value, const GDScriptFormatSpec &p_spec, String &r_result, String &r_error);
 };

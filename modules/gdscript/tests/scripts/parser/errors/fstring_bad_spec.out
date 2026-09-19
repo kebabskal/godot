@@ -1,0 +1,2 @@
+GDTEST_PARSER_ERROR
+Invalid format spec ".2z": "z" is not a format type. Use "d", "b", "o", "x" or "X" for integers, "f", "e", "g" or "%" for numbers, "s" for text.

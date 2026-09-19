@@ -31,6 +31,7 @@
 #include "gdscript_parser.h"
 
 #include "gdscript.h"
+#include "gdscript_format.h"
 #include "gdscript_tokenizer_buffer.h"
 
 #include "core/config/project_settings.h"
@@ -3468,6 +3469,88 @@ GDScriptParser::SuiteNode *GDScriptParser::parse_binding(DestructureNode *&r_bin
 	return binding_suite;
 }
 
+GDScriptParser::ExpressionNode *GDScriptParser::parse_fstring(ExpressionNode *p_previous_operand, bool p_can_assign) {
+	// `f"a {x} b {y:.2f}"` becomes `str("a ", x, " b ", @format(y, ".2f"))`: `str()` already joins
+	// any number of values, and the analyzer and compiler need nothing new. The FSTRING_START token
+	// (the text before the first field) is consumed.
+	CallNode *call = alloc_node<CallNode>();
+	reset_extents(call, previous);
+
+	auto make_text = [this](const String &p_text) {
+		LiteralNode *literal = alloc_node<LiteralNode>();
+		literal->value = p_text;
+		complete_extents(literal);
+		return literal;
+	};
+	auto make_call = [this](const StringName &p_name) {
+		CallNode *utility = alloc_node<CallNode>();
+		IdentifierNode *callee = alloc_node<IdentifierNode>();
+		callee->name = p_name;
+		complete_extents(callee);
+		utility->callee = callee;
+		utility->function_name = p_name;
+		return utility;
+	};
+
+	IdentifierNode *callee = alloc_node<IdentifierNode>();
+	callee->name = SNAME("str");
+	complete_extents(callee);
+	call->callee = callee;
+	call->function_name = SNAME("str");
+
+	const String first_text = previous.literal;
+	if (!first_text.is_empty()) {
+		call->arguments.push_back(make_text(first_text));
+	}
+
+	// No multiline mode here: the parser reads one token ahead, so it would still be on when the
+	// token after the f-string is read, and a newline ending the statement would be skipped.
+	for (;;) {
+		ExpressionNode *value = parse_expression(false);
+		if (value == nullptr) {
+			push_error(R"(Expected an expression between "{" and "}" in the f-string.)");
+		}
+		if (match(GDScriptTokenizer::Token::FSTRING_DEBUG)) {
+			call->arguments.push_back(make_text(previous.literal));
+		}
+		if (match(GDScriptTokenizer::Token::FSTRING_SPEC)) {
+			const String spec = previous.literal;
+			GDScriptFormatSpec parsed;
+			String error;
+			if (!GDScriptFormatSpec::parse(spec, parsed, error)) {
+				push_error(vformat(R"(Invalid format spec "%s": %s)", spec, error));
+			}
+			if (value != nullptr) {
+				CallNode *format = make_call(SNAME("@format"));
+				format->arguments.push_back(value);
+				format->arguments.push_back(make_text(spec));
+				complete_extents(format);
+				value = format;
+			}
+		}
+		if (value != nullptr) {
+			call->arguments.push_back(value);
+		}
+		if (match(GDScriptTokenizer::Token::FSTRING_MIDDLE)) {
+			if (!previous.literal.operator String().is_empty()) {
+				call->arguments.push_back(make_text(previous.literal));
+			}
+			continue;
+		}
+		if (match(GDScriptTokenizer::Token::FSTRING_END)) {
+			if (!previous.literal.operator String().is_empty()) {
+				call->arguments.push_back(make_text(previous.literal));
+			}
+			break;
+		}
+		push_error(R"(Expected "}" to close the f-string field.)");
+		break;
+	}
+
+	complete_extents(call);
+	return call;
+}
+
 GDScriptParser::ExpressionNode *GDScriptParser::parse_implicit_enum_value(ExpressionNode *p_previous_operand, bool p_can_assign) {
 	// A leading `.`, where an operand is expected: `.WALK` names a value of the enum the context
 	// expects. After an operand, `.` is attribute access and never gets here.
@@ -5256,6 +5339,11 @@ GDScriptParser::ParseRule *GDScriptParser::get_rule(GDScriptTokenizer::Token::Ty
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // VCS_CONFLICT_MARKER,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // BACKTICK,
 		{ nullptr,                                          &GDScriptParser::parse_invalid_token,        	PREC_CAST }, // QUESTION_MARK,
+		{ &GDScriptParser::parse_fstring,                   nullptr,                                        PREC_NONE }, // FSTRING_START,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // FSTRING_MIDDLE,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // FSTRING_END,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // FSTRING_SPEC,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // FSTRING_DEBUG,
 		// Special
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // ERROR,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TK_EOF,

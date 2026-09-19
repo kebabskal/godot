@@ -26,6 +26,7 @@ the TextMate grammar, which is bundled inside the extension, is static.
 | `var target: Node?`             | a stray `?`                                 | part of the type                  |
 | `item?.name ?? "(none)"`        | `?.` and `??` are unhighlighted text        | null-safe operators               |
 | `-> (bool, int)`                | the types read as a second parameter list   | a tuple of types                  |
+| `f"{hp:.1f} HP"`                | `f` is a variable; fields are string text   | f-string with code and a spec     |
 | `state = .IDLE`                 | a stray `.`; a lowercase value reads as a variable | enum value                  |
 
 `trait` already highlights without this, because mainline Godot reserves the
