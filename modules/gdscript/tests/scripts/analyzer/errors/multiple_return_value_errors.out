@@ -1,0 +1,7 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Cannot return value of type "(bool, int, int)" because the function return type is "(bool, int)".
+>> ERROR at line 8: Cannot return value of type "(bool, String)" because the function return type is "(bool, int)".
+>> ERROR at line 11: Cannot unpack 3 values from a value of type "(bool, int)", which has 2.
+>> ERROR at line 12: Cannot unpack a value of type "int": only a tuple or an array holds several values.
+>> ERROR at line 13: Cannot assign a value of type bool to variable "s" with specified type String.
+>> ERROR at line 14: Cannot assign a value of type (bool, int) to variable "p" with specified type (int, int).

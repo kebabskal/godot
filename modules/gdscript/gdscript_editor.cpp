@@ -2309,6 +2309,15 @@ static bool _guess_expression_type(GDScriptParser::CompletionContext &p_context,
 				const GDScriptParser::IdentifierNode *id = static_cast<const GDScriptParser::IdentifierNode *>(p_expression);
 				found = _guess_identifier_type(p_context, id, r_type);
 			} break;
+			case GDScriptParser::Node::TUPLE:
+			case GDScriptParser::Node::TUPLE_ELEMENT: {
+				// Several values, or one of them after `var a, b := ...`: only the analyzer knows, from
+				// the value being unpacked.
+				if (p_expression->type_constraint.is_set() && !p_expression->type_constraint.is_variant()) {
+					r_type.type = p_expression->type_constraint;
+					found = true;
+				}
+			} break;
 			case GDScriptParser::Node::DICTIONARY: {
 				// Try to recreate the dictionary.
 				const GDScriptParser::DictionaryNode *dn = static_cast<const GDScriptParser::DictionaryNode *>(p_expression);

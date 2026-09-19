@@ -100,6 +100,9 @@ public:
 	struct UnaryOpNode;
 	struct VariableNode;
 	struct WhileNode;
+	struct TupleNode;
+	struct TupleElementNode;
+	struct DestructureNode;
 
 	class DataType {
 	public:
@@ -145,6 +148,10 @@ public:
 		ClassNode *class_type = nullptr;
 		StructNode *struct_type = nullptr; // For `BUILTIN` with `builtin_type == Variant::STRUCT`.
 		Ref<StructLayout> struct_layout; // Same; the runtime identity of the struct type.
+		// `(A, B)` or `(ok: A, value: B)`: several values as one, a struct whose layout is shared by
+		// every tuple of the same shape. The element types are `container_element_types`.
+		bool is_tuple = false;
+		Vector<StringName> tuple_names; // Empty for an unnamed tuple.
 		StringName type_param_name; // For `TYPE_PARAMETER`.
 		// The bounds of a `TYPE_PARAMETER`: one for `T: Node`, several for `T: int | float`.
 		// A Vector because a DataType cannot hold itself by value.
@@ -313,6 +320,8 @@ public:
 			class_type = p_other.class_type;
 			struct_type = p_other.struct_type;
 			struct_layout = p_other.struct_layout;
+			is_tuple = p_other.is_tuple;
+			tuple_names = p_other.tuple_names;
 			type_param_name = p_other.type_param_name;
 			type_param_bounds = p_other.type_param_bounds;
 			trait_type = p_other.trait_type;
@@ -428,6 +437,9 @@ public:
 			UNARY_OPERATOR,
 			VARIABLE,
 			WHILE,
+			TUPLE, // `a, b` after `return`, or on the right of `x, y =`.
+			TUPLE_ELEMENT, // One value of what a `DESTRUCTURE` unpacks.
+			DESTRUCTURE, // `var a, b := f()` or `a, b = f()`.
 		};
 
 		Type type = NONE;
@@ -1165,6 +1177,10 @@ public:
 		ExpressionNode *condition = nullptr;
 		SuiteNode *true_block = nullptr;
 		SuiteNode *false_block = nullptr;
+		// `if var ok, value := f():`: runs before the condition, which is the first variable. The
+		// variables belong to `binding_suite`, which encloses `true_block` only.
+		DestructureNode *binding = nullptr;
+		SuiteNode *binding_suite = nullptr;
 
 		IfNode() {
 			type = IF;
@@ -1455,6 +1471,10 @@ public:
 		bool is_callable_signature = false;
 		LocalVector<TypeNode *> callable_params;
 		TypeNode *callable_return = nullptr; // Null: not given, so unknown (Variant).
+		// `(A, B)` or `(ok: A, value: B)`: a tuple. `type_chain` is empty, like for `void`.
+		bool is_tuple = false;
+		LocalVector<TypeNode *> tuple_types;
+		LocalVector<StringName> tuple_names; // Empty, or one per element.
 
 		DataType resolved_type;
 
@@ -1532,9 +1552,46 @@ public:
 	struct WhileNode : public Node {
 		ExpressionNode *condition = nullptr;
 		SuiteNode *loop = nullptr;
+		// `while var ok, value := f():`, as for `if`, run again before each test.
+		DestructureNode *binding = nullptr;
+		SuiteNode *binding_suite = nullptr;
 
 		WhileNode() {
 			type = WHILE;
+		}
+	};
+
+	// Several values as one: `return a, b`, or the right of `x, y = b, a`. A struct of the tuple type.
+	struct TupleNode : public ExpressionNode {
+		LocalVector<ExpressionNode *> elements;
+
+		TupleNode() {
+			type = TUPLE;
+		}
+	};
+
+	// `var a, b := f()` and `a, b = f()`: `value` is evaluated once, then `statements` run in order:
+	// the declarations (`VariableNode`) or assignments (`AssignmentNode`) of each named target, with
+	// a `TupleElementNode` as the value. `_` targets have no statement.
+	struct DestructureNode : public Node {
+		ExpressionNode *value = nullptr;
+		LocalVector<Node *> statements;
+		int target_count = 0;
+		bool is_declaration = false;
+		bool whole_value = false; // `if var x := f():`: one variable, which takes the whole value.
+
+		DestructureNode() {
+			type = DESTRUCTURE;
+		}
+	};
+
+	// Element `index` of the value a `DestructureNode` unpacks, or the whole value for -1.
+	struct TupleElementNode : public ExpressionNode {
+		DestructureNode *source = nullptr;
+		int index = -1;
+
+		TupleElementNode() {
+			type = TUPLE_ELEMENT;
 		}
 	};
 
@@ -1845,7 +1902,7 @@ private:
 	// Statements.
 	Node *parse_statement();
 	VariableNode *parse_variable(bool p_is_static);
-	VariableNode *parse_variable(bool p_is_static, bool p_allow_property);
+	VariableNode *parse_variable(bool p_is_static, bool p_allow_property, bool p_allow_destructure = false);
 	VariableNode *parse_property(VariableNode *p_variable, bool p_need_indent);
 	void parse_property_getter(VariableNode *p_variable);
 	void parse_property_setter(VariableNode *p_variable);
@@ -1867,6 +1924,16 @@ private:
 	ExpressionNode *parse_self(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_identifier(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_implicit_enum_value(ExpressionNode *p_previous_operand, bool p_can_assign);
+	ExpressionNode *parse_value_list(ExpressionNode *p_first);
+	DestructureNode *parse_destructure_declaration(VariableNode *p_first, bool p_end_statement);
+	DestructureNode *parse_destructure_assignment(ExpressionNode *p_first);
+	SuiteNode *parse_binding(DestructureNode *&r_binding, ExpressionNode *&r_condition, const String &p_token);
+	VariableNode *make_destructure_target(VariableNode *p_variable, DestructureNode *p_destructure, int p_index);
+	// Whether a comma may continue a statement (`return a, b`, `a, b = f()`). Not inside brackets,
+	// where it separates elements, and not in a lambda written inside brackets, whose body turns
+	// bracket mode off but whose commas still belong to the call or literal around it.
+	bool in_multiline_context() const { return (!multiline_stack.is_empty() && multiline_stack.back()->get()) || (in_lambda && lambda_in_brackets); }
+	bool lambda_in_brackets = false;
 	IdentifierNode *parse_identifier();
 	ExpressionNode *parse_builtin_constant(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_unary_operator(ExpressionNode *p_previous_operand, bool p_can_assign);

@@ -281,7 +281,12 @@ String Struct::to_string() const {
 		if (i > 0) {
 			result += ", ";
 		}
-		result += String(_p->layout->get_field_name(i)) + ": " + _p->fields[i].operator String();
+		// A positional field (`_0`, `_1`, ... as in an unnamed tuple) prints as just its value.
+		const String field_name = _p->layout->get_field_name(i);
+		if (!(field_name.begins_with("_") && field_name.substr(1).is_valid_int())) {
+			result += field_name + ": ";
+		}
+		result += _p->fields[i].operator String();
 	}
 	return result + ")";
 }

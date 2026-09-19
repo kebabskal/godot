@@ -2254,6 +2254,7 @@ void GDScriptLanguage::finish() {
 	// Clear the cache before parsing the `script_list`. Some `GDScript` instances will drop to a ref count of zero and destruct on their own.
 	// TODO: This might lead to issues when trying to load a script from within `NOTIFICATION_PREDELETE`, we ignore this issue for now.
 	GDScriptCache::clear();
+	GDScriptAnalyzer::clear_tuple_layouts(); // They can hold scripts, as the type of an element.
 
 	// All remaining scripts in `script_list` are still referenced. There can be two reasons for this:
 	// 1. They have a cyclic dependency among them-selves.

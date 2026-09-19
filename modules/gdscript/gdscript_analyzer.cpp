@@ -1401,6 +1401,25 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 		}
 	}
 
+	if (p_type->is_tuple) {
+		Vector<GDScriptParser::DataType> element_types;
+		Vector<StringName> names;
+		for (GDScriptParser::TypeNode *element : p_type->tuple_types) {
+			GDScriptParser::DataType element_type = type_from_metatype(resolve_datatype(element));
+			if (element_type.kind == GDScriptParser::DataType::BUILTIN && element_type.builtin_type == Variant::NIL) {
+				push_error(R"("void" cannot be an element of a tuple.)", element);
+			}
+			element_types.push_back(element_type);
+		}
+		for (const StringName &name : p_type->tuple_names) {
+			names.push_back(name);
+		}
+		result = make_tuple_type(element_types, names);
+		result.is_nullable = p_type->is_nullable;
+		p_type->resolved_type = result;
+		return result;
+	}
+
 	if (p_type->is_callable_signature) {
 		GDScriptParser::DataType variant_type;
 		variant_type.kind = GDScriptParser::DataType::VARIANT;
@@ -2423,6 +2442,9 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 			break;
 		case GDScriptParser::Node::WHILE:
 			resolve_while(static_cast<GDScriptParser::WhileNode *>(p_node));
+			break;
+		case GDScriptParser::Node::DESTRUCTURE:
+			resolve_destructure(static_cast<GDScriptParser::DestructureNode *>(p_node));
 			break;
 		case GDScriptParser::Node::ANNOTATION:
 			resolve_annotation(static_cast<GDScriptParser::AnnotationNode *>(p_node));
@@ -3977,6 +3999,9 @@ void GDScriptAnalyzer::resolve_parameter(GDScriptParser::ParameterNode *p_parame
 }
 
 void GDScriptAnalyzer::resolve_if(GDScriptParser::IfNode *p_if) {
+	if (p_if->binding != nullptr) {
+		resolve_destructure(p_if->binding);
+	}
 	reduce_expression(p_if->condition);
 
 	NarrowedTypes when_true;
@@ -4185,6 +4210,9 @@ void GDScriptAnalyzer::resolve_for(GDScriptParser::ForNode *p_for) {
 }
 
 void GDScriptAnalyzer::resolve_while(GDScriptParser::WhileNode *p_while) {
+	if (p_while->binding != nullptr) {
+		resolve_destructure(p_while->binding);
+	}
 	reduce_expression(p_while->condition);
 	resolve_suite(p_while->loop);
 }
@@ -4490,6 +4518,12 @@ void GDScriptAnalyzer::reduce_expression(GDScriptParser::ExpressionNode *p_expre
 	p_expression->reduced = true;
 
 	switch (p_expression->type) {
+		case GDScriptParser::Node::TUPLE:
+			reduce_tuple(static_cast<GDScriptParser::TupleNode *>(p_expression), GDScriptParser::DataType());
+			break;
+		case GDScriptParser::Node::TUPLE_ELEMENT:
+			reduce_tuple_element(static_cast<GDScriptParser::TupleElementNode *>(p_expression));
+			break;
 		case GDScriptParser::Node::ARRAY:
 			reduce_array(static_cast<GDScriptParser::ArrayNode *>(p_expression));
 			break;
@@ -5295,6 +5329,178 @@ void GDScriptAnalyzer::reduce_struct_method_call(GDScriptParser::CallNode *p_cal
 	p_call->type_constraint = return_type;
 }
 
+static Mutex tuple_layouts_mutex;
+static HashMap<String, Ref<StructLayout>> tuple_layouts;
+
+GDScriptParser::DataType GDScriptAnalyzer::make_tuple_type(const Vector<GDScriptParser::DataType> &p_types, const Vector<StringName> &p_names) {
+	GDScriptParser::DataType type;
+	type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	type.kind = GDScriptParser::DataType::BUILTIN;
+	type.builtin_type = Variant::STRUCT;
+	type.is_tuple = true;
+	type.container_element_types = p_types;
+	if (p_names.size() == p_types.size()) {
+		type.tuple_names = p_names;
+	}
+
+	// What the layout checks at runtime, per element, is also its key: the field name, the variant
+	// type, and for objects the class and script.
+	struct Field {
+		StringName name;
+		Variant::Type variant_type = Variant::NIL;
+		StringName class_name;
+		Ref<Script> script;
+		Variant default_value;
+	};
+	Vector<Field> fields;
+	String key;
+	for (int i = 0; i < p_types.size(); i++) {
+		const GDScriptParser::DataType &element = p_types[i];
+		Field field;
+		field.name = i < type.tuple_names.size() ? type.tuple_names[i] : StringName("_" + itos(i));
+		switch (element.kind) {
+			case GDScriptParser::DataType::BUILTIN:
+				field.variant_type = element.builtin_type;
+				if (field.variant_type == Variant::STRUCT && element.struct_layout.is_valid()) {
+					field.default_value = element.struct_layout->instantiate();
+				}
+				break;
+			case GDScriptParser::DataType::NATIVE:
+				field.variant_type = Variant::OBJECT;
+				field.class_name = element.native_type;
+				break;
+			case GDScriptParser::DataType::SCRIPT:
+			case GDScriptParser::DataType::CLASS:
+				field.variant_type = Variant::OBJECT;
+				field.class_name = element.native_type;
+				field.script = element.script_type;
+				break;
+			case GDScriptParser::DataType::ENUM:
+				field.variant_type = Variant::INT;
+				break;
+			default:
+				break; // Variant, and anything checked only statically.
+		}
+		if (element.is_nullable && field.variant_type != Variant::OBJECT) {
+			field.variant_type = Variant::NIL; // A nullable builtin is held as a Variant.
+			field.default_value = Variant();
+		}
+		key += vformat("%s:%d:%s:%s;", field.name, field.variant_type, field.class_name, field.script.is_valid() ? field.script->get_path() : String());
+		if (field.variant_type == Variant::STRUCT && element.struct_layout.is_valid()) {
+			key += vformat("@%d;", element.struct_layout->get_instance_id());
+		}
+		fields.push_back(field);
+	}
+
+	MutexLock lock(tuple_layouts_mutex);
+	Ref<StructLayout> *existing = tuple_layouts.getptr(key);
+	if (existing != nullptr) {
+		type.struct_layout = *existing;
+		return type;
+	}
+	Ref<StructLayout> layout;
+	layout.instantiate();
+	for (const Field &field : fields) {
+		layout->add_field(field.name, field.variant_type, field.default_value, field.class_name, field.script);
+	}
+	tuple_layouts[key] = layout;
+	type.struct_layout = layout;
+	return type;
+}
+
+void GDScriptAnalyzer::clear_tuple_layouts() {
+	MutexLock lock(tuple_layouts_mutex);
+	tuple_layouts.clear();
+}
+
+void GDScriptAnalyzer::reduce_tuple(GDScriptParser::TupleNode *p_tuple, const GDScriptParser::DataType &p_expected) {
+	// With a tuple type expected (the function's return type, say), each value is checked against
+	// its element and the result takes that type, names included.
+	const bool use_expected = p_expected.is_tuple && p_expected.get_container_element_type_count() == (int)p_tuple->elements.size();
+	Vector<GDScriptParser::DataType> element_types;
+	bool fits_expected = use_expected;
+	for (uint32_t i = 0; i < p_tuple->elements.size(); i++) {
+		GDScriptParser::ExpressionNode *element = p_tuple->elements[i];
+		if (use_expected) {
+			reduce_expression_expecting(element, p_expected.get_container_element_type(i));
+		} else {
+			reduce_expression(element);
+		}
+		GDScriptParser::DataType element_type = element->type_constraint;
+		if (!element_type.is_set() || !element_type.is_hard_type() || element_type.is_meta_type) {
+			element_type = GDScriptParser::DataType::get_variant_type();
+		}
+		if (use_expected && element_type.is_hard_type() && !element_type.is_variant() && !is_type_compatible(p_expected.get_container_element_type(i), element_type, true, element)) {
+			fits_expected = false;
+		}
+		element_type.is_constant = false;
+		element_types.push_back(element_type);
+	}
+	if (fits_expected) {
+		GDScriptParser::DataType type = p_expected;
+		type.is_nullable = false;
+		type.is_constant = false;
+		p_tuple->type_constraint = type;
+	} else {
+		p_tuple->type_constraint = make_tuple_type(element_types, Vector<StringName>());
+	}
+	p_tuple->is_constant = false;
+}
+
+void GDScriptAnalyzer::reduce_tuple_element(GDScriptParser::TupleElementNode *p_element) {
+	GDScriptParser::DataType type = GDScriptParser::DataType::get_variant_type();
+	const GDScriptParser::ExpressionNode *value = p_element->source != nullptr ? p_element->source->value : nullptr;
+	if (value != nullptr) {
+		const GDScriptParser::DataType &value_type = value->type_constraint;
+		if (p_element->index < 0) {
+			type = value_type;
+		} else if (value_type.is_tuple && p_element->index < value_type.get_container_element_type_count()) {
+			type = value_type.get_container_element_type(p_element->index);
+		} else if (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::ARRAY && value_type.has_container_element_type(0)) {
+			type = value_type.get_container_element_type(0);
+		}
+	}
+	type.is_constant = false;
+	type.is_read_only = false;
+	p_element->type_constraint = type;
+	p_element->is_constant = false;
+}
+
+void GDScriptAnalyzer::resolve_destructure(GDScriptParser::DestructureNode *p_destructure) {
+	if (p_destructure->value == nullptr) {
+		return;
+	}
+	// `var a: int, b: State = 1, .IDLE`: a declared type reaches its value.
+	if (p_destructure->value->type == GDScriptParser::Node::TUPLE && p_destructure->is_declaration) {
+		GDScriptParser::TupleNode *values = static_cast<GDScriptParser::TupleNode *>(p_destructure->value);
+		for (GDScriptParser::Node *declared : p_destructure->statements) {
+			const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(declared);
+			const int index = static_cast<const GDScriptParser::TupleElementNode *>(variable->initializer)->index;
+			if (variable->datatype_specifier != nullptr && index >= 0 && index < (int)values->elements.size()) {
+				reduce_expression_expecting(values->elements[index], type_from_metatype(resolve_datatype(variable->datatype_specifier)));
+			}
+		}
+	}
+	reduce_expression(p_destructure->value);
+
+	const GDScriptParser::DataType &value_type = p_destructure->value->type_constraint;
+	if (!p_destructure->whole_value) {
+		if (value_type.is_tuple) {
+			if (value_type.get_container_element_type_count() != p_destructure->target_count) {
+				push_error(vformat(R"(Cannot unpack %d values from a value of type "%s", which has %d.)", p_destructure->target_count, value_type.to_string(), value_type.get_container_element_type_count()), p_destructure->value);
+			}
+		} else if (value_type.is_hard_type() && !value_type.is_variant() && !(value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::ARRAY)) {
+			push_error(vformat(R"(Cannot unpack a value of type "%s": only a tuple or an array holds several values.)", value_type.to_string()), p_destructure->value);
+		} else if (!value_type.is_hard_type() || value_type.is_variant()) {
+			mark_node_unsafe(p_destructure->value); // Unpacked by position at runtime, whatever it is.
+		}
+	}
+
+	for (GDScriptParser::Node *statement : p_destructure->statements) {
+		resolve_node(statement, true);
+	}
+}
+
 GDScriptParser::EnumNode *GDScriptAnalyzer::find_enum_node(const GDScriptParser::DataType &p_type) {
 	// Only enums declared in a script have methods; engine and global enums have no node.
 	if (p_type.kind != GDScriptParser::DataType::ENUM || p_type.class_type == nullptr || !p_type.class_type->has_member(p_type.enum_type)) {
@@ -5400,6 +5606,11 @@ void GDScriptAnalyzer::reduce_expression_expecting(GDScriptParser::ExpressionNod
 	}
 	if (is_unresolved_implicit_enum_value(p_expression)) {
 		resolve_implicit_enum_value(static_cast<GDScriptParser::IdentifierNode *>(p_expression), p_expected);
+		return;
+	}
+	if (p_expression->type == GDScriptParser::Node::TUPLE && !p_expression->reduced) {
+		p_expression->reduced = true;
+		reduce_tuple(static_cast<GDScriptParser::TupleNode *>(p_expression), p_expected);
 		return;
 	}
 	// The expectation passes through to where the value comes from.
@@ -9746,6 +9957,15 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 		}
 		if (valid && p_target.builtin_type == Variant::CALLABLE && p_source.builtin_type == Variant::CALLABLE && p_target.has_callable_signature && p_source.has_callable_signature) {
 			valid = callable_signatures_compatible(p_target, p_source);
+		}
+		if (valid && p_target.is_tuple) {
+			// Element by element, and on the same layout: a typed slot checks the layout at runtime,
+			// and a `(bool, Node2D)` is not stored as a `(bool, Node)`.
+			valid = p_source.is_tuple && p_target.struct_layout == p_source.struct_layout &&
+					p_target.get_container_element_type_count() == p_source.get_container_element_type_count();
+			for (int i = 0; valid && i < p_target.get_container_element_type_count(); i++) {
+				valid = check_type_compatibility(p_target.get_container_element_type(i), p_source.get_container_element_type(i), false, p_source_node);
+			}
 		}
 		return valid;
 	}

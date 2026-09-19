@@ -551,6 +551,60 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 
 			return codegen.add_constant(cn->value);
 		} break;
+		case GDScriptParser::Node::TUPLE: {
+			// Several values as one: a struct of the tuple's layout, built from them in order.
+			const GDScriptParser::TupleNode *tuple = static_cast<const GDScriptParser::TupleNode *>(p_expression);
+			const Ref<StructLayout> layout = tuple->type_constraint.struct_layout;
+			if (layout.is_null()) {
+				_set_error("Compiler bug (please report): tuple without a layout.", tuple);
+				r_error = ERR_COMPILATION_FAILED;
+				return GDScriptCodeGenerator::Address();
+			}
+			GDScriptCodeGenerator::Address result = codegen.add_temporary(_gdtype_from_datatype(tuple->type_constraint, codegen.script));
+			Vector<GDScriptCodeGenerator::Address> values;
+			for (const GDScriptParser::ExpressionNode *element : tuple->elements) {
+				GDScriptCodeGenerator::Address value = _parse_expression(codegen, r_error, element);
+				if (r_error) {
+					return GDScriptCodeGenerator::Address();
+				}
+				values.push_back(value);
+			}
+			gen->write_construct_struct(result, codegen.add_constant(layout), values);
+			for (int i = 0; i < values.size(); ++i) {
+				if (values[i].mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary();
+				}
+			}
+			return result;
+		} break;
+		case GDScriptParser::Node::TUPLE_ELEMENT: {
+			const GDScriptParser::TupleElementNode *element = static_cast<const GDScriptParser::TupleElementNode *>(p_expression);
+			const GDScriptCodeGenerator::Address *source = codegen.destructure_values.getptr(element->source);
+			if (source == nullptr) {
+				_set_error("Compiler bug (please report): tuple element read outside of its unpacking.", element);
+				r_error = ERR_COMPILATION_FAILED;
+				return GDScriptCodeGenerator::Address();
+			}
+			if (element->index < 0) {
+				return *source;
+			}
+			const GDScriptParser::DataType &value_type = element->source->value->type_constraint;
+			if (value_type.is_tuple && value_type.struct_layout.is_valid() && element->index < value_type.struct_layout->get_field_count()) {
+				// A tuple: its field, by name, which the typed source makes an indexed read.
+				GDScriptCodeGenerator::Address result = codegen.add_temporary(_gdtype_from_datatype(element->type_constraint, codegen.script));
+				gen->write_get_named(result, value_type.struct_layout->get_field_name(element->index), *source);
+				return result;
+			}
+			// An array, or anything unknown until runtime: by position. Untyped, since nothing
+			// checked what the position holds unless the array is typed.
+			GDScriptDataType element_type;
+			if (value_type.kind == GDScriptParser::DataType::BUILTIN && value_type.builtin_type == Variant::ARRAY && value_type.has_container_element_type(0)) {
+				element_type = _gdtype_from_datatype(element->type_constraint, codegen.script);
+			}
+			GDScriptCodeGenerator::Address result = codegen.add_temporary(element_type);
+			gen->write_get(result, codegen.add_constant(element->index), *source);
+			return result;
+		} break;
 		case GDScriptParser::Node::SELF: {
 			if (codegen.struct_self.mode == GDScriptCodeGenerator::Address::FUNCTION_PARAMETER) {
 				return codegen.struct_self; // A struct method: `self` is the value it was called on.
@@ -2333,6 +2387,16 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 			} break;
 			case GDScriptParser::Node::IF: {
 				const GDScriptParser::IfNode *if_n = static_cast<const GDScriptParser::IfNode *>(s);
+				List<GDScriptCodeGenerator::Address> binding_locals;
+				if (if_n->binding != nullptr) {
+					// `if var ok, value := f():`: the variables live around the whole `if`.
+					codegen.start_block();
+					binding_locals = _add_block_locals(codegen, if_n->binding_suite);
+					err = _parse_destructure(codegen, if_n->binding);
+					if (err) {
+						return err;
+					}
+				}
 				GDScriptCodeGenerator::Address condition = _parse_expression(codegen, err, if_n->condition);
 				if (err) {
 					return err;
@@ -2359,6 +2423,11 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				}
 
 				gen->write_endif();
+
+				if (if_n->binding != nullptr) {
+					_clear_block_locals(codegen, binding_locals);
+					codegen.end_block();
+				}
 			} break;
 			case GDScriptParser::Node::FOR: {
 				const GDScriptParser::ForNode *for_n = static_cast<const GDScriptParser::ForNode *>(s);
@@ -2565,7 +2634,20 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 
 				codegen.start_block(); // Add an extra block, since we use custom logic to clear block locals.
 
+				List<GDScriptCodeGenerator::Address> binding_locals;
+				if (while_n->binding != nullptr) {
+					binding_locals = _add_block_locals(codegen, while_n->binding_suite);
+				}
+
 				gen->start_while_condition();
+
+				if (while_n->binding != nullptr) {
+					// `while var ok, value := f():`, unpacked again before every test.
+					err = _parse_destructure(codegen, while_n->binding);
+					if (err) {
+						return err;
+					}
+				}
 
 				GDScriptCodeGenerator::Address condition = _parse_expression(codegen, err, while_n->condition);
 				if (err) {
@@ -2591,6 +2673,7 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				gen->write_endwhile();
 
 				_clear_block_locals(codegen, loop_locals); // Outside loop, after block - for `break` and normal exit.
+				_clear_block_locals(codegen, binding_locals);
 
 				codegen.end_block(); // Get out of extra block for custom locals clearing.
 			} break;
@@ -2691,6 +2774,12 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 					codegen.generator->clear_address(local);
 				}
 			} break;
+			case GDScriptParser::Node::DESTRUCTURE: {
+				err = _parse_destructure(codegen, static_cast<const GDScriptParser::DestructureNode *>(s));
+				if (err) {
+					return err;
+				}
+			} break;
 			case GDScriptParser::Node::CONSTANT: {
 				// Local constants.
 				const GDScriptParser::ConstantNode *lc = static_cast<const GDScriptParser::ConstantNode *>(s);
@@ -2729,6 +2818,53 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 	}
 
 	codegen.end_block();
+	return OK;
+}
+
+Error GDScriptCompiler::_parse_destructure(CodeGen &codegen, const GDScriptParser::DestructureNode *p_destructure) {
+	Error err = OK;
+	GDScriptCodeGenerator *gen = codegen.generator;
+	GDScriptCodeGenerator::Address value = _parse_expression(codegen, err, p_destructure->value);
+	if (err) {
+		return err;
+	}
+	// Held in a local while its elements are read: each read, and the declaration or assignment it
+	// feeds, may need temporaries of its own.
+	GDScriptCodeGenerator::Address held = codegen.add_local("@destructure", _gdtype_from_datatype(p_destructure->value->type_constraint, codegen.script));
+	gen->write_assign(held, value);
+	if (value.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+		gen->pop_temporary();
+	}
+	codegen.destructure_values[p_destructure] = held;
+
+	for (const GDScriptParser::Node *statement : p_destructure->statements) {
+		if (statement->type == GDScriptParser::Node::VARIABLE) {
+			// A declaration: the local was added with its block, as any other.
+			const GDScriptParser::VariableNode *variable = static_cast<const GDScriptParser::VariableNode *>(statement);
+			GDScriptCodeGenerator::Address local = codegen.locals[variable->identifier->name];
+			GDScriptCodeGenerator::Address element = _parse_expression(codegen, err, variable->initializer);
+			if (err) {
+				return err;
+			}
+			if (variable->use_conversion_assign) {
+				gen->write_assign_with_conversion(local, element);
+			} else {
+				gen->write_assign(local, element);
+			}
+			if (element.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+				gen->pop_temporary();
+			}
+		} else {
+			GDScriptCodeGenerator::Address result = _parse_expression(codegen, err, static_cast<const GDScriptParser::ExpressionNode *>(statement), true);
+			if (err) {
+				return err;
+			}
+			if (result.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+				gen->pop_temporary();
+			}
+		}
+	}
+	codegen.destructure_values.erase(p_destructure);
 	return OK;
 }
 

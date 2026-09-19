@@ -20,6 +20,7 @@ Contents:
 - [Generic classes](#generic-classes)
 - [Short lambdas](#short-lambdas)
 - [`for` loops with two variables](#for-loops-with-two-variables)
+- [Multiple return values](#multiple-return-values)
 - [Nullable types](#nullable-types)
 - [Typed scenes](#typed-scenes)
 - [Enums with methods](#enums-with-methods)
@@ -910,6 +911,66 @@ for name, count in stock:
 
 ---
 
+## Multiple return values
+
+A function can return several values, and the caller can unpack them:
+
+```gdscript
+func parse(text: String) -> (bool, int):
+    if not text.is_valid_int():
+        return false, 0
+    return true, text.to_int()
+
+func _ready():
+    var ok, value := parse("42")
+    print(ok, " ", value)                   # true 42
+
+    if var found, number := parse("7"):     # tests the first value
+        print(number)                       # 7
+
+    var _, n := parse("x")                  # _ skips a value
+    print(n)                                # 0
+```
+
+`if var` declares its variables for that block only. The `else` branch and
+the code after the `if` don't see them, so the same names can be used
+again further down. `while var` works the same way, unpacking again before
+each test, and `if var enemy := find_enemy():` with a single variable tests
+the value itself.
+
+**Naming the values** lets you keep the result whole and read it by name:
+
+```gdscript
+func divmod(a: int, b: int) -> (quotient: int, remainder: int):
+    return a / b, a % b
+
+func _ready():
+    var result := divmod(17, 5)
+    print(result.quotient, " ", result.remainder)   # 3 2
+    print(result)                                   # (quotient: 3, remainder: 2)
+```
+
+**Several assignments at once** evaluate every value on the right before
+assigning any, so a swap needs no temporary:
+
+```gdscript
+a, b = b, a
+position.x, position.y = divmod(7, 2)
+```
+
+The types are checked everywhere. Unpacking three values from a function
+that returns two is an error, as is returning `true, "x"` from a function
+declared `-> (bool, int)`, and `var q, r := divmod(9, 4)` gives `q` and `r`
+the type `int`. The values can also come from an `Array`
+(`var x, y = [10, 20]`), which is checked when the code runs.
+
+Under the hood the values travel as a struct, one struct type per shape of
+tuple, so the debugger (and C#) sees an ordinary struct.
+
+One limit: inside a lambda written in a call's arguments, a comma already
+separates the arguments, so `return a, b` and `a, b = ...` aren't
+available there. Put the lambda in a variable first.
+
 ## Nullable types
 
 A `?` after a type means "or null".
@@ -1171,7 +1232,7 @@ about structs, traits and generics.
 
 The one thing the extension answers by itself is syntax colouring, from a
 grammar file baked into it. That grammar predates these features, so
-`struct`, `uses`, `=>`, type parameters and `.IDLE` come out looking like
+`struct`, `uses`, `=>`, type parameters, `.IDLE` and `-> (bool, int)` come out looking like
 ordinary identifiers or stray punctuation. [`misc/vscode/gdscript-fork-syntax`](misc/vscode/gdscript-fork-syntax)
 fixes that: copy it into `~/.vscode/extensions/` and restart. It layers on
 top of godot-tools rather than replacing it, so the extension still updates
@@ -1183,9 +1244,7 @@ from the marketplace as usual.
 
 Next, in order:
 
-1. **Multiple return values**, including `if var ok, value := parse(text):`
-   for error handling.
-2. **String interpolation**, `f"{name} has {hp} HP"`.
+1. **String interpolation**, `f"{name} has {hp} HP"`.
 
 Further out: fixed multidimensional arrays of real numbers, a formatter,
 and direct dispatch for trait methods if profiling asks for it.

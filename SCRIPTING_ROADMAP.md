@@ -63,7 +63,7 @@ Type system:
 
 Syntax:
 
-11. Multiple return values.
+11. Multiple return values. **Done.**
 12. `for key, value in dict` and `for i, item in array`.
 13. String interpolation, `f"{x}"`.
 
@@ -959,6 +959,39 @@ group are independent and can proceed in any order.
     analyzer, which is what knows every one of those contexts, records the
     expected type in the completion context when it meets the node, so the
     editor (and the LSP) list that enum's bare value names.
+- 11 (multiple return values) landed, with the error-handling form the
+  Decisions section asked for.
+  - Values travel as a struct: a tuple type is `BUILTIN`/`STRUCT` with
+    `is_tuple`, element types in `container_element_types` and optional
+    `tuple_names`. Layouts are interned by shape (field name, runtime type,
+    class and script per element) in `GDScriptAnalyzer::make_tuple_type()`,
+    because struct identity is layout identity: two functions returning
+    `(bool, int)` must return the same type. The intern table lives in
+    GDScript, not in the `StructLayout` registry, so a tuple saved with
+    `var_to_str()` does not load back in a fresh session; tuples are meant
+    to be unpacked, not stored. Names are part of the shape, so
+    `(bool, int)` and `(ok: bool, value: int)` are different types.
+    Compatibility is element-wise on the same layout, so `(bool, Node2D)`
+    does not fit a `(bool, Node)` slot (the runtime check is by layout);
+    unpacking does.
+  - Parsing lowers everything onto nodes that already work: `return a, b`
+    and the right of `x, y = b, a` are a `TupleNode` (a struct construct);
+    `var a, b := f()` and `a, b = f()` are a `DestructureNode` that
+    evaluates the value once into a hidden local and then runs ordinary
+    `VariableNode`s / `AssignmentNode`s whose value is a `TupleElementNode`
+    (a field read by name for a typed tuple, by position otherwise, for which
+    `Variant::get_indexed()` now answers structs). Type inference, setters,
+    subscript targets and warnings all come for free that way.
+    `if var` / `while var` hold a destructure plus a `binding_suite` that
+    encloses only the true block (or the loop), so the else branch and the
+    code after never see the names; the condition is a plain identifier of
+    the first variable, so null narrowing applies to `if var e := find():`.
+  - The comma is only a tuple outside brackets. A lambda's body turns
+    bracket mode off, so the parser also remembers whether the lambda itself
+    sits in brackets (`lambda_in_brackets`); there `return x, y` stays
+    `return x` followed by the next argument, as before.
+  - Upstream's `parser/errors/assignment_in_var_if` expected `if var foo = 25:`
+    to fail; it is valid syntax here and moved to the features tests.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

@@ -1,0 +1,3 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 8: Identifier "value" not declared in the current scope.
+>> ERROR at line 9: Identifier "ok" not declared in the current scope.

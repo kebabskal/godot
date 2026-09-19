@@ -993,6 +993,13 @@ void Variant::set_indexed(int64_t p_index, const Variant &p_value, bool &r_valid
 	}
 }
 Variant Variant::get_indexed(int64_t p_index, bool &r_valid, bool &r_oob) const {
+	if (type == STRUCT) {
+		// A struct's fields by position, as GDScript unpacks a tuple whose type it does not know.
+		const Struct &value = VariantInternalAccessor<Struct>::get(this);
+		r_oob = p_index < 0 || p_index >= value.get_field_count();
+		r_valid = !r_oob;
+		return r_valid ? value.get_field(p_index) : Variant();
+	}
 	if (likely(variant_indexed_setters_getters[type].valid)) {
 		Variant ret;
 		variant_indexed_setters_getters[type].getter(this, p_index, &ret, &r_oob);

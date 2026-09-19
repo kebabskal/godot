@@ -5,6 +5,9 @@
 	"injectionSelector": "L:source.gdscript -comment -string",
 	"patterns": [
 		{
+			"include": "#tuple_return_type"
+		},
+		{
 			"include": "#implicit_enum_value"
 		},
 		{
@@ -192,6 +195,54 @@
 					"name": "variable.other.enummember.gdscript"
 				}
 			}
+		},
+		"tuple_return_type": {
+			"comment": "`-> (bool, int)` and `-> (ok: bool, value: int)`. The bundled grammar reads a `(` after `->` as a second parameter list, so the types came out as parameter names. The rule starts at the arrow, where it ties with the bundled one and wins.",
+			"begin": "(->)\\s*(\\()",
+			"beginCaptures": {
+				"1": {
+					"name": "punctuation.separator.annotation.result.gdscript"
+				},
+				"2": {
+					"name": "punctuation.definition.tuple.begin.gdscript"
+				}
+			},
+			"end": "\\)",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.definition.tuple.end.gdscript"
+				}
+			},
+			"patterns": [
+				{
+					"comment": "The name of a named element, before its type.",
+					"match": "\\b([A-Za-z_]\\w*)\\s*(:)",
+					"captures": {
+						"1": {
+							"name": "variable.other.property.gdscript"
+						},
+						"2": {
+							"name": "punctuation.separator.annotation.gdscript"
+						}
+					}
+				},
+				{
+					"match": ",",
+					"name": "punctuation.separator.tuple.gdscript"
+				},
+				{
+					"match": "[\\[\\]]",
+					"name": "punctuation.definition.typeparameters.gdscript"
+				},
+				{
+					"match": "\\?",
+					"name": "keyword.operator.nullable.gdscript"
+				},
+				{
+					"match": "\\b[A-Za-z_]\\w*\\b",
+					"name": "entity.name.type.class.gdscript"
+				}
+			]
 		}
 	}
 }

@@ -1283,7 +1283,7 @@ GDScriptParser::VariableNode *GDScriptParser::parse_variable(bool p_is_static) {
 	return parse_variable(p_is_static, true);
 }
 
-GDScriptParser::VariableNode *GDScriptParser::parse_variable(bool p_is_static, bool p_allow_property) {
+GDScriptParser::VariableNode *GDScriptParser::parse_variable(bool p_is_static, bool p_allow_property, bool p_allow_destructure) {
 	VariableNode *variable = alloc_node<VariableNode>();
 
 	make_completion_context(COMPLETION_DECLARATION, variable);
@@ -1324,6 +1324,12 @@ GDScriptParser::VariableNode *GDScriptParser::parse_variable(bool p_is_static, b
 			// Parse type.
 			variable->datatype_specifier = parse_type();
 		}
+	}
+
+	if (p_allow_destructure && check(GDScriptTokenizer::Token::COMMA)) {
+		// `var a, b := f()`: the caller reads the rest.
+		complete_extents(variable);
+		return variable;
 	}
 
 	if (match(GDScriptTokenizer::Token::EQUAL)) {
@@ -2274,6 +2280,19 @@ GDScriptParser::SuiteNode *GDScriptParser::parse_suite(const String &p_context, 
 		suite->statements.push_back(statement);
 
 		// Register locals.
+		if (statement->type == Node::DESTRUCTURE) {
+			for (Node *declared : static_cast<DestructureNode *>(statement)->statements) {
+				if (declared->type != Node::VARIABLE) {
+					continue;
+				}
+				VariableNode *variable = static_cast<VariableNode *>(declared);
+				const SuiteNode::Local &local = current_suite->get_local(variable->identifier->name);
+				if (local.type != SuiteNode::Local::UNDEFINED) {
+					push_error(vformat(R"(There is already a %s named "%s" declared in this scope.)", local.get_name(), variable->identifier->name), variable->identifier);
+				}
+				current_suite->add_local(variable, current_function);
+			}
+		}
 		switch (statement->type) {
 			case Node::VARIABLE: {
 				VariableNode *variable = static_cast<VariableNode *>(statement);
@@ -2352,10 +2371,19 @@ GDScriptParser::Node *GDScriptParser::parse_statement() {
 			complete_extents(result);
 			end_statement(R"("pass")");
 			break;
-		case GDScriptTokenizer::Token::VAR:
+		case GDScriptTokenizer::Token::VAR: {
 			advance();
-			result = parse_variable(false, false);
-			break;
+			if (check(GDScriptTokenizer::Token::UNDERSCORE)) {
+				result = parse_destructure_declaration(nullptr, true); // `var _, n := f()`.
+				break;
+			}
+			VariableNode *variable = parse_variable(false, false, true);
+			if (variable != nullptr && check(GDScriptTokenizer::Token::COMMA)) {
+				result = parse_destructure_declaration(variable, true);
+			} else {
+				result = variable;
+			}
+		} break;
 		case GDScriptTokenizer::Token::TK_CONST:
 			advance();
 			result = parse_constant(false);
@@ -2392,6 +2420,11 @@ GDScriptParser::Node *GDScriptParser::parse_statement() {
 					push_error(R"(Constructor cannot return a value.)");
 				}
 				n_return->return_value = parse_expression(false);
+				if (n_return->return_value != nullptr && check(GDScriptTokenizer::Token::COMMA) && !in_multiline_context()) {
+					// `return a, b`. Not inside brackets, where a lambda's `return x, y` stays `x` and
+					// the next argument.
+					n_return->return_value = parse_value_list(n_return->return_value);
+				}
 			} else if (in_lambda && !is_statement_end_token()) {
 				// Try to parse it anyway as this might not be the statement end in a lambda.
 				// If this fails the expression will be nullptr, but that's the same as no return, so it's fine.
@@ -2435,9 +2468,19 @@ GDScriptParser::Node *GDScriptParser::parse_statement() {
 			}
 			break;
 		}
+		case GDScriptTokenizer::Token::UNDERSCORE:
+			if (!in_multiline_context()) {
+				result = parse_destructure_assignment(nullptr); // `_, b = f()`.
+				break;
+			}
+			[[fallthrough]];
 		default: {
 			// Expression statement.
 			ExpressionNode *expression = parse_expression(true); // Allow assignment here.
+			if (expression != nullptr && expression->type != Node::ASSIGNMENT && check(GDScriptTokenizer::Token::COMMA) && !in_multiline_context()) {
+				result = parse_destructure_assignment(expression); // `a, b = f()`.
+				break;
+			}
 			bool has_ended_lambda = false;
 			if (expression == nullptr) {
 				if (in_lambda) {
@@ -2675,16 +2718,26 @@ GDScriptParser::ForNode *GDScriptParser::parse_for() {
 GDScriptParser::IfNode *GDScriptParser::parse_if(const String &p_token) {
 	IfNode *n_if = alloc_node<IfNode>();
 
-	n_if->condition = parse_expression(false);
-	if (n_if->condition == nullptr) {
-		push_error(vformat(R"(Expected conditional expression after "%s".)", p_token));
+	if (match(GDScriptTokenizer::Token::VAR)) {
+		n_if->binding_suite = parse_binding(n_if->binding, n_if->condition, p_token);
+	} else {
+		n_if->condition = parse_expression(false);
+		if (n_if->condition == nullptr) {
+			push_error(vformat(R"(Expected conditional expression after "%s".)", p_token));
+		}
 	}
 
 	if (!match(GDScriptTokenizer::Token::COLON)) {
 		push_error(vformat(R"(Expected ":" after "%s" condition, found "%s" instead.)", p_token, current.get_name()), current);
 	}
 
+	// The block sees what the binding declared; the `else` and `elif` branches, parsed below, do not.
+	SuiteNode *outer_suite = current_suite;
+	if (n_if->binding_suite != nullptr) {
+		current_suite = n_if->binding_suite;
+	}
 	n_if->true_block = parse_suite(vformat(R"("%s" block)", p_token));
+	current_suite = outer_suite;
 	n_if->true_block->parent_if = n_if;
 
 	if (n_if->true_block->has_continue) {
@@ -3035,9 +3088,13 @@ GDScriptParser::IdentifierNode *GDScriptParser::PatternNode::get_bind(const Stri
 GDScriptParser::WhileNode *GDScriptParser::parse_while() {
 	WhileNode *n_while = alloc_node<WhileNode>();
 
-	n_while->condition = parse_expression(false);
-	if (n_while->condition == nullptr) {
-		push_error(R"(Expected conditional expression after "while".)");
+	if (match(GDScriptTokenizer::Token::VAR)) {
+		n_while->binding_suite = parse_binding(n_while->binding, n_while->condition, "while");
+	} else {
+		n_while->condition = parse_expression(false);
+		if (n_while->condition == nullptr) {
+			push_error(R"(Expected conditional expression after "while".)");
+		}
 	}
 
 	if (!match(GDScriptTokenizer::Token::COLON)) {
@@ -3054,7 +3111,13 @@ GDScriptParser::WhileNode *GDScriptParser::parse_while() {
 
 	SuiteNode *suite = alloc_node<SuiteNode>();
 	suite->is_in_loop = true;
+	SuiteNode *outer_suite = current_suite;
+	if (n_while->binding_suite != nullptr) {
+		n_while->binding_suite->is_in_loop = true;
+		current_suite = n_while->binding_suite;
+	}
 	n_while->loop = parse_suite(R"("while" block)", suite);
+	current_suite = outer_suite;
 	complete_extents(n_while);
 
 	// Reset break/continue state.
@@ -3135,6 +3198,274 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_expression(bool p_can_assi
 
 GDScriptParser::IdentifierNode *GDScriptParser::parse_identifier() {
 	return static_cast<IdentifierNode *>(parse_identifier(nullptr, false));
+}
+
+GDScriptParser::ExpressionNode *GDScriptParser::parse_value_list(ExpressionNode *p_first) {
+	// `a, b, c`, where only a single expression was expected so far.
+	TupleNode *tuple = alloc_node<TupleNode>();
+	reset_extents(tuple, p_first);
+	tuple->elements.push_back(p_first);
+	while (match(GDScriptTokenizer::Token::COMMA)) {
+		ExpressionNode *element = parse_expression(false);
+		if (element == nullptr) {
+			push_error(R"(Expected a value after ",".)");
+			break;
+		}
+		tuple->elements.push_back(element);
+	}
+	complete_extents(tuple);
+	return tuple;
+}
+
+// One name of `var a, b: int, _ := value`: a new variable, or null for `_`.
+GDScriptParser::VariableNode *GDScriptParser::make_destructure_target(VariableNode *p_variable, DestructureNode *p_destructure, int p_index) {
+	if (p_variable == nullptr) {
+		return nullptr;
+	}
+	TupleElementNode *element = alloc_node<TupleElementNode>();
+	complete_extents(element);
+	element->source = p_destructure;
+	element->index = p_index;
+	element->start_line = p_variable->start_line;
+	element->end_line = p_variable->end_line;
+	element->start_column = p_variable->start_column;
+	element->end_column = p_variable->end_column;
+	p_variable->initializer = element;
+	p_variable->assignments++;
+	return p_variable;
+}
+
+GDScriptParser::DestructureNode *GDScriptParser::parse_destructure_declaration(VariableNode *p_first, bool p_end_statement) {
+	// `var a, b := f()`. `p_first` has been read up to its type, or is null when the first name is `_`.
+	DestructureNode *destructure = alloc_node<DestructureNode>();
+	destructure->is_declaration = true;
+	LocalVector<VariableNode *> variables; // Null for `_`.
+	if (p_first != nullptr) {
+		reset_extents(destructure, p_first);
+		variables.push_back(p_first);
+	} else {
+		advance(); // The `_`.
+		variables.push_back(nullptr);
+		if (!check(GDScriptTokenizer::Token::COMMA)) {
+			push_error(R"(Expected "," after "_": it only stands in for a value being unpacked.)");
+		}
+	}
+	while (match(GDScriptTokenizer::Token::COMMA)) {
+		if (match(GDScriptTokenizer::Token::UNDERSCORE)) {
+			variables.push_back(nullptr);
+			if (match(GDScriptTokenizer::Token::COLON) && !check(GDScriptTokenizer::Token::EQUAL)) {
+				push_error(R"("_" cannot have a type: nothing is declared for it.)");
+			}
+			continue;
+		}
+		VariableNode *variable = alloc_node<VariableNode>();
+		if (!consume(GDScriptTokenizer::Token::IDENTIFIER, R"(Expected a variable name, or "_", after ",".)")) {
+			complete_extents(variable);
+			break;
+		}
+		variable->identifier = parse_identifier();
+		variable->export_info.name = variable->identifier->name;
+		if (match(GDScriptTokenizer::Token::COLON)) {
+			if (check(GDScriptTokenizer::Token::EQUAL)) {
+				variable->infer_datatype = true;
+			} else {
+				variable->datatype_specifier = parse_type();
+			}
+		}
+		complete_extents(variable);
+		variables.push_back(variable);
+	}
+	// `var a, b := f()`: the `:` before `=` belongs to the whole list, so every name without a type
+	// of its own infers one.
+	const bool infer = !variables.is_empty() && variables[variables.size() - 1] != nullptr && variables[variables.size() - 1]->infer_datatype;
+	if (infer) {
+		for (VariableNode *variable : variables) {
+			if (variable != nullptr && variable->datatype_specifier == nullptr) {
+				variable->infer_datatype = true;
+			}
+		}
+	}
+	for (uint32_t i = 0; i < variables.size(); i++) {
+		for (uint32_t j = 0; j < i; j++) {
+			if (variables[i] != nullptr && variables[j] != nullptr && variables[i]->identifier->name == variables[j]->identifier->name) {
+				push_error(vformat(R"(The name "%s" is used twice in this declaration.)", variables[i]->identifier->name), variables[i]->identifier);
+			}
+		}
+	}
+
+	destructure->target_count = variables.size();
+	if (!consume(GDScriptTokenizer::Token::EQUAL, R"(Expected "=" and a value to unpack into these variables.)")) {
+		complete_extents(destructure);
+		return destructure;
+	}
+	destructure->value = parse_expression(false);
+	if (destructure->value == nullptr) {
+		push_error(R"(Expected a value to unpack after "=".)");
+	} else if (check(GDScriptTokenizer::Token::COMMA)) {
+		destructure->value = parse_value_list(destructure->value); // `var a, b := 1, 2`.
+	}
+	for (uint32_t i = 0; i < variables.size(); i++) {
+		VariableNode *variable = make_destructure_target(variables[i], destructure, i);
+		if (variable != nullptr) {
+			destructure->statements.push_back(variable);
+		}
+	}
+	complete_extents(destructure);
+	if (p_end_statement) {
+		end_statement("variable declaration");
+	}
+	return destructure;
+}
+
+GDScriptParser::DestructureNode *GDScriptParser::parse_destructure_assignment(ExpressionNode *p_first) {
+	// `a, b = f()`, with `a` already read (or null for a leading `_`, which is the current token).
+	DestructureNode *destructure = alloc_node<DestructureNode>();
+	LocalVector<ExpressionNode *> targets; // Null for `_`.
+	if (p_first != nullptr) {
+		reset_extents(destructure, p_first);
+		targets.push_back(p_first);
+	} else {
+		advance(); // The `_`.
+		targets.push_back(nullptr);
+	}
+	while (match(GDScriptTokenizer::Token::COMMA)) {
+		if (match(GDScriptTokenizer::Token::UNDERSCORE)) {
+			targets.push_back(nullptr);
+			continue;
+		}
+		ExpressionNode *target = parse_precedence(PREC_ASSIGNMENT, false, true);
+		if (target == nullptr) {
+			push_error(R"(Expected a variable, attribute or subscript to assign to, or "_", after ",".)");
+			break;
+		}
+		targets.push_back(target);
+	}
+	destructure->target_count = targets.size();
+	if (!consume(GDScriptTokenizer::Token::EQUAL, R"(Expected "=" and a value to unpack after the list of targets.)")) {
+		complete_extents(destructure);
+		end_statement("assignment");
+		return destructure;
+	}
+	destructure->value = parse_expression(false);
+	if (destructure->value == nullptr) {
+		push_error(R"(Expected a value to unpack after "=".)");
+	} else if (check(GDScriptTokenizer::Token::COMMA)) {
+		destructure->value = parse_value_list(destructure->value); // `a, b = b, a`.
+	}
+	for (uint32_t i = 0; i < targets.size(); i++) {
+		ExpressionNode *target = targets[i];
+		if (target == nullptr) {
+			continue;
+		}
+		if (target->type != Node::IDENTIFIER && target->type != Node::SUBSCRIPT) {
+			push_error(R"(Only identifier, attribute access, and subscription access can be used as assignment target.)", target);
+			continue;
+		}
+		TupleElementNode *element = alloc_node<TupleElementNode>();
+		complete_extents(element);
+		element->source = destructure;
+		element->index = i;
+		element->start_line = target->start_line;
+		element->end_line = target->end_line;
+		element->start_column = target->start_column;
+		element->end_column = target->end_column;
+		AssignmentNode *assignment = alloc_node<AssignmentNode>();
+		complete_extents(assignment);
+		assignment->assignee = target;
+		assignment->assigned_value = element;
+		assignment->operation = AssignmentNode::OP_NONE;
+		assignment->variant_op = Variant::OP_MAX;
+		assignment->start_line = target->start_line;
+		assignment->end_line = target->end_line;
+		assignment->start_column = target->start_column;
+		assignment->end_column = target->end_column;
+		destructure->statements.push_back(assignment);
+	}
+	complete_extents(destructure);
+	end_statement("assignment");
+	return destructure;
+}
+
+GDScriptParser::SuiteNode *GDScriptParser::parse_binding(DestructureNode *&r_binding, ExpressionNode *&r_condition, const String &p_token) {
+	// `if var ok, value := f():` (the `var` is read). The variables go into a suite of their own,
+	// which the caller makes the parent of the block that may use them.
+	SuiteNode *binding_suite = alloc_node<SuiteNode>();
+	binding_suite->parent_block = current_suite;
+	binding_suite->parent_function = current_function;
+
+	VariableNode *first = nullptr;
+	if (!check(GDScriptTokenizer::Token::UNDERSCORE)) {
+		first = alloc_node<VariableNode>();
+		if (!consume(GDScriptTokenizer::Token::IDENTIFIER, vformat(R"(Expected a variable name after "%s var".)", p_token))) {
+			complete_extents(first);
+			complete_extents(binding_suite);
+			return binding_suite;
+		}
+		first->identifier = parse_identifier();
+		first->export_info.name = first->identifier->name;
+		if (match(GDScriptTokenizer::Token::COLON)) {
+			if (check(GDScriptTokenizer::Token::EQUAL)) {
+				first->infer_datatype = true;
+			} else {
+				first->datatype_specifier = parse_type();
+			}
+		}
+		complete_extents(first);
+	}
+
+	DestructureNode *binding = nullptr;
+	if (first != nullptr && !check(GDScriptTokenizer::Token::COMMA)) {
+		// `if var enemy := find():`: one variable, holding the whole value.
+		binding = alloc_node<DestructureNode>();
+		reset_extents(binding, first);
+		binding->is_declaration = true;
+		binding->whole_value = true;
+		binding->target_count = 1;
+		if (consume(GDScriptTokenizer::Token::EQUAL, vformat(R"(Expected "=" and a value after "%s var %s".)", p_token, first->identifier->name))) {
+			binding->value = parse_expression(false);
+			if (binding->value == nullptr) {
+				push_error(R"(Expected a value after "=".)");
+			}
+		}
+		binding->statements.push_back(make_destructure_target(first, binding, -1));
+		complete_extents(binding);
+	} else {
+		binding = parse_destructure_declaration(first, false);
+	}
+	r_binding = binding;
+
+	for (Node *declared : binding->statements) {
+		VariableNode *variable = static_cast<VariableNode *>(declared);
+		if (current_suite->has_local(variable->identifier->name)) {
+			push_error(vformat(R"(There is already a %s named "%s" in this scope.)", current_suite->get_local(variable->identifier->name).get_name(), variable->identifier->name), variable->identifier);
+		}
+		binding_suite->add_local(variable, current_function);
+	}
+
+	// The test is the first value, read through its variable when it has one.
+	VariableNode *tested = binding->statements.is_empty() ? nullptr : static_cast<VariableNode *>(binding->statements[0]);
+	if (tested != nullptr && static_cast<TupleElementNode *>(tested->initializer)->index <= 0) {
+		IdentifierNode *condition = alloc_node<IdentifierNode>();
+		complete_extents(condition);
+		condition->name = tested->identifier->name;
+		condition->source = IdentifierNode::LOCAL_VARIABLE;
+		condition->variable_source = tested;
+		condition->suite = binding_suite;
+		condition->start_line = tested->start_line;
+		condition->end_line = tested->end_line;
+		condition->start_column = tested->start_column;
+		condition->end_column = tested->end_column;
+		r_condition = condition;
+	} else {
+		TupleElementNode *condition = alloc_node<TupleElementNode>();
+		condition->source = binding;
+		condition->index = 0;
+		reset_extents(condition, binding);
+		complete_extents(condition);
+		r_condition = condition;
+	}
+	complete_extents(binding_suite);
+	return binding_suite;
 }
 
 GDScriptParser::ExpressionNode *GDScriptParser::parse_implicit_enum_value(ExpressionNode *p_previous_operand, bool p_can_assign) {
@@ -4227,6 +4558,8 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_lambda(ExpressionNode *p_p
 
 	bool previous_in_lambda = in_lambda;
 	in_lambda = true;
+	const bool previous_lambda_in_brackets = lambda_in_brackets;
+	lambda_in_brackets = multiline_context;
 
 	// Save break/continue state.
 	bool could_break = can_break;
@@ -4237,6 +4570,7 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_lambda(ExpressionNode *p_p
 	can_continue = false;
 
 	function->body = parse_suite("lambda declaration", body, true);
+	lambda_in_brackets = previous_lambda_in_brackets;
 	complete_extents(function);
 	complete_extents(lambda);
 
@@ -4330,6 +4664,54 @@ GDScriptParser::ExpressionNode *GDScriptParser::parse_invalid_token(ExpressionNo
 GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 	TypeNode *type = alloc_node<TypeNode>();
 	make_completion_context(p_allow_void ? COMPLETION_TYPE_NAME_OR_VOID : COMPLETION_TYPE_NAME, type);
+	if (match(GDScriptTokenizer::Token::PARENTHESIS_OPEN)) {
+		// A tuple: `(bool, int)`, or with names, `(ok: bool, value: int)`.
+		type->is_tuple = true;
+		push_multiline(true);
+		bool named = false;
+		do {
+			if (check(GDScriptTokenizer::Token::PARENTHESIS_CLOSE)) {
+				break; // Trailing comma.
+			}
+			TypeNode *element = parse_type(false);
+			if (element == nullptr) {
+				push_error(R"(Expected a type in the tuple type.)");
+				break;
+			}
+			if (match(GDScriptTokenizer::Token::COLON)) {
+				// What was read is the element's name, and the type follows.
+				if (element->type_chain.size() != 1 || !element->container_types.is_empty() || element->is_tuple || element->is_callable_signature) {
+					push_error(R"(Expected a name before ":" in the tuple type.)");
+				}
+				const StringName name = element->type_chain.is_empty() ? StringName() : element->type_chain[0]->name;
+				if (type->tuple_types.size() > 0 && !named) {
+					push_error(R"(Either every element of a tuple type has a name or none does.)");
+				}
+				named = true;
+				for (const StringName &other : type->tuple_names) {
+					if (other == name) {
+						push_error(vformat(R"(The name "%s" is already used in this tuple type.)", name));
+					}
+				}
+				type->tuple_names.push_back(name);
+				element = parse_type(false);
+				if (element == nullptr) {
+					push_error(vformat(R"(Expected a type after "%s:" in the tuple type.)", name));
+					break;
+				}
+			} else if (named) {
+				push_error(R"(Either every element of a tuple type has a name or none does.)");
+			}
+			type->tuple_types.push_back(element);
+		} while (match(GDScriptTokenizer::Token::COMMA));
+		pop_multiline();
+		consume(GDScriptTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected ")" after the tuple type.)*");
+		if (type->tuple_types.size() < 2) {
+			push_error(R"(A tuple type needs at least two elements.)");
+		}
+		complete_extents(type);
+		return type;
+	}
 	if (match(GDScriptTokenizer::Token::FUNC)) {
 		// A typed callable: `func(int, String) -> bool`.
 		type->is_callable_signature = true;
@@ -5886,6 +6268,19 @@ String GDScriptParser::DataType::base_to_string() const {
 		case VARIANT:
 			return "Variant";
 		case BUILTIN:
+			if (is_tuple) {
+				String text = "(";
+				for (int i = 0; i < container_element_types.size(); i++) {
+					if (i > 0) {
+						text += ", ";
+					}
+					if (i < tuple_names.size()) {
+						text += String(tuple_names[i]) + ": ";
+					}
+					text += container_element_types[i].to_string();
+				}
+				return text + ")";
+			}
 			if (builtin_type == Variant::STRUCT && struct_layout.is_valid()) {
 				return struct_layout->get_name();
 			}
