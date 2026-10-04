@@ -1082,6 +1082,24 @@ var target: Node? = get_node_or_null(^"Boss")
 target.queue_free()         # error in strict mode: use `?.` or check it
 ```
 
+### Engine methods that return a point or null
+
+A few engine methods return a point when something is hit and `null` when not,
+and are declared as returning `Variant`, which strict mode cannot use without an
+unsafe cast. GDScript knows their real type, `Vector3?` (or `Vector2?`):
+
+```gdscript
+if var hit := Plane.PLANE_XZ.intersects_ray(ray.origin, ray.direction):
+    marker.global_position = hit       # a Vector3 here
+```
+
+`if var` on a nullable value like this tests for null, not truthiness, so a hit
+exactly at `Vector3.ZERO` still counts. The methods: `Plane.intersects_ray()`,
+`intersects_segment()` and `intersect_3()`; `AABB.intersects_ray()` and
+`intersects_segment()`; `Geometry3D.ray_intersects_triangle()` and
+`segment_intersects_triangle()`; `Geometry2D.line_intersects_line()` and
+`segment_intersects_segment()`.
+
 ### The cost
 
 For an object type, `T?` is free: the slot was already able to hold null, and

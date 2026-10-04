@@ -4043,6 +4043,7 @@ void GDScriptAnalyzer::resolve_parameter(GDScriptParser::ParameterNode *p_parame
 void GDScriptAnalyzer::resolve_if(GDScriptParser::IfNode *p_if) {
 	if (p_if->binding != nullptr) {
 		resolve_destructure(p_if->binding);
+		p_if->binding_tests_null = binding_tests_null(p_if->binding);
 	}
 	reduce_expression(p_if->condition);
 
@@ -4254,6 +4255,7 @@ void GDScriptAnalyzer::resolve_for(GDScriptParser::ForNode *p_for) {
 void GDScriptAnalyzer::resolve_while(GDScriptParser::WhileNode *p_while) {
 	if (p_while->binding != nullptr) {
 		resolve_destructure(p_while->binding);
+		p_while->binding_tests_null = binding_tests_null(p_while->binding);
 	}
 	reduce_expression(p_while->condition);
 	resolve_suite(p_while->loop);
@@ -5512,6 +5514,17 @@ void GDScriptAnalyzer::reduce_tuple_element(GDScriptParser::TupleElementNode *p_
 	p_element->is_constant = false;
 }
 
+bool GDScriptAnalyzer::binding_tests_null(const GDScriptParser::DestructureNode *p_binding) {
+	// One variable holding a nullable value type: `0`, `false` and `Vector3.ZERO` are values, so
+	// only null fails the test. An object is tested for null by its truthiness already, and a
+	// non-nullable value keeps the truthiness test it always had.
+	if (!p_binding->whole_value || p_binding->value == nullptr) {
+		return false;
+	}
+	const GDScriptParser::DataType &type = p_binding->value->type_constraint;
+	return type.is_nullable && type.kind == GDScriptParser::DataType::BUILTIN && type.builtin_type != Variant::OBJECT;
+}
+
 void GDScriptAnalyzer::resolve_destructure(GDScriptParser::DestructureNode *p_destructure) {
 	if (p_destructure->value == nullptr) {
 		return;
@@ -5544,6 +5557,42 @@ void GDScriptAnalyzer::resolve_destructure(GDScriptParser::DestructureNode *p_de
 
 	for (GDScriptParser::Node *statement : p_destructure->statements) {
 		resolve_node(statement, true);
+	}
+}
+
+// Engine methods that return a point or `null` are bound as returning `Variant`, which strict mode
+// cannot use without an unsafe cast. Their real type is the point, nullable: `Vector3?`. The value
+// is unchanged; only the analyzer learns what it is, so `if hit != null:` narrows it to `Vector3`.
+void GDScriptAnalyzer::sharpen_nullable_point_return(const StringName &p_owner, const StringName &p_method, GDScriptParser::DataType &r_return_type) {
+	struct NullablePointMethod {
+		const char *owner;
+		const char *method;
+		Variant::Type type;
+	};
+	static const NullablePointMethod methods[] = {
+		{ "Plane", "intersects_ray", Variant::VECTOR3 },
+		{ "Plane", "intersects_segment", Variant::VECTOR3 },
+		{ "Plane", "intersect_3", Variant::VECTOR3 },
+		{ "AABB", "intersects_ray", Variant::VECTOR3 },
+		{ "AABB", "intersects_segment", Variant::VECTOR3 },
+		{ "Geometry3D", "ray_intersects_triangle", Variant::VECTOR3 },
+		{ "Geometry3D", "segment_intersects_triangle", Variant::VECTOR3 },
+		{ "Geometry2D", "line_intersects_line", Variant::VECTOR2 },
+		{ "Geometry2D", "segment_intersects_segment", Variant::VECTOR2 },
+	};
+	if (!r_return_type.is_variant()) {
+		return; // The engine typed it already; nothing to sharpen.
+	}
+	for (const NullablePointMethod &entry : methods) {
+		if (p_method == StringName(entry.method) && p_owner == StringName(entry.owner)) {
+			GDScriptParser::DataType point;
+			point.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+			point.kind = GDScriptParser::DataType::BUILTIN;
+			point.builtin_type = entry.type;
+			point.is_nullable = true;
+			r_return_type = point;
+			return;
+		}
 	}
 }
 
@@ -9433,6 +9482,7 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 			if (E.name == p_function) {
 				function_signature_from_info(E, r_return_type, r_par_types, r_default_arg_count, r_method_flags, p_source);
 				sharpen_builtin_container_return(p_base_type, p_function, r_return_type);
+				sharpen_nullable_point_return(Variant::get_type_name(p_base_type.builtin_type), p_function, r_return_type);
 				// Cannot use non-const methods on enums.
 				if (!r_method_flags.has_flag(METHOD_FLAG_STATIC) && was_enum && !(E.flags & METHOD_FLAG_CONST)) {
 					push_error(vformat(R"*(Cannot call non-const Dictionary function "%s()" on enum "%s".)*", p_function, p_base_type.enum_type), p_source);
@@ -9597,6 +9647,9 @@ bool GDScriptAnalyzer::get_function_signature(GDScriptParser::Node *p_source, bo
 			r_return_type = p_base_type.get_container_element_type(0);
 			r_return_type.is_meta_type = false;
 			r_return_type.is_constant = false;
+		}
+		if (valid) {
+			sharpen_nullable_point_return(base_native, function_name, r_return_type);
 		}
 		if (valid && Engine::get_singleton()->has_singleton(base_native)) {
 			r_method_flags.set_flag(METHOD_FLAG_STATIC);

@@ -1194,6 +1194,9 @@ public:
 		// variables belong to `binding_suite`, which encloses `true_block` only.
 		DestructureNode *binding = nullptr;
 		SuiteNode *binding_suite = nullptr;
+		// `if var hit := plane.intersects_ray(...)` with a `Vector3?`: the test is "not null", not
+		// truthiness, which would treat a hit at `Vector3.ZERO` as a miss. Set by the analyzer.
+		bool binding_tests_null = false;
 
 		IfNode() {
 			type = IF;
@@ -1568,6 +1571,7 @@ public:
 		// `while var ok, value := f():`, as for `if`, run again before each test.
 		DestructureNode *binding = nullptr;
 		SuiteNode *binding_suite = nullptr;
+		bool binding_tests_null = false; // As for `if`.
 
 		WhileNode() {
 			type = WHILE;

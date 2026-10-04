@@ -2423,6 +2423,9 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				if (err) {
 					return err;
 				}
+				if (if_n->binding_tests_null) {
+					condition = _write_not_null(codegen, condition);
+				}
 
 				gen->write_if(condition);
 
@@ -2675,6 +2678,9 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 				if (err) {
 					return err;
 				}
+				if (while_n->binding_tests_null) {
+					condition = _write_not_null(codegen, condition);
+				}
 
 				gen->write_while(condition);
 
@@ -2841,6 +2847,18 @@ Error GDScriptCompiler::_parse_block(CodeGen &codegen, const GDScriptParser::Sui
 
 	codegen.end_block();
 	return OK;
+}
+
+GDScriptCodeGenerator::Address GDScriptCompiler::_write_not_null(CodeGen &codegen, const GDScriptCodeGenerator::Address &p_value) {
+	GDScriptDataType bool_type;
+	bool_type.kind = GDScriptDataType::BUILTIN;
+	bool_type.builtin_type = Variant::BOOL;
+	GDScriptCodeGenerator::Address result = codegen.add_temporary(bool_type);
+	codegen.generator->write_binary_operator(result, Variant::OP_NOT_EQUAL, p_value, codegen.add_constant(Variant()));
+	if (p_value.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+		codegen.generator->pop_temporary();
+	}
+	return result;
 }
 
 Error GDScriptCompiler::_parse_destructure(CodeGen &codegen, const GDScriptParser::DestructureNode *p_destructure) {
@@ -4135,9 +4153,13 @@ Error GDScriptCompiler::compile(const GDScriptParser *p_parser, GDScript *p_scri
 		GDScriptCache::add_static_script(p_script);
 	}
 
-	Error err = GDScriptCache::finish_compiling(main_script->path);
+	Vector<String> failed;
+	Error err = GDScriptCache::finish_compiling(main_script->path, &failed);
 	if (err) {
-		_set_error(R"(Failed to compile depended scripts.)", nullptr);
+		// Name them: the error is reported on line 0 of this script, which says nothing about where
+		// to look. Each failing script reports its own errors when it is compiled.
+		failed.sort();
+		_set_error(failed.is_empty() ? String(R"(Failed to compile depended scripts.)") : vformat(R"(Failed to compile depended scripts: %s.)", String(", ").join(failed)), nullptr);
 	}
 	return err;
 }

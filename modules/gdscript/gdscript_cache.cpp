@@ -416,7 +416,7 @@ Ref<GDScript> GDScriptCache::get_cached_script(const String &p_path) {
 	return Ref<GDScript>();
 }
 
-Error GDScriptCache::finish_compiling(const String &p_owner) {
+Error GDScriptCache::finish_compiling(const String &p_owner, Vector<String> *r_failed) {
 	MutexLock lock(singleton->mutex);
 
 	// Mark this as compiled.
@@ -434,6 +434,9 @@ Error GDScriptCache::finish_compiling(const String &p_owner) {
 
 		if (this_err != OK) {
 			err = this_err;
+			if (r_failed != nullptr) {
+				r_failed->push_back(E);
+			}
 		}
 	}
 

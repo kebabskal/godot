@@ -324,6 +324,19 @@ TEST_CASE("[Modules][GDScript] Strict mode") {
 				"\treturn t\n");
 		CHECK(errors.is_empty());
 	}
+	// Engine methods that return a point or null are typed `Vector3?`, so strict code needs no cast.
+	{
+		const Vector<String> errors = analyze_in_strict_mode(
+				"func target(origin: Vector3, direction: Vector3) -> Vector3:\n"
+				"\tvar plane := Plane.PLANE_XZ\n"
+				"\tvar result := plane.intersects_ray(origin, direction)\n"
+				"\tif result != null:\n"
+				"\t\treturn result\n"
+				"\tif var hit := AABB().intersects_segment(origin, direction):\n"
+				"\t\treturn hit\n"
+				"\treturn Vector3.ZERO\n");
+		CHECK(errors.is_empty());
+	}
 	// With the setting off, the same code only produces warnings.
 	{
 		GDScriptParser parser;

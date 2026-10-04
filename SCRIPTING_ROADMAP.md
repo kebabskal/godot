@@ -1063,6 +1063,24 @@ group are independent and can proceed in any order.
   without conversion. Differences from upstream's `find_children()`: no
   owner filter (runtime-added nodes count) and internal children excluded.
   Not done: a real `Node` method for other languages and untyped calls.
+- Engine methods that return a point or `null` (bound as `Variant`) are typed
+  `Vector3?` / `Vector2?` by a table in the analyzer
+  (`sharpen_nullable_point_return()`, applied in `get_function_signature()`
+  for builtin and native bases): the nine geometry intersections. Found by a
+  real strict-mode project that could not raycast against a `Plane`. No
+  engine change and no runtime cost: only the analyzer learns the type.
+  With it, `if var x := ...` on a nullable *value* type now tests `!= null`
+  (`binding_tests_null`), since truthiness would read a hit at
+  `Vector3.ZERO` as a miss; objects and non-nullable values keep their
+  truthiness test. Not covered: `Array`/`Dictionary` methods that return an
+  element or null (`pop_back()`, `get()`, ...), which are a different shape.
+- "Failed to compile depended scripts." now names them (sorted), since it is
+  reported on line 0 of the dependent script and pointed nowhere.
+- An editor segfault on `--headless --editor --quit` has been seen three
+  times, each on a fresh project and each the first editor launch after a
+  rebuild; it never reproduced on demand (30+ tries, including forcing the
+  doc cache to regenerate). Capture the console output of editor runs so a
+  backtrace exists next time.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
