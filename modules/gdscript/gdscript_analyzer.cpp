@@ -8390,7 +8390,9 @@ void GDScriptAnalyzer::warn_null_assignment(const GDScriptParser::DataType &p_ta
 	if (!p_target.is_set() || !p_target.is_hard_type() || p_target.accepts_null()) {
 		return;
 	}
-	if (!p_source.is_set()) {
+	if (!p_source.is_set() || !p_source.is_hard_type()) {
+		// A weakly inferred type (a function with no return type takes one from its body, here
+		// perhaps a final `return null`) is a guess; the value is still dynamic.
 		return;
 	}
 	const bool source_is_null = p_source.kind == GDScriptParser::DataType::BUILTIN && p_source.builtin_type == Variant::NIL;

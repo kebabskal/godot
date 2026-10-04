@@ -913,8 +913,9 @@ group are independent and can proceed in any order.
     Tests in `modules/gdscript/tests/test_scene_root_index.h`, including
     files rewritten behind the index's back and a saved cache that is stale
     by the next session.
-  - Trap for anyone writing tests with resources: `--gdscript-generate-tests`
-    builds its runner without initializing the project, so `res://` is the repo
+  - Trap for anyone writing tests with resources: the test generator (then
+    `--gdscript-generate-tests`, now `--test gdscript-generate-tests`; not
+    re-checked since the rename) builds its runner without initializing the project, so `res://` is the repo
     root there and the tests folder in the doctest suite. A fixture that names
     a resource by an absolute `res://` path, or an error message that prints
     one, differs between the two. Use paths relative to the scene
@@ -1018,6 +1019,18 @@ group are independent and can proceed in any order.
   - The binary-token run of the script tests (`--use-binary-tokens`) has
     eight failures that predate this work (empty files, a class-body error
     message, `match`, untyped declarations); f-strings pass there.
+- Upstream overlap (merged 2026-10-04): upstream added its own answer to the
+  physics dictionaries, non-allocating `*_into` queries (dda27ee15b):
+  `state.intersect_ray_into(query, result)` fills a reusable `RefCounted`
+  result object (`PhysicsIntersectRayResult3D`, ...) read through getters,
+  plus `collide_shape_into`, which the fork never had a struct twin for. The
+  fork's `*_struct` twins stay alongside; all three families (dictionary,
+  struct, into) return the same hit (checked in a running scene). Open
+  decision: keep both, or drop the struct twins for physics and keep structs
+  for the APIs upstream has not touched (`Time`, `TriangleMesh`, ...). The
+  trade-off: `*_into` allocates nothing per query once the result object
+  exists; `*_struct` allocates a struct per query but reads as typed fields
+  (`hit.position`) and composes with the language (tuples, `Array[T]`).
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

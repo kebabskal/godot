@@ -1,8 +1,13 @@
 # Working in this fork
 
 - This fork mirrors `godotengine/godot` master. `master` must stay identical
-  to upstream; do all work on feature branches. To resync:
-  `git fetch upstream master && git branch -f master upstream/master && git push origin master`.
+  to upstream; do all work on feature branches. To resync, fetch master from
+  the godotengine remote, point `master` at it and push it to the fork. Remote
+  names differ between clones: in the main Windows checkout `origin` is
+  godotengine and `kebabskal` is the fork, so there it is
+  `git fetch origin master && git branch -f master origin/master && git push kebabskal master`.
+  Then merge `master` into the feature branch (merge, not rebase: the branch
+  has dozens of commits that would each need their conflicts resolved).
 - The plan for scripting/GDScript work lives in `SCRIPTING_ROADMAP.md`. Read it
   before starting a scripting task and update it when a decision changes.
 - `IMPROVEMENTS.md` is the user-facing summary of what this fork adds over
@@ -15,7 +20,10 @@
   not `--test-case`: `--test-case="*GDScript*"` silently skips the completion
   and LSP suites, which are separate suites, so editor-side regressions pass
   unnoticed. Script-level tests live in `modules/gdscript/tests/scripts/`, and
-  `--gdscript-generate-tests modules/gdscript/tests/scripts` regenerates the
+  `--test gdscript-generate-tests modules/gdscript/tests/scripts` regenerates the
   `.out` expectations (always read the diff: the runner forces every warning
-  to "warn", so a new warning shows up across unrelated tests).
+  to "warn", so a new warning shows up across unrelated tests). The old
+  `--gdscript-generate-tests` flag (renamed upstream, Oct 2026) still exits 0
+  and only prints an error, leaving every `.out` untouched, so an empty diff
+  after it proves nothing.
   `completion/get_node/local/local.gd` fails before any of our changes.
