@@ -199,6 +199,15 @@ static Vector<String> analyze_in_strict_mode(const String &p_source) {
 	return errors;
 }
 
+static bool has_error(const Vector<String> &p_messages, const String &p_fragment) {
+	for (const String &message : p_messages) {
+		if (message.contains(p_fragment)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool has_strict_error(const Vector<String> &p_messages, const String &p_fragment) {
 	for (const String &message : p_messages) {
 		if (message.contains("(Strict mode.)") && message.contains(p_fragment)) {
@@ -223,7 +232,38 @@ TEST_CASE("[Modules][GDScript] Strict mode") {
 		CHECK(has_strict_error(errors, "\"param\""));
 		CHECK(has_strict_error(errors, "\"local\""));
 		CHECK(has_strict_error(errors, "\"i\""));
-		CHECK(has_strict_error(errors, "\"f()\""));
+		// No return type means `void` in strict mode, so `f()` itself is fine and returning a value
+		// from it is what fails.
+		CHECK_FALSE(has_strict_error(errors, "\"f()\""));
+		CHECK(has_error(errors, "returns nothing in strict mode"));
+	}
+	// A function with no return type returns nothing: callers cannot use a value from it, and it
+	// needs no annotation. An override keeps its parent's return type, an accessor its property's,
+	// and a lambda still infers one from its body.
+	{
+		const Vector<String> errors = analyze_in_strict_mode(
+				"extends Node\n"
+				"var hp := 3:\n"
+				"\tget:\n"
+				"\t\treturn hp\n"
+				"func heal():\n"
+				"\thp += 1\n"
+				"func _get_configuration_warnings():\n"
+				"\treturn PackedStringArray()\n"
+				"func twice() -> int:\n"
+				"\theal()\n"
+				"\tvar double := func(): return hp * 2\n"
+				"\treturn double.call()\n");
+		CHECK(errors.is_empty());
+	}
+	{
+		const Vector<String> errors = analyze_in_strict_mode(
+				"func heal():\n"
+				"\tpass\n"
+				"func use() -> void:\n"
+				"\tvar amount: int = heal()\n"
+				"\tprint(amount)\n");
+		CHECK(has_error(errors, "returns \"void\""));
 	}
 	// Fully typed code, including explicit Variant and `:=` inference from typed values, is fine.
 	{

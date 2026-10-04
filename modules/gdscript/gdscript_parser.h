@@ -1103,6 +1103,7 @@ public:
 		EnumNode *enum_owner = nullptr; // Set for a method declared in an `enum Name:` block. Always static: there is no instance.
 		bool enum_self = false; // An enum method declared without `static`: `self` is the enum value, passed as the implicit first parameter.
 		bool mutates_self = false; // A struct method that assigns to a field of `self`, directly or through another mutating method. The call site writes the result back.
+		bool strict_void_default = false; // Strict mode, no return type written: the function returns nothing.
 		Variant rpc_config;
 		MethodInfo info;
 		LambdaNode *source_lambda = nullptr;
@@ -1711,6 +1712,17 @@ private:
 	HashSet<int> unsafe_lines;
 #endif // DEBUG_ENABLED
 
+public:
+	// Whether strict mode is on. Release builds have no warnings, so no strict mode either.
+	static bool is_strict_mode() {
+#ifdef DEBUG_ENABLED
+		return is_project_strict;
+#else
+		return false;
+#endif // DEBUG_ENABLED
+	}
+
+private:
 	GDScriptTokenizer *tokenizer = nullptr;
 	GDScriptTokenizer::Token previous;
 	GDScriptTokenizer::Token current;

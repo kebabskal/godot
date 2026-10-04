@@ -89,6 +89,26 @@ var anything: Variant = get_thing()   # fine, explicitly dynamic
 var mystery = get_thing()      # error in strict mode
 ```
 
+A function without a return type returns nothing, so the common case needs
+no `-> void`:
+
+```gdscript
+func _ready():                 # an override: takes the engine's return type
+    greet()
+
+func greet():                  # returns nothing
+    print("hi")
+
+func damage():
+    return 5                   # error: a function without a return type returns
+                               # nothing in strict mode; declare `-> int`
+```
+
+An override keeps its parent's return type (`func _to_string(): return "x"`
+still returns a String), and a lambda still infers its own from its body.
+Without strict mode a missing return type keeps meaning "untyped", as in
+mainline.
+
 Turn it on per project. Existing projects are unaffected until you do.
 
 ---

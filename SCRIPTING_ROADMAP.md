@@ -1109,13 +1109,26 @@ work are recorded as such so they are not "fixed" twice.
    one. Both apply to `map()` as much as to signals.
 7. **`-> void` is noisy.** Under strict mode a function without a return type
    is an error ("has no static return type"), so every handler and lambda
-   carries `-> void`. **Answered and half done.** For lambdas the real problem
+   carries `-> void`. **Done.** For lambdas the real problem
    was not the annotation but that strict mode threw away the inference it
    already had; both the parameter and the return-type checks now run after
    the body, so `n => n * 2` and `a => print(a)` need nothing written out.
-   For a *named* function the decision is to leave it alone: a missing return
-   type there means "untyped", and inferring `void` would silently change what
-   existing code means.
+   For a *named* function the first decision was to leave it alone, since
+   inferring `void` would change what existing code means. Revisited
+   (2026-10-04): that objection only holds outside strict mode. Under strict
+   mode a missing return type was an error, so no compiling code changes
+   meaning if it reads as `-> void` instead, and that is what it does now.
+   Overrides take the parent's return type (upstream already did that, but
+   only in editor builds, so the lookup is repeated where the default is set,
+   or a game exported with debug would compile `func _to_string(): return "x"`
+   as void). Accessors (`@x_getter`) and lambdas are left out. Release
+   builds have no strict mode and keep "untyped", which runs the same for
+   code that passed strict mode. Returning a value from such a function says
+   why it fails and asks for the return type.
+   Found on the way: two uses of `is_project_strict` from the nullable-types
+   work broke release template builds (the variable only exists with
+   `DEBUG_ENABLED`); `GDScriptParser::is_strict_mode()` answers in every
+   build. A full release template build of the branch has not been run since.
 8. **Struct-returning engine APIs did not complete.** Fixed, see Progress.
 9. **Generic global classes.** Asked for `class_name` on a generic class, so
    generics can be used for components across files. Currently inner classes

@@ -3517,6 +3517,35 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 			return_type.type_source = GDScriptParser::DataType::INFERRED;
 			return_type.kind = GDScriptParser::DataType::VARIANT;
 			p_function->return_type_constraint = return_type;
+
+			// Strict mode: a named function without a return type returns nothing, instead of being an
+			// error, so most functions need no `-> void`. Without strict mode the missing type keeps
+			// meaning "untyped", as it does upstream. Not for a lambda (its return type is inferred
+			// from its body) or an accessor (`@hp_getter`: it returns what the property holds). An
+			// override takes its parent's return type instead, as the editor check below does; that
+			// check only exists in editor builds, so it is repeated here, or a game exported with
+			// debug would compile `func _to_string(): return "x"` as returning nothing. Release builds
+			// have no strict mode and keep "untyped", which runs the same for code that passed it.
+			if (GDScriptParser::is_strict_mode() && !p_is_lambda && !String(function_name).begins_with("@")) {
+				GDScriptParser::DataType parent_return_type;
+				List<GDScriptParser::DataType> parent_parameters;
+				int parent_default_count = 0;
+				BitField<MethodFlags> parent_flags = {};
+				GDScriptParser::DataType base_type = parser->current_class->base_type;
+				base_type.is_meta_type = false;
+				const bool overrides = p_function->struct_owner == nullptr && p_function->trait_owner == nullptr && p_function->enum_owner == nullptr &&
+						get_function_signature(p_function, false, base_type, function_name, parent_return_type, parent_parameters, parent_default_count, parent_flags);
+				if (overrides) {
+					p_function->return_type_constraint = parent_return_type;
+				} else {
+					GDScriptParser::DataType void_type;
+					void_type.type_source = GDScriptParser::DataType::ANNOTATED_INFERRED;
+					void_type.kind = GDScriptParser::DataType::BUILTIN;
+					void_type.builtin_type = Variant::NIL;
+					p_function->return_type_constraint = void_type;
+					p_function->strict_void_default = true;
+				}
+			}
 		}
 
 #ifdef TOOLS_ENABLED
@@ -3645,7 +3674,7 @@ void GDScriptAnalyzer::resolve_function_signature(GDScriptParser::FunctionNode *
 	}
 	// A lambda's return type is inferred from its own body, which has not been resolved yet, so
 	// this check moves to the end of the body too.
-	if (p_function->return_type == nullptr && !p_is_lambda) {
+	if (p_function->return_type == nullptr && !p_is_lambda && !(GDScriptParser::is_strict_mode() && !String(function_name).begins_with("@"))) {
 		parser->push_warning(p_function->start_line, p_function->start_column, p_function->header_end_line, p_function->header_end_column, GDScriptWarning::UNTYPED_DECLARATION, "Function", function_visible_name);
 	}
 #endif // DEBUG_ENABLED
@@ -4469,7 +4498,11 @@ void GDScriptAnalyzer::resolve_return(GDScriptParser::ReturnNode *p_return) {
 #endif // DEBUG_ENABLED
 				mark_node_unsafe(p_return);
 			} else if (!is_call) {
-				push_error("A void function cannot return a value.", p_return);
+				if (parser->current_function->strict_void_default) {
+					push_error(R"(A function without a return type returns nothing in strict mode, so it cannot return a value. Declare what it returns, as in "-> int".)", p_return);
+				} else {
+					push_error("A void function cannot return a value.", p_return);
+				}
 			}
 			result.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 			result.kind = GDScriptParser::DataType::BUILTIN;
@@ -8395,11 +8428,11 @@ bool GDScriptAnalyzer::type_can_be_null(const GDScriptParser::DataType &p_type) 
 		case GDScriptParser::DataType::SCRIPT:
 		case GDScriptParser::DataType::CLASS:
 		case GDScriptParser::DataType::TRAIT:
-			return !GDScriptParser::is_project_strict;
+			return !GDScriptParser::is_strict_mode();
 		case GDScriptParser::DataType::TYPE_PARAMETER:
 			return true; // Whatever it binds to may well be an object.
 		case GDScriptParser::DataType::BUILTIN:
-			return p_type.builtin_type == Variant::OBJECT && !GDScriptParser::is_project_strict;
+			return p_type.builtin_type == Variant::OBJECT && !GDScriptParser::is_strict_mode();
 		default:
 			return false;
 	}
