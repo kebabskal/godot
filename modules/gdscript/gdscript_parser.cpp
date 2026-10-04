@@ -4866,9 +4866,9 @@ GDScriptParser::TypeNode *GDScriptParser::parse_type(bool p_allow_void) {
 				complete_extents(type);
 				type = nullptr;
 				break;
-			} else if (container_type->container_types.size() > 0) {
-				push_error("Nested typed collections are not supported.");
 			} else {
+				// A nested *collection* (`Array[Array[int]]`) is rejected by the analyzer, which knows
+				// what the inner name is: `Array[PackedScene[Enemy]]` and `Array[Pool[int]]` are fine.
 				type->container_types.push_back(container_type);
 			}
 			first_pass = false;
@@ -5904,6 +5904,11 @@ bool GDScriptParser::_export_annotations(AnnotationNode *p_annotation, Node *p_t
 						variable->export_info.type = Variant::OBJECT;
 						variable->export_info.hint = PROPERTY_HINT_RESOURCE_TYPE;
 						variable->export_info.hint_string = class_name;
+						if (export_type.kind == GDScriptParser::DataType::NATIVE && export_type.native_type == SNAME("PackedScene") && export_type.has_container_element_types()) {
+							// `Dictionary[String, PackedScene[Enemy]]`: each value slot only takes such scenes.
+							variable->export_info.hint = PROPERTY_HINT_SCENE_ROOT_TYPE;
+							variable->export_info.hint_string = _scene_root_hint(export_type.get_container_element_type(0));
+						}
 					} else if (ClassDB::is_parent_class(export_type.native_type, SNAME("Node"))) {
 						variable->export_info.type = Variant::OBJECT;
 						variable->export_info.hint = PROPERTY_HINT_NODE_TYPE;

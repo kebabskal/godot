@@ -281,6 +281,15 @@ public:
 				case BUILTIN:
 					return builtin_type == p_other.builtin_type && struct_layout == p_other.struct_layout;
 				case NATIVE:
+					if (native_type != p_other.native_type) {
+						return false;
+					}
+					// `PackedScene[Enemy]`: the root is part of the type. One without a root claims
+					// nothing and stays equal to any, as an untyped container does.
+					if (has_container_element_types() && p_other.has_container_element_types()) {
+						return get_container_element_type(0) == p_other.get_container_element_type(0);
+					}
+					return true;
 				case ENUM: // Enums use native_type to identify the enum and its base class.
 					return native_type == p_other.native_type;
 				case SCRIPT:

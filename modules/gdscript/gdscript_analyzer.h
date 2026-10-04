@@ -298,6 +298,7 @@ public:
 	// Struct methods: index in the declaration order, which is also the index on the layout.
 	static GDScriptParser::FunctionNode *find_struct_method(const GDScriptParser::StructNode *p_struct, const StringName &p_name, int *r_index = nullptr);
 	static GDScriptParser::EnumNode *find_enum_node(const GDScriptParser::DataType &p_type);
+	bool is_nested_typed_collection(const GDScriptParser::DataType &p_type, const GDScriptParser::Node *p_source);
 	static GDScriptParser::FunctionNode *find_enum_method(const GDScriptParser::EnumNode *p_enum, const StringName &p_name);
 	static GDScriptParser::DataType enum_value_type(const GDScriptParser::EnumNode *p_enum);
 	// The type of several values returned or held as one. Every tuple of the same shape (element

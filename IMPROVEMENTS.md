@@ -1104,6 +1104,25 @@ when a `Boss` is an `Enemy`, since a scene is only ever read from. The root can
 be an engine class (`PackedScene[Sprite2D]`), a `class_name` class, or a script
 without one, named through a `preload` constant.
 
+**In collections,** too: `Array[PackedScene[Enemy]]` and
+`Dictionary[String, PackedScene[Enemy]]` work, and each scene taken out of
+them instantiates as an `Enemy`:
+
+```gdscript
+@export var waves: Array[PackedScene[Enemy]] = []
+
+func spawn_wave() -> void:
+    for scene in waves:
+        var enemy := scene.instantiate()   # an Enemy
+        enemy.hp = 10
+        add_child(enemy)
+```
+
+Exported, every slot of the array or dictionary filters its scenes the same
+way. Arrays stay strict about their element type, as typed arrays do: an
+`Array[PackedScene[Boss]]` cannot be assigned to an `Array[PackedScene[Enemy]]`
+variable, though a `Boss` scene can be put into one.
+
 **In the inspector,** an exported `PackedScene[Enemy]` only takes scenes whose
 root is an `Enemy`. A wrong scene is refused when it is picked from the file
 dialog or Quick Load (with a message naming the required root), and cannot be

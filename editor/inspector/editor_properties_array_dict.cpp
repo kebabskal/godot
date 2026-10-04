@@ -49,6 +49,7 @@
 #include "scene/gui/button.h"
 #include "scene/gui/margin_container.h"
 #include "scene/main/scene_tree.h"
+#include "scene/resources/packed_scene.h"
 
 bool EditorPropertyArrayObject::_set(const StringName &p_name, const Variant &p_value) {
 	String name = p_name;
@@ -238,14 +239,32 @@ String EditorPropertyDictionaryObject::get_label_for_index(int p_index) {
 
 ///////////////////// ARRAY ///////////////////////////
 
+// An exported `Array[PackedScene[Enemy]]` hints each element with `PROPERTY_HINT_SCENE_ROOT_TYPE`, whose
+// hint string is the scene's root type ("Enemy"), not the element's class: that is `PackedScene`.
+static String _element_class(PropertyHint p_hint, const String &p_hint_string) {
+	return p_hint == PROPERTY_HINT_SCENE_ROOT_TYPE ? String("PackedScene") : p_hint_string;
+}
+
+static bool _scene_has_root(const Ref<Resource> &p_resource, const String &p_root) {
+	const Ref<PackedScene> scene = p_resource;
+	return scene.is_valid() && scene->get_state().is_valid() && scene->get_state()->is_root_of_type(p_root);
+}
+
+// `PackedScene[Enemy]`, for the type label; a root named by its script path shows the file's name.
+static String _scene_type_name(const String &p_root) {
+	const bool is_path = p_root.begins_with("res://") || p_root.begins_with("uid://");
+	return "PackedScene[" + (is_path ? p_root.get_file().get_basename() : p_root) + "]";
+}
+
 void EditorPropertyArray::initialize_array(Variant &p_array) {
 	if (array_type == Variant::ARRAY && subtype != Variant::NIL) {
 		Array array;
 		StringName subtype_class;
 		Ref<Script> subtype_script;
-		if (subtype == Variant::OBJECT && !subtype_hint_string.is_empty()) {
-			if (ClassDB::class_exists(subtype_hint_string)) {
-				subtype_class = subtype_hint_string;
+		const String element_class = _element_class(subtype_hint, subtype_hint_string);
+		if (subtype == Variant::OBJECT && !element_class.is_empty()) {
+			if (ClassDB::class_exists(element_class)) {
+				subtype_class = element_class;
 			}
 		}
 		array.set_typed(subtype, subtype_class, subtype_script);
@@ -396,6 +415,8 @@ void EditorPropertyArray::update_property() {
 		String type_name;
 		if (subtype == Variant::OBJECT && (subtype_hint == PROPERTY_HINT_RESOURCE_TYPE || subtype_hint == PROPERTY_HINT_NODE_TYPE)) {
 			type_name = subtype_hint_string;
+		} else if (subtype == Variant::OBJECT && subtype_hint == PROPERTY_HINT_SCENE_ROOT_TYPE) {
+			type_name = _scene_type_name(subtype_hint_string);
 		} else {
 			type_name = Variant::get_type_name(subtype);
 		}
@@ -638,8 +659,9 @@ bool EditorPropertyArray::_is_drop_valid(const Dictionary &p_drag_data) const {
 	// When the subtype is of type Object, an additional subtype may be specified in the hint string
 	// (e.g. Resource, Texture2D, ShaderMaterial, etc). We want the allowed type to be that, not just "Object".
 	if (subtype == Variant::OBJECT && !subtype_hint_string.is_empty()) {
-		allowed_type = subtype_hint_string;
+		allowed_type = _element_class(subtype_hint, subtype_hint_string);
 	}
+	const bool scene_root_required = subtype == Variant::OBJECT && subtype_hint == PROPERTY_HINT_SCENE_ROOT_TYPE;
 
 	Dictionary drag_data = p_drag_data;
 	const String drop_type = drag_data.get("type", "");
@@ -663,6 +685,11 @@ bool EditorPropertyArray::_is_drop_valid(const Dictionary &p_drag_data) const {
 					return false;
 				}
 			}
+			// A scene whose root is known to be wrong. One that cannot be told from its file is
+			// accepted here and checked when dropped.
+			if (scene_root_required && EditorFileSystem::get_singleton()->get_scene_root_index().match(file, subtype_hint_string) == EditorSceneRootIndex::NO_MATCH) {
+				return false;
+			}
 		}
 
 		// If no files fail, drop is valid.
@@ -672,6 +699,10 @@ bool EditorPropertyArray::_is_drop_valid(const Dictionary &p_drag_data) const {
 	if (drop_type == "resource") {
 		Ref<Resource> res = drag_data["resource"];
 		if (res.is_null()) {
+			return false;
+		}
+
+		if (scene_root_required && !_scene_has_root(res, subtype_hint_string)) {
 			return false;
 		}
 
@@ -769,6 +800,10 @@ void EditorPropertyArray::drop_data_fw(const Point2 &p_point, const Variant &p_d
 			const String &file = files[i];
 
 			Ref<Resource> res = ResourceLoader::load(file);
+			if (res.is_valid() && subtype_hint == PROPERTY_HINT_SCENE_ROOT_TYPE && !_scene_has_root(res, subtype_hint_string)) {
+				EditorNode::get_singleton()->show_warning(vformat(TTR("The root node of the scene \"%s\" is not a %s, which this array requires."), file.get_file(), subtype_hint_string));
+				continue;
+			}
 			if (res.is_valid()) {
 				array.call("push_back", res);
 			}
@@ -1048,13 +1083,15 @@ void EditorPropertyDictionary::initialize_dictionary(Variant &p_dictionary) {
 		Dictionary dict;
 		StringName key_subtype_class;
 		Ref<Script> key_subtype_script;
-		if (key_subtype == Variant::OBJECT && !key_subtype_hint_string.is_empty() && ClassDB::class_exists(key_subtype_hint_string)) {
-			key_subtype_class = key_subtype_hint_string;
+		const String key_class = _element_class(key_subtype_hint, key_subtype_hint_string);
+		if (key_subtype == Variant::OBJECT && !key_class.is_empty() && ClassDB::class_exists(key_class)) {
+			key_subtype_class = key_class;
 		}
 		StringName value_subtype_class;
 		Ref<Script> value_subtype_script;
-		if (value_subtype == Variant::OBJECT && !value_subtype_hint_string.is_empty() && ClassDB::class_exists(value_subtype_hint_string)) {
-			value_subtype_class = value_subtype_hint_string;
+		const String value_class = _element_class(value_subtype_hint, value_subtype_hint_string);
+		if (value_subtype == Variant::OBJECT && !value_class.is_empty() && ClassDB::class_exists(value_class)) {
+			value_subtype_class = value_class;
 		}
 		dict.set_typed(key_subtype, key_subtype_class, key_subtype_script, value_subtype, value_subtype_class, value_subtype_script);
 		p_dictionary = dict;

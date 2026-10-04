@@ -1,0 +1,4 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 5: Cannot assign a value of type Array[PackedScene[Sprite2D]] to variable "nodes" with specified type Array[PackedScene[Node2D]].
+>> ERROR at line 7: Nested typed collections are not supported.
+>> ERROR at line 8: Nested typed collections are not supported.

@@ -1531,6 +1531,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 
 			if (builtin_type == Variant::ARRAY) {
 				GDScriptParser::DataType container_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
+				if (is_nested_typed_collection(container_type, p_type->get_container_type_or_null(0))) {
+					return bad_type;
+				}
 				if (container_type.kind != GDScriptParser::DataType::VARIANT) {
 					container_type.is_constant = false;
 					result.set_container_element_type(0, container_type);
@@ -1538,11 +1541,17 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			}
 			if (builtin_type == Variant::DICTIONARY) {
 				GDScriptParser::DataType key_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
+				if (is_nested_typed_collection(key_type, p_type->get_container_type_or_null(0))) {
+					return bad_type;
+				}
 				if (key_type.kind != GDScriptParser::DataType::VARIANT) {
 					key_type.is_constant = false;
 					result.set_container_element_type(0, key_type);
 				}
 				GDScriptParser::DataType value_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(1)));
+				if (is_nested_typed_collection(value_type, p_type->get_container_type_or_null(1))) {
+					return bad_type;
+				}
 				if (value_type.kind != GDScriptParser::DataType::VARIANT) {
 					value_type.is_constant = false;
 					result.set_container_element_type(1, value_type);
@@ -1731,6 +1740,9 @@ GDScriptParser::DataType GDScriptAnalyzer::resolve_datatype(GDScriptParser::Type
 			for (uint32_t i = 0; i < p_type->container_types.size(); i++) {
 				GDScriptParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
 				argument.is_constant = false;
+				if (is_nested_typed_collection(argument, p_type->get_container_type_or_null(i))) {
+					return bad_type;
+				}
 				// A bound is checked where the argument is named, so the error points at
 				// `Registry[Rock]` rather than at the first use of a member inside the class.
 				GDScriptParser::TypeParameter &type_parameter = result.class_type->type_parameters[i];
@@ -5500,6 +5512,17 @@ void GDScriptAnalyzer::resolve_destructure(GDScriptParser::DestructureNode *p_de
 	for (GDScriptParser::Node *statement : p_destructure->statements) {
 		resolve_node(statement, true);
 	}
+}
+
+bool GDScriptAnalyzer::is_nested_typed_collection(const GDScriptParser::DataType &p_type, const GDScriptParser::Node *p_source) {
+	// A typed array or dictionary inside another collection, or as a generic class's argument: the
+	// runtime keeps one level of element types. A type with arguments that are only checked when
+	// compiling (`PackedScene[Enemy]`, a generic class) is fine inside a collection.
+	if (p_type.kind == GDScriptParser::DataType::BUILTIN && (p_type.builtin_type == Variant::ARRAY || p_type.builtin_type == Variant::DICTIONARY) && p_type.has_container_element_types()) {
+		push_error("Nested typed collections are not supported.", p_source);
+		return true;
+	}
+	return false;
 }
 
 GDScriptParser::EnumNode *GDScriptAnalyzer::find_enum_node(const GDScriptParser::DataType &p_type) {

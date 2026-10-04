@@ -1031,6 +1031,24 @@ group are independent and can proceed in any order.
   trade-off: `*_into` allocates nothing per query once the result object
   exists; `*_struct` allocates a struct per query but reads as typed fields
   (`hit.position`) and composes with the language (tuples, `Array[T]`).
+- Typed scenes in typed collections (`Array[PackedScene[Enemy]]`,
+  `Dictionary[String, PackedScene[Enemy]]`, also `Array[Pool[int]]` for a
+  generic class). The parser used to reject any type argument that had its
+  own, as a "nested typed collection"; it cannot tell `Array[int]` from
+  `PackedScene[Enemy]`, so the check moved to the analyzer
+  (`is_nested_typed_collection()`), which rejects only a typed Array or
+  Dictionary inside a collection or a generic class's arguments. At runtime
+  the array is an `Array[PackedScene]` (the compiler already erased the root).
+  `DataType::operator==` now compares a typed scene's root, so arrays of
+  scenes stay invariant like other typed arrays. Exports carry
+  `PROPERTY_HINT_SCENE_ROOT_TYPE` per element; the inspector's array and
+  dictionary editors used to read an element hint string as a class name,
+  which for this hint is the root type, so they now map it to `PackedScene`
+  (initialising an empty collection, the drop filter) and show
+  `Array[PackedScene[Enemy]]` as the label. Dropped files are filtered
+  through `EditorSceneRootIndex` and re-checked after loading. Verified
+  headlessly: the label, and an added element's picker carrying the root.
+  Not verified by a test: drag and drop onto the array (needs a real drag).
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.
