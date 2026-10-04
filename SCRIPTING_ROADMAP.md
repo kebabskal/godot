@@ -1049,6 +1049,20 @@ group are independent and can proceed in any order.
   through `EditorSceneRootIndex` and re-checked after loading. Verified
   headlessly: the label, and an added element's picker carrying the root.
   Not verified by a test: drag and drop onto the array (needs a real drag).
+- `find_children_of_type(T, recursive = true)` on a node: every descendant
+  that is a `T` (engine class, script class, or trait), typed `Array[T]`.
+  Asked for as a generic function, but a generic function cannot take its
+  type argument as a value until reified `T` (pinned), so it is a built-in
+  the analyzer types from its argument, like `PackedScene[T].instantiate()`.
+  It intercepts the call only on a statically known node (or a bare call in a
+  node script) and only when no user method has the name, and compiles to the
+  internal `@find_children_of_type` utility, which gets the class value, the
+  script, or a trait's qualified name (the trait argument is made a constant,
+  since a trait is not a value at runtime). The returned array is
+  runtime-typed (`set_typed`) for classes, so it fits an `Array[Enemy]`
+  without conversion. Differences from upstream's `find_children()`: no
+  owner filter (runtime-added nodes count) and internal children excluded.
+  Not done: a real `Node` method for other languages and untyped calls.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

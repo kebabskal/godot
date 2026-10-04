@@ -635,6 +635,9 @@ public:
 		// the call goes to the static function on the class that declares the enum, with the value
 		// as the first argument unless the method is static.
 		FunctionNode *enum_method = nullptr;
+		// `find_children_of_type(Enemy)` on a node: compiled to the `@find_children_of_type` utility,
+		// typed `Array[Enemy]` from the argument.
+		bool children_of_type = false;
 
 		CallNode() {
 			type = CALL;

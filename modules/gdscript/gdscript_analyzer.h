@@ -93,6 +93,7 @@ class GDScriptAnalyzer {
 	void resolve_enum_method_bodies(GDScriptParser::EnumNode *p_enum);
 	void reduce_enum_method_call(GDScriptParser::CallNode *p_call, GDScriptParser::FunctionNode *p_method, bool p_is_await, bool p_is_root, bool p_allow_void);
 	void check_match_exhaustive(GDScriptParser::MatchNode *p_match);
+	bool reduce_children_of_type_call(GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_base);
 	void reduce_tuple(GDScriptParser::TupleNode *p_tuple, const GDScriptParser::DataType &p_expected);
 	void reduce_tuple_element(GDScriptParser::TupleElementNode *p_element);
 	void resolve_destructure(GDScriptParser::DestructureNode *p_destructure);

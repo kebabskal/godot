@@ -827,6 +827,28 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					// A trait's default method compiled into a struct: the other trait methods are the
 					// struct's methods, reached by name through the value (with write-back into `self`).
 					gen->write_call(result, codegen.struct_self, call->function_name, arguments);
+				} else if (call->children_of_type) {
+					// `node.find_children_of_type(Enemy)`: the utility walks the tree and returns an
+					// array typed as `Enemy` (a trait arrives as its qualified name, a constant).
+					GDScriptCodeGenerator::Address node;
+					if (callee->type == GDScriptParser::Node::IDENTIFIER) {
+						node = GDScriptCodeGenerator::Address(GDScriptCodeGenerator::Address::SELF);
+					} else if (safe_callee != nullptr) {
+						node = safe_base;
+					} else {
+						node = _parse_expression(codegen, r_error, static_cast<const GDScriptParser::SubscriptNode *>(callee)->base);
+						if (r_error) {
+							return GDScriptCodeGenerator::Address();
+						}
+					}
+					Vector<GDScriptCodeGenerator::Address> utility_arguments;
+					utility_arguments.push_back(node);
+					utility_arguments.push_back(arguments[0]);
+					utility_arguments.push_back(arguments.size() > 1 ? arguments[1] : codegen.add_constant(true));
+					gen->write_call_gdscript_utility(result, "@find_children_of_type", utility_arguments);
+					if (safe_callee == nullptr && node.mode == GDScriptCodeGenerator::Address::TEMPORARY) {
+						gen->pop_temporary();
+					}
 				} else if (call->enum_method != nullptr) {
 					// An enum method: a static function of the class that declares the enum, with the
 					// value as the first argument unless the method is static.

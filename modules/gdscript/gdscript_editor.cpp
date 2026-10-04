@@ -1710,6 +1710,15 @@ static void _find_identifiers_in_base(const GDScriptCompletionIdentifier &p_base
 					}
 					r_result.insert(option.display, option);
 				}
+				if (!only_static && ClassDB::is_parent_class(type, SNAME("Node"))) {
+					// Not a bound method: GDScript types it from its argument (`find_children_of_type(Enemy)`).
+					EditorLanguage::CompletionOption option("find_children_of_type", EditorLanguage::CompletionKind::FUNCTION, p_recursion_depth + EditorLanguage::CompletionLocation::OTHER);
+					if (p_add_braces) {
+						option.insert_text += "(";
+						option.display += U"(\u2026)";
+					}
+					r_result.insert(option.display, option);
+				}
 				return;
 			} break;
 			case GDScriptParser::DataType::ENUM: {

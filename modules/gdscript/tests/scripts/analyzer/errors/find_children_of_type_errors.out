@@ -1,0 +1,8 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 3: Builtin type cannot be used as a name on its own.
+>> ERROR at line 3: Identifier "int" not declared in the current scope.
+>> ERROR at line 3: "find_children_of_type()" takes a node type or a trait, as in "find_children_of_type(Enemy)", not a value.
+>> ERROR at line 4: "find_children_of_type()" takes a node type or a trait, as in "find_children_of_type(Enemy)", not "Resource".
+>> ERROR at line 5: The second argument of "find_children_of_type()" says whether to look below the direct children, so it must be a "bool".
+>> ERROR at line 6: Expected one or two arguments for "find_children_of_type()": the type, and whether to look below the direct children (default true).
+>> ERROR at line 7: Cannot assign a value of type Array[Sprite2D] to variable "e" with specified type Array[Node3D].

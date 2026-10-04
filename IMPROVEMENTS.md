@@ -23,6 +23,7 @@ Contents:
 - [Multiple return values](#multiple-return-values)
 - [Nullable types](#nullable-types)
 - [Typed scenes](#typed-scenes)
+- [Finding nodes by type](#finding-nodes-by-type)
 - [String interpolation](#string-interpolation)
 - [Enums with methods](#enums-with-methods)
 - [Editor support](#editor-support)
@@ -1159,6 +1160,34 @@ or a class the editor has not seen yet) is listed, and checked when picked.
 `load()`, or an export whose scene was edited afterwards) is caught at
 `instantiate()`, with an error on that line, rather than at the first member
 access on the result.
+
+## Finding nodes by type
+
+`find_children_of_type()` returns every node below this one that is of the
+type you pass, typed as that type:
+
+```gdscript
+func _ready():
+    var enemies := find_children_of_type(Enemy)       # Array[Enemy]
+    for enemy in enemies:
+        enemy.hp = 10                                 # checked: an Enemy has `hp`
+    var direct := find_children_of_type(Sprite2D, false)   # direct children only
+    print(enemies.size(), " enemies, ", direct.size(), " sprites")
+```
+
+The type can be an engine class, a `class_name` class, a class preloaded into
+a constant, or a [trait](#traits): `find_children_of_type(Damageable)` finds
+every node whose script `uses Damageable`, whatever class it is. It works on
+any node (`level.find_children_of_type(Coin)`) and bare inside a node script.
+To search the whole scene, call it on the root:
+`get_tree().root.find_children_of_type(Enemy)`.
+
+Unlike the engine's `find_children(pattern, type)`, it finds nodes added at
+runtime too: `find_children` skips nodes without an owner unless told
+otherwise. Internal children (a ScrollContainer's own scroll bars) are
+skipped, and a method of your own called `find_children_of_type` takes
+precedence. It is a GDScript feature typed from its argument, so it needs
+the node's type to be known: on an untyped variable it does not exist.
 
 ## String interpolation
 

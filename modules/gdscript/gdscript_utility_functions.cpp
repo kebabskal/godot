@@ -39,6 +39,7 @@
 #include "core/templates/a_hash_map.h"
 #include "core/templates/vector.h"
 #include "core/variant/typed_array.h"
+#include "scene/main/node.h"
 
 #ifdef DEBUG_ENABLED
 
@@ -98,7 +99,73 @@
 		return; \
 	}
 
+// Matches a node against what `find_children_of_type()` was given: an engine class, a script, or
+// a trait's qualified name.
+static bool _node_is_of_type(Node *p_node, const StringName &p_native, const Script *p_script, const StringName &p_trait) {
+	if (p_trait != StringName()) {
+		ScriptInstance *instance = p_node->get_script_instance();
+		const GDScript *script = instance != nullptr ? Object::cast_to<GDScript>(instance->get_script()) : nullptr;
+		return script != nullptr && script->uses_trait(p_trait);
+	}
+	if (p_script != nullptr) {
+		ScriptInstance *instance = p_node->get_script_instance();
+		for (const Script *s = instance != nullptr ? instance->get_script() : nullptr; s != nullptr; s = s->get_base_script().ptr()) {
+			if (s == p_script) {
+				return true;
+			}
+		}
+		return false;
+	}
+	return p_node->is_class(p_native);
+}
+
+static void _collect_children_of_type(Node *p_node, const StringName &p_native, const Script *p_script, const StringName &p_trait, bool p_recursive, Array &r_result) {
+	// Internal children (the scroll bars of a ScrollContainer, say) are the engine's, not the scene's.
+	const int count = p_node->get_child_count(false);
+	for (int i = 0; i < count; i++) {
+		Node *child = p_node->get_child(i, false);
+		if (_node_is_of_type(child, p_native, p_script, p_trait)) {
+			r_result.push_back(child);
+		}
+		if (p_recursive) {
+			_collect_children_of_type(child, p_native, p_script, p_trait, true, r_result);
+		}
+	}
+}
+
 struct GDScriptUtilityFunctionsDefinitions {
+	// `node.find_children_of_type(Enemy, recursive)`, lowered by the compiler to
+	// `@find_children_of_type(node, Enemy, recursive)`. The type is an engine class, a script, or for
+	// a trait its qualified name. The array is typed as the class, so it fits an `Array[Enemy]`.
+	static inline void find_children_of_type(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
+		DEBUG_VALIDATE_ARG_COUNT(3, 3);
+		Node *node = Object::cast_to<Node>(p_args[0]->get_validated_object());
+		GDFUNC_FAIL_COND_MSG(node == nullptr, R"*(Cannot call "find_children_of_type()" on a null or freed node.)*");
+
+		StringName native;
+		Ref<Script> script;
+		StringName trait;
+		if (p_args[1]->get_type() == Variant::STRING_NAME) {
+			trait = *p_args[1];
+		} else {
+			Object *type = p_args[1]->get_validated_object();
+			if (GDScriptNativeClass *native_class = Object::cast_to<GDScriptNativeClass>(type)) {
+				native = native_class->get_name();
+			} else if (Script *type_script = Object::cast_to<Script>(type)) {
+				script = Ref<Script>(type_script);
+				native = type_script->get_instance_base_type();
+			}
+			GDFUNC_FAIL_COND_MSG(native == StringName(), R"*("find_children_of_type()" needs a node type or a trait.)*");
+		}
+
+		Array result;
+		if (trait == StringName()) {
+			result.set_typed(Variant::OBJECT, native, script);
+		}
+		_collect_children_of_type(node, native, script.ptr(), trait, p_args[2]->booleanize(), result);
+		*r_ret = result;
+	}
+
 	// `@format(value, spec)`: an f-string field with a format spec, `f"{hp:.1f}"`. Named so that no
 	// script can call or shadow it; the parser has already checked the spec.
 	static inline void fstring_format(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
@@ -604,6 +671,11 @@ void GDScriptUtilityFunctions::register_functions() {
 	REGISTER_FUNC( is_instance_of, true,  RET(BOOL),          ARGS( ARGVAR("value"), ARGVAR("type") ), false, varray(     ));
 	/* clang-format on */
 
+	{
+		MethodInfo info("@find_children_of_type", ARG("node", OBJECT), ARGVAR("type"), ARG("recursive", BOOL));
+		info.return_val = RET(ARRAY);
+		_register_function("@find_children_of_type", info, GDScriptUtilityFunctionsDefinitions::find_children_of_type, false);
+	}
 	{
 		MethodInfo info("@format", ARGVAR("value"), ARG("spec", STRING));
 		info.return_val = RET(STRING);

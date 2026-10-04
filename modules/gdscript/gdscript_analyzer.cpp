@@ -5547,6 +5547,61 @@ void GDScriptAnalyzer::resolve_destructure(GDScriptParser::DestructureNode *p_de
 	}
 }
 
+bool GDScriptAnalyzer::reduce_children_of_type_call(GDScriptParser::CallNode *p_call, const GDScriptParser::DataType &p_base) {
+	// Only on a node, and only when nothing the user wrote is called that: their own method wins.
+	const bool base_is_node = !p_base.is_meta_type && (p_base.kind == GDScriptParser::DataType::NATIVE || p_base.kind == GDScriptParser::DataType::SCRIPT || p_base.kind == GDScriptParser::DataType::CLASS) && ClassDB::is_parent_class(p_base.native_type, SNAME("Node"));
+	if (!base_is_node) {
+		return false;
+	}
+	for (const GDScriptParser::ClassNode *c = p_base.kind == GDScriptParser::DataType::CLASS ? p_base.class_type : nullptr; c != nullptr; c = c->base_type.kind == GDScriptParser::DataType::CLASS ? c->base_type.class_type : nullptr) {
+		if (c->has_function(p_call->function_name)) {
+			return false;
+		}
+	}
+	if (p_base.kind == GDScriptParser::DataType::SCRIPT && p_base.script_type.is_valid() && p_base.script_type->has_method(p_call->function_name)) {
+		return false;
+	}
+
+	// An array at least, even when the arguments are wrong, so one mistake is one error.
+	GDScriptParser::DataType array_type;
+	array_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
+	array_type.kind = GDScriptParser::DataType::BUILTIN;
+	array_type.builtin_type = Variant::ARRAY;
+	p_call->type_constraint = array_type;
+	p_call->children_of_type = true;
+	p_call->is_static = false;
+
+	if (p_call->arguments.is_empty() || p_call->arguments.size() > 2) {
+		push_error(R"*(Expected one or two arguments for "find_children_of_type()": the type, and whether to look below the direct children (default true).)*", p_call);
+		return true;
+	}
+	GDScriptParser::ExpressionNode *type_argument = p_call->arguments[0];
+	const GDScriptParser::DataType type = type_argument->type_constraint;
+	const bool is_trait = type.is_meta_type && type.kind == GDScriptParser::DataType::TRAIT;
+	const bool is_node_type = type.is_meta_type && (type.kind == GDScriptParser::DataType::NATIVE || type.kind == GDScriptParser::DataType::SCRIPT || type.kind == GDScriptParser::DataType::CLASS) && ClassDB::is_parent_class(type.native_type, SNAME("Node"));
+	if (!is_trait && !is_node_type) {
+		push_error(vformat(R"*("find_children_of_type()" takes a node type or a trait, as in "find_children_of_type(Enemy)", not %s.)*", type.is_meta_type ? vformat(R"("%s")", type_from_metatype(type).to_string()) : String("a value")), type_argument);
+		return true;
+	}
+	if (is_trait) {
+		// A trait is not a value at runtime; the utility gets its qualified name.
+		type_argument->is_constant = true;
+		type_argument->reduced_value = type.trait_name;
+	}
+	if (p_call->arguments.size() == 2) {
+		const GDScriptParser::DataType recursive_type = p_call->arguments[1]->type_constraint;
+		if (recursive_type.is_hard_type() && !recursive_type.is_variant() && !(recursive_type.kind == GDScriptParser::DataType::BUILTIN && recursive_type.builtin_type == Variant::BOOL)) {
+			push_error(R"*(The second argument of "find_children_of_type()" says whether to look below the direct children, so it must be a "bool".)*", p_call->arguments[1]);
+		}
+	}
+
+	GDScriptParser::DataType element = type_from_metatype(type);
+	element.is_constant = false;
+	array_type.set_container_element_type(0, element);
+	p_call->type_constraint = array_type;
+	return true;
+}
+
 bool GDScriptAnalyzer::is_nested_typed_collection(const GDScriptParser::DataType &p_type, const GDScriptParser::Node *p_source) {
 	// A typed array or dictionary inside another collection, or as a generic class's argument: the
 	// runtime keeps one level of element types. A type with arguments that are only checked when
@@ -5813,6 +5868,14 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 					push_error(vformat(R"*(Cannot get return value of call to "%s()" because it returns "void".)*", function_name), p_call);
 				}
 				p_call->type_constraint = return_type;
+				return;
+			}
+		}
+
+		if (function_name == SNAME("find_children_of_type") && !static_context && current_struct == nullptr && current_trait == nullptr && current_enum_owner == nullptr) {
+			GDScriptParser::DataType self_type = parser->current_class->self_type;
+			self_type.is_meta_type = false;
+			if (reduce_children_of_type_call(p_call, self_type)) {
 				return;
 			}
 		}
@@ -6270,6 +6333,10 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 				p_call->type_constraint = variant_type;
 				mark_node_unsafe(p_call);
 			}
+			return;
+		}
+
+		if (p_call->function_name == SNAME("find_children_of_type") && reduce_children_of_type_call(p_call, base_type)) {
 			return;
 		}
 
