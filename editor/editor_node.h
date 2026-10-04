@@ -178,6 +178,7 @@ public:
 		PROJECT_PACK_AS_ZIP,
 		PROJECT_SETUP_ANDROID_BUILD,
 		PROJECT_OPEN_USER_DATA_FOLDER,
+		PROJECT_DOWNLOAD_SOURCE, // Web editor only
 		PROJECT_RELOAD_CURRENT_PROJECT,
 		PROJECT_QUIT_TO_PROJECT_MANAGER,
 
@@ -438,7 +439,7 @@ private:
 	EditorBottomPanel *bottom_panel = nullptr;
 
 	Tree *disk_changed_list = nullptr;
-	LocalVector<String> disk_changed_scenes;
+	HashSet<String> disk_changed_scenes;
 	bool disk_changed_project = false;
 	ConfirmationDialog *disk_changed = nullptr;
 	ConfirmationDialog *project_data_missing = nullptr;

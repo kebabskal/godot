@@ -40,6 +40,7 @@
 #include "core/variant/struct_layout.h"
 #include "core/variant/variant.h"
 
+struct ContainerType;
 class GDScriptInstance;
 class GDScript;
 
@@ -65,6 +66,7 @@ public:
 
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
+	bool is_type_exact(const ContainerType &p_container_type) const;
 	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const;
 
 	bool can_contain_object() const {

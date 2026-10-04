@@ -597,7 +597,7 @@ static GDS_NOINLINE bool _trait_test(const Variant *p_value, const StringName &p
 	if (r_was_freed || object == nullptr || object->get_script_instance() == nullptr) {
 		return false;
 	}
-	const GDScript *script = Object::cast_to<GDScript>(object->get_script_instance()->get_script().ptr());
+	const GDScript *script = Object::cast_to<GDScript>(object->get_script_instance()->get_script());
 	return script != nullptr && script->uses_trait(p_trait);
 }
 
@@ -1311,7 +1311,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 				bool result = false;
 				if (object && object->get_script_instance()) {
-					Script *script_ptr = object->get_script_instance()->get_script().ptr();
+					Script *script_ptr = object->get_script_instance()->get_script();
 					while (script_ptr) {
 						if (script_ptr == script_type) {
 							result = true;
@@ -1814,7 +1814,17 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GD_ERR_BREAK(!gdscript);
 
 				int index = _code_ptr[ip + 3];
-				GD_ERR_BREAK(index < 0 || index >= gdscript->static_variables.size());
+				if (unlikely(index < 0 || index >= gdscript->static_variables.size())) {
+#ifdef DEBUG_ENABLED
+					if (GDScriptLanguage::get_singleton()->finishing) {
+						// Just assume it's SIOF. There is a tiny possibility that something else is causing this (e.g. bug, reload).
+						err_text = vformat("Static variable does not exist anymore. Since the order in which static variables are destructed is arbitrary, consider emptying objects from them in a well-defined order manually before shutdown.");
+					} else {
+						_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Condition 'index < 0 || index >= gdscript->static_variables.size()' is true. Breaking..:");
+					}
+#endif
+					OPCODE_BREAK;
+				}
 
 				gdscript->static_variables.write[index] = *value;
 
@@ -1832,7 +1842,18 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GD_ERR_BREAK(!gdscript);
 
 				int index = _code_ptr[ip + 3];
-				GD_ERR_BREAK(index < 0 || index >= gdscript->static_variables.size());
+
+				if (unlikely(index < 0 || index >= gdscript->static_variables.size())) {
+#ifdef DEBUG_ENABLED
+					if (GDScriptLanguage::get_singleton()->finishing) {
+						// Just assume it's SIOF. There is a tiny possibility that something else is causing this (e.g. bug, reload).
+						err_text = vformat("Static variable does not exist anymore. Since the order in which static variables are destructed is arbitrary, consider emptying objects from them in a well-defined order manually before shutdown.");
+					} else {
+						_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "Condition 'index < 0 || index >= gdscript->static_variables.size()' is true. Breaking..:");
+					}
+#endif
+					OPCODE_BREAK;
+				}
 
 				*target = gdscript->static_variables[index];
 
@@ -2061,7 +2082,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 							OPCODE_BREAK;
 						}
 
-						Script *src_type = scr_inst->get_script().ptr();
+						Script *src_type = scr_inst->get_script();
 						bool valid = false;
 
 						while (src_type) {
@@ -2174,7 +2195,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					ScriptInstance *scr_inst = src->operator Object *()->get_script_instance();
 
 					if (scr_inst) {
-						Script *src_type = src->operator Object *()->get_script_instance()->get_script().ptr();
+						Script *src_type = src->operator Object *()->get_script_instance()->get_script();
 
 						while (src_type) {
 							if (src_type == base_type) {
@@ -3674,7 +3695,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 						OPCODE_BREAK;
 					}
 
-					Script *ret_type = ret_obj->get_script_instance()->get_script().ptr();
+					Script *ret_type = ret_obj->get_script_instance()->get_script();
 					bool valid = false;
 
 					while (ret_type) {

@@ -21,6 +21,14 @@
 				[b]Note:[/b] Any [Shape2D]s that the shape is already colliding with e.g. inside of, will be ignored. Use [method collide_shape] to determine the [Shape2D]s that the shape is already colliding with.
 			</description>
 		</method>
+		<method name="cast_motion_into">
+			<return type="bool" />
+			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
+			<param index="1" name="result" type="PhysicsCastMotionResult2D" />
+			<description>
+				Checks how far a [Shape2D] can move without colliding. All the parameters for the query, including the shape and the motion, are supplied through a [PhysicsShapeQueryParameters2D] object.
+				If the query is successful, this method returns [code]true[/code] and writes the motion results into the [PhysicsCastMotionResult2D] object passed in [param result]. If no collision occurs, it returns [code]false[/code].
+				[b]Note:[/b] Any [Shape2D]s that the shape is already colliding with e.g. inside of, will be ignored. Use [method collide_shape_into] to determine the [Shape2D]s that the shape is already colliding with.
 		<method name="cast_motion_struct">
 			<return type="Struct" />
 			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
@@ -41,6 +49,16 @@
 				Returned points are a list of pairs of contact points. For each pair the first one is in the shape passed in [PhysicsShapeQueryParameters2D] object, second one is in the collided shape from the physics space.
 			</description>
 		</method>
+		<method name="collide_shape_into">
+			<return type="bool" />
+			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
+			<param index="1" name="result" type="PhysicsCollideShapeResult2D" />
+			<description>
+				Checks the intersections of a shape, given through a [PhysicsShapeQueryParameters2D] object, against the space.
+				If intersections are found, this method returns [code]true[/code] and writes the collision points into the [PhysicsCollideShapeResult2D] object passed in [param result]. If no intersections are found, it returns [code]false[/code].
+				The number of returned results can be limited using [member PhysicsCollideShapeResult2D.max_collisions], to reduce the processing time.
+			</description>
+		</method>
 		<method name="get_rest_info">
 			<return type="Dictionary" />
 			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
@@ -55,6 +73,13 @@
 				If the shape did not intersect anything, then an empty dictionary is returned instead.
 			</description>
 		</method>
+		<method name="get_rest_info_into">
+			<return type="bool" />
+			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
+			<param index="1" name="result" type="PhysicsGetRestInfoResult2D" />
+			<description>
+				Checks the intersections of a shape, given through a [PhysicsShapeQueryParameters2D] object, against the space.
+				If the shape collides with one or more shapes, this method returns [code]true[/code] and writes the nearest collision information into the [PhysicsGetRestInfoResult2D] object passed in [param result]. If no collisions occur, it returns [code]false[/code].
 		<method name="get_rest_info_struct">
 			<return type="Struct" />
 			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
@@ -85,6 +110,15 @@
 				[b]Note:[/b] [ConcavePolygonShape2D]s and [CollisionPolygon2D]s in [code]Segments[/code] build mode are not solid shapes. Therefore, they will not be detected.
 			</description>
 		</method>
+		<method name="intersect_point_into">
+			<return type="bool" />
+			<param index="0" name="parameters" type="PhysicsPointQueryParameters2D" />
+			<param index="1" name="result" type="PhysicsIntersectPointResult2D" />
+			<description>
+				Checks whether a point is inside any solid shape. Position and other parameters are defined through [PhysicsPointQueryParameters2D].
+				If one or more shapes overlap the point, this method returns [code]true[/code] and writes the intersection data into the [PhysicsIntersectPointResult2D] object passed in [param result]. If no intersections are found, it returns [code]false[/code].
+				The number of intersections can be limited using [member PhysicsIntersectPointResult2D.max_intersections], to reduce the processing time.
+				[b]Note:[/b] [ConcavePolygonShape2D]s and [CollisionPolygon2D]s in [code]Segments[/code] build mode are not solid shapes. Therefore, they will not be detected.
 		<method name="intersect_point_struct">
 			<return type="Struct[]" />
 			<param index="0" name="parameters" type="PhysicsPointQueryParameters2D" />
@@ -112,6 +146,13 @@
 				If the ray did not intersect anything, then an empty dictionary is returned instead.
 			</description>
 		</method>
+		<method name="intersect_ray_into">
+			<return type="bool" />
+			<param index="0" name="parameters" type="PhysicsRayQueryParameters2D" />
+			<param index="1" name="result" type="PhysicsIntersectRayResult2D" />
+			<description>
+				Intersects a ray in a given space. Ray position and other parameters are defined through [PhysicsRayQueryParameters2D].
+				If the ray hits a shape, this method returns [code]true[/code] and writes the intersection information into the [PhysicsIntersectRayResult2D] object passed in [param result]. If nothing is hit, it returns [code]false[/code].
 		<method name="intersect_ray_struct">
 			<return type="Struct" />
 			<param index="0" name="parameters" type="PhysicsRayQueryParameters2D" />
@@ -139,6 +180,14 @@
 				The number of intersections can be limited with the [param max_results] parameter, to reduce the processing time.
 			</description>
 		</method>
+		<method name="intersect_shape_into">
+			<return type="bool" />
+			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />
+			<param index="1" name="result" type="PhysicsIntersectShapeResult2D" />
+			<description>
+				Checks the intersections of a shape, given through a [PhysicsShapeQueryParameters2D] object, against the space.
+				If one or more shapes are found to intersect, this method returns [code]true[/code] and writes the intersection data into the [PhysicsIntersectShapeResult2D] object passed in [param result]. If no shapes are found to intersect, it returns [code]false[/code].
+				The number of intersections can be limited using [member PhysicsIntersectShapeResult2D.max_intersections], to reduce the processing time.
 		<method name="intersect_shape_struct">
 			<return type="Struct[]" />
 			<param index="0" name="parameters" type="PhysicsShapeQueryParameters2D" />

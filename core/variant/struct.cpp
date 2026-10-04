@@ -293,6 +293,20 @@ String Struct::to_string() const {
 
 // --- StructLayout ---
 
+// Checks `r_value` against a field type, converting it in place where the type allows (an int
+// stored in a float field, say).
+static bool _validate_in_place(const ContainerTypeValidate &p_type, Variant &r_value, const char *p_operation) {
+	Variant converted;
+	const Variant *valid = p_type.validate(r_value, converted, p_operation);
+	if (valid == nullptr) {
+		return false;
+	}
+	if (valid != &r_value) {
+		r_value = *valid;
+	}
+	return true;
+}
+
 void StructLayout::set_name(const StringName &p_name) {
 	name = p_name;
 }
@@ -329,7 +343,7 @@ int StructLayout::add_field(const StringName &p_name, Variant::Type p_type, cons
 		Variant::construct(p_type, field.default_value, nullptr, 0, err);
 	} else {
 		field.default_value = p_default_value;
-		ERR_FAIL_COND_V_MSG(!field.type.validate(field.default_value, "set the default of"), -1, vformat("The default value of struct field \"%s\" does not match its type.", p_name));
+		ERR_FAIL_COND_V_MSG(!_validate_in_place(field.type, field.default_value, "set the default of"), -1, vformat("The default value of struct field \"%s\" does not match its type.", p_name));
 	}
 	const int index = fields.size();
 	fields.push_back(field);
@@ -470,7 +484,7 @@ void StructLayout::clear_methods() {
 
 bool StructLayout::validate_field_value(int p_index, Variant &r_value) const {
 	ERR_FAIL_INDEX_V(p_index, fields.size(), false);
-	return fields[p_index].type.validate(r_value, "assign");
+	return _validate_in_place(fields[p_index].type, r_value, "assign");
 }
 
 Struct StructLayout::instantiate() const {
