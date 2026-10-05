@@ -346,6 +346,54 @@ TEST_CASE("[Modules][GDScript] Strict mode") {
 		CHECK(parser.get_errors().is_empty());
 	}
 }
+
+// Whether the exported member `p_name` comes out required, with strict mode on or off.
+static bool is_export_required(const String &p_source, const StringName &p_name, bool p_strict) {
+	ProjectSettings::get_singleton()->set_setting("debug/gdscript/strict_mode", p_strict);
+	GDScriptParser::update_project_settings();
+
+	GDScriptParser parser;
+	parser.parse(p_source, "", false);
+	GDScriptAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	bool required = false;
+	for (const GDScriptParser::ClassNode::Member &member : parser.get_tree()->members) {
+		if (member.type == GDScriptParser::ClassNode::Member::VARIABLE && member.variable->identifier->name == p_name) {
+			required = member.variable->export_info.usage & PROPERTY_USAGE_REQUIRED;
+		}
+	}
+
+	ProjectSettings::get_singleton()->set_setting("debug/gdscript/strict_mode", false);
+	GDScriptParser::update_project_settings();
+	return required;
+}
+
+TEST_CASE("[Modules][GDScript] Required exports") {
+	const String source =
+			"extends Node\n"
+			"@export var target: Node3D\n"
+			"@export var maybe: Node3D?\n"
+			"@export var stats: Resource\n"
+			"@export var path: NodePath\n"
+			"@export var count: int\n"
+			"@export_storage var stored: Node3D\n"
+			"var hidden: Node3D\n"
+			"@export @required var label: String\n";
+	// `@required` works in any mode.
+	CHECK(is_export_required(source, "label", false));
+	CHECK(is_export_required(source, "label", true));
+	// In strict mode a non-nullable object export is required without the annotation, since it can
+	// only be null by mistake. `?` opts out, and types that cannot be null are not affected.
+	CHECK_FALSE(is_export_required(source, "target", false));
+	CHECK(is_export_required(source, "target", true));
+	CHECK(is_export_required(source, "stats", true));
+	CHECK_FALSE(is_export_required(source, "maybe", true));
+	CHECK_FALSE(is_export_required(source, "path", true));
+	CHECK_FALSE(is_export_required(source, "count", true));
+	// Only what is set in the inspector.
+	CHECK_FALSE(is_export_required(source, "stored", true));
+	CHECK_FALSE(is_export_required(source, "hidden", true));
+}
 #endif // DEBUG_ENABLED
 
 } // namespace GDScriptTests

@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 1: "@required" contradicts the nullable type "Resource?". Remove the "?" or the annotation.

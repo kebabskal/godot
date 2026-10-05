@@ -1001,6 +1001,9 @@ void EditorProperty::update_editor_property_status() {
 	}
 
 	bool new_warning = object->call(SNAME("_get_property_warning")).operator bool();
+	if (!new_warning && (property_usage & PROPERTY_USAGE_REQUIRED)) {
+		new_warning = is_required_value_missing(object->get(property)); // A required property still empty.
+	}
 
 	// Check if the property is deprecated.
 	if (!new_warning && !doc_path.is_empty()) {

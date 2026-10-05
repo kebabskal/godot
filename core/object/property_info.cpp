@@ -33,6 +33,27 @@
 #include "core/variant/dictionary.h"
 #include "core/variant/typed_array.h"
 
+bool is_required_value_missing(const Variant &p_value) {
+	switch (p_value.get_type()) {
+		case Variant::NIL:
+			return true;
+		case Variant::OBJECT:
+			return p_value.get_validated_object() == nullptr;
+		case Variant::NODE_PATH:
+			return p_value.operator NodePath().is_empty();
+		case Variant::STRING:
+		case Variant::STRING_NAME:
+			return p_value.operator String().is_empty();
+		case Variant::DICTIONARY:
+			return p_value.operator Dictionary().is_empty();
+		default:
+			if (p_value.is_array()) {
+				return p_value.operator Array().is_empty();
+			}
+			return false;
+	}
+}
+
 PropertyInfo::operator Dictionary() const {
 	Dictionary d;
 	d["name"] = name;

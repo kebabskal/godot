@@ -91,6 +91,12 @@ private:
 	HashSet<StringName> members; // Only members of the current class.
 #ifdef DEBUG_ENABLED
 	HashMap<StringName, MemberInfo> old_member_indices; // Used for hot reloading. Empty while not compiling.
+	struct RequiredMember {
+		StringName name;
+		int line = 0;
+	};
+	// Exports marked PROPERTY_USAGE_REQUIRED, of the current class only, checked once a node is ready.
+	Vector<RequiredMember> required_members;
 #endif // DEBUG_ENABLED
 
 	// Only static variables of the current class.
@@ -433,6 +439,9 @@ public:
 	Variant debug_get_member_by_index(int p_idx) const { return members[p_idx]; }
 
 	virtual void notification(int p_notification, bool p_reversed = false) override;
+#ifdef DEBUG_ENABLED
+	static void _report_missing_required_members(ObjectID p_node);
+#endif
 	virtual String to_string(bool *r_valid) override;
 
 	virtual Script *get_script() const override;

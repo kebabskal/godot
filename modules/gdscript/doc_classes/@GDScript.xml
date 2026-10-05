@@ -784,6 +784,19 @@
 				[/codeblock]
 			</description>
 		</annotation>
+		<annotation name="@required">
+			<return type="void" />
+			<description>
+				Mark the following exported property as one that must be given a value. While it is empty ([code]null[/code], or an empty [NodePath], string, array or dictionary), the editor reports it: the node gets a warning in the Scene dock, the property is highlighted in the inspector, and the Problems panel lists it. A debug build reports it as an error once the node is ready.
+				[codeblock]
+				@export @required var target: Node3D
+				@export @required var waypoints: Array[Marker3D]
+				[/codeblock]
+				A required property on the root node of a scene is reported where that scene is instantiated rather than in the scene itself, since that is usually where it is set.
+				In strict mode, an exported property whose type is an object type without [code]?[/code] is required without the annotation. Write [code]@export var target: Node3D?[/code] for one that may stay empty.
+				[b]Note:[/b] [code]@required[/code] has no effect on types that cannot be empty, such as [int] or [Vector3], and using it on them is an error.
+			</description>
+		</annotation>
 		<annotation name="@rpc">
 			<return type="void" />
 			<param index="0" name="mode" type="String" default="&quot;authority&quot;" />

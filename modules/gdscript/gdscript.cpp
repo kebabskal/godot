@@ -2014,10 +2014,44 @@ Variant GDScriptInstance::callp(const StringName &p_method, const Variant **p_ar
 	return Variant();
 }
 
+#ifdef DEBUG_ENABLED
+// A required export still empty when its node is ready is an error, reported at its declaration.
+void GDScriptInstance::_report_missing_required_members(ObjectID p_node) {
+	Node *node = ObjectDB::get_instance<Node>(p_node);
+	if (node == nullptr || node->get_script_instance() == nullptr || node->get_script_instance()->get_language() != GDScriptLanguage::get_singleton()) {
+		return;
+	}
+	const GDScriptInstance *instance = static_cast<GDScriptInstance *>(node->get_script_instance());
+	for (const GDScript *sptr = instance->script.ptr(); sptr; sptr = sptr->base.ptr()) {
+		for (const GDScript::RequiredMember &required : sptr->required_members) {
+			const HashMap<StringName, GDScript::MemberInfo>::ConstIterator E = sptr->member_indices.find(required.name);
+			if (!E || E->value.index >= instance->members.size() || !is_required_value_missing(instance->members[E->value.index])) {
+				continue;
+			}
+			const String where = node->is_inside_tree() ? String(node->get_path()) : String(node->get_name());
+			_err_print_error("_ready", sptr->path.utf8().get_data(), required.line, vformat(R"(Required property "%s" of node "%s" is not set.)", required.name, where), false, ERR_HANDLER_SCRIPT);
+		}
+	}
+}
+#endif // DEBUG_ENABLED
+
 void GDScriptInstance::notification(int p_notification, bool p_reversed) {
 	if (unlikely(!script->valid)) {
 		return;
 	}
+
+#ifdef DEBUG_ENABLED
+	// Checked at the end of the frame rather than now, so a value set right after `add_child()` counts.
+	// The editor reports these itself, without running anything.
+	if (p_notification == Node::NOTIFICATION_READY && !Engine::get_singleton()->is_editor_hint()) {
+		for (const GDScript *sptr = script.ptr(); sptr; sptr = sptr->base.ptr()) {
+			if (!sptr->required_members.is_empty()) {
+				callable_mp_static(&GDScriptInstance::_report_missing_required_members).call_deferred(owner->get_instance_id());
+				break;
+			}
+		}
+	}
+#endif // DEBUG_ENABLED
 
 	//notification is not virtual, it gets called at ALL levels just like in C.
 	Variant value = p_notification;

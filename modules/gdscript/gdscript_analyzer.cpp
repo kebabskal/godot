@@ -1885,6 +1885,7 @@ void GDScriptAnalyzer::resolve_class_member(GDScriptParser::ClassNode *p_class, 
 						E->apply(parser, member.variable, p_class);
 					}
 				}
+				resolve_required_export(member.variable);
 
 				static_context = previous_static_context;
 
@@ -4012,6 +4013,55 @@ void GDScriptAnalyzer::resolve_assignable(GDScriptParser::AssignableNode *p_assi
 	type.is_constant = is_constant;
 	type.is_read_only = false;
 	p_assignable->type_constraint = type;
+}
+
+// A required export is one the editor reports while it is empty, through PROPERTY_USAGE_REQUIRED.
+// `@required` asks for it. Strict mode reads a non-nullable object type the same way, since there
+// `@export var target: Node3D` can only be null by mistake: `Node3D?` is how to say it is optional.
+void GDScriptAnalyzer::resolve_required_export(GDScriptParser::VariableNode *p_variable) {
+	const GDScriptParser::DataType type = p_variable->type_constraint;
+	const bool in_inspector = p_variable->exported && (p_variable->export_info.usage & PROPERTY_USAGE_EDITOR);
+	GDScriptParser::AnnotationNode *annotation = p_variable->required_annotation;
+
+	if (annotation == nullptr) {
+		const bool is_object_type = type.kind == GDScriptParser::DataType::NATIVE || type.kind == GDScriptParser::DataType::SCRIPT || type.kind == GDScriptParser::DataType::CLASS;
+		if (GDScriptParser::is_strict_mode() && in_inspector && type.is_hard_type() && is_object_type && !type.is_meta_type && !type.is_nullable) {
+			p_variable->export_info.usage |= PROPERTY_USAGE_REQUIRED;
+		}
+		return;
+	}
+
+	if (!in_inspector) {
+		push_error(R"("@required" needs an "@export" annotation: only a property set in the inspector can be required.)", annotation);
+		return;
+	}
+	if (type.is_nullable) {
+		push_error(vformat(R"("@required" contradicts the nullable type "%s". Remove the "?" or the annotation.)", type.to_string()), annotation);
+		return;
+	}
+	switch (p_variable->export_info.type) {
+		case Variant::OBJECT:
+		case Variant::NODE_PATH:
+		case Variant::STRING:
+		case Variant::STRING_NAME:
+		case Variant::ARRAY:
+		case Variant::DICTIONARY:
+		case Variant::PACKED_BYTE_ARRAY:
+		case Variant::PACKED_INT32_ARRAY:
+		case Variant::PACKED_INT64_ARRAY:
+		case Variant::PACKED_FLOAT32_ARRAY:
+		case Variant::PACKED_FLOAT64_ARRAY:
+		case Variant::PACKED_STRING_ARRAY:
+		case Variant::PACKED_VECTOR2_ARRAY:
+		case Variant::PACKED_VECTOR3_ARRAY:
+		case Variant::PACKED_COLOR_ARRAY:
+		case Variant::PACKED_VECTOR4_ARRAY:
+			break;
+		default:
+			push_error(vformat(R"("@required" has no effect on "%s": a value of that type is never empty.)", type.to_string()), annotation);
+			return;
+	}
+	p_variable->export_info.usage |= PROPERTY_USAGE_REQUIRED;
 }
 
 void GDScriptAnalyzer::resolve_variable(GDScriptParser::VariableNode *p_variable, bool p_is_local) {

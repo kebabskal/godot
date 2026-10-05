@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 1: "@required" needs an "@export" annotation: only a property set in the inspector can be required.

@@ -122,6 +122,7 @@ enum PropertyUsageFlags {
 	PROPERTY_USAGE_EDITOR_BASIC_SETTING = 1 << 27,
 	PROPERTY_USAGE_READ_ONLY = 1 << 28,
 	PROPERTY_USAGE_SECRET = 1 << 29,
+	PROPERTY_USAGE_REQUIRED = 1 << 30, // The editor reports the property while it is empty (null, or an empty path, string or collection).
 
 	PROPERTY_USAGE_DEFAULT = PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR,
 	PROPERTY_USAGE_NO_EDITOR = PROPERTY_USAGE_STORAGE,
@@ -196,6 +197,10 @@ struct PropertyInfo {
 	// This is _NO_INLINE_ to save on binary size.
 	_NO_INLINE_ ~PropertyInfo() = default;
 };
+
+// Whether a value leaves a property marked PROPERTY_USAGE_REQUIRED unset: null or a freed object,
+// or an empty path, string, array or dictionary.
+bool is_required_value_missing(const Variant &p_value);
 
 TypedArray<Dictionary> convert_property_list(const List<PropertyInfo> *p_list);
 TypedArray<Dictionary> convert_property_list(const Vector<PropertyInfo> &p_vector);

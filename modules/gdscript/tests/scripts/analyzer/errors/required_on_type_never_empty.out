@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 1: "@required" has no effect on "int": a value of that type is never empty.
