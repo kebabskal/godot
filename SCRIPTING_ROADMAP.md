@@ -1093,6 +1093,30 @@ group are independent and can proceed in any order.
   click was not verifiable headlessly (no script editor tab).
   Upstream made `EditorLog` a dock: `bottom_panel->make_item_visible(log)`
   fails now, `log->make_visible()` is the call.
+- Required exports and the Problems panel (asked for together: forgetting
+  to fill in node references, and wanting every problem in the project in
+  one place without pressing Play; the debugger's error panel only shows
+  runtime errors). `@required` sets a new core flag,
+  `PROPERTY_USAGE_REQUIRED` (bit 30), so the editor needs no GDScript
+  knowledge: the Scene dock adds a warning, the inspector colours the
+  label, and `ProblemsDock` lists it. Strict mode sets the flag on every
+  non-nullable object export; `T?` opts out. Debug builds report an empty
+  one at the end of the frame the node got `NOTIFICATION_READY` (deferred
+  so `add_child(e); e.target = x` is not reported).
+  Decision: a required property on a scene's *root* is reported where the
+  scene is instantiated, not in the scene itself (the instancer is who
+  fills it in), except for the main scene.
+  The Problems dock replaces Check All Scripts' Output listing (the run-bar
+  button now shows its status and opens it). It scans in 8 ms slices per
+  frame, starts once the first file-system scan is done, and re-checks on
+  `filesystem_changed` by modification time: a changed script re-validates
+  all scripts (`class_name` dependencies are invisible to the file system)
+  plus the scenes depending on it through `get_file_deps()`. Closed scenes
+  are instantiated with `GEN_EDIT_STATE_INSTANCE` and freed, so `@tool`
+  `_init`s run, as when opening them. Open scenes are read live, re-checked
+  0.5 s after an undo-history change. Node paths that resolve nowhere come
+  from the saved `SceneState` (a node export is stored as a path, so a
+  renamed target shows up), skipping paths that leave the scene.
 - The editor shutdown crash, fourth sighting, with the console captured this
   time: the last line before the segfault is `Parameter "singleton" is null`
   in `EditorNode::is_cmdline_mode()`, so something runs after `EditorNode` is
