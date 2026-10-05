@@ -966,6 +966,27 @@ void EditorDebuggerNode::live_debug_reparent_node(const NodePath &p_at, const No
 	});
 }
 
+// For changes that do not go through undo/redo, such as shader code as it is typed.
+void EditorDebuggerNode::live_debug_set_property(Object *p_object, const StringName &p_property, const Variant &p_value) {
+	_properties_changed(nullptr, p_object, p_property, p_value);
+}
+
+void EditorDebuggerNode::live_debug_resource_saved(const Ref<Resource> &p_resource, const String &p_path) {
+	// Scripts have their own reload message. Running instances of a scene get
+	// edits node by node instead of a reload of the PackedScene. Files under
+	// `.godot/` are import products, reloaded when their source is reimported.
+	if (p_resource.is_null() || Object::cast_to<Script>(p_resource.ptr()) || Object::cast_to<PackedScene>(p_resource.ptr()) || p_path.begins_with("res://.godot/")) {
+		return;
+	}
+	if (!Thread::is_main_thread()) {
+		callable_mp(this, &EditorDebuggerNode::live_debug_resource_saved).call_deferred(p_resource, p_path);
+		return;
+	}
+	_for_all(tabs, [&](ScriptEditorDebugger *dbg) {
+		dbg->live_debug_reload_resource(p_path);
+	});
+}
+
 void EditorDebuggerNode::set_debug_mute_audio(bool p_mute) {
 	_for_all(tabs, [&](ScriptEditorDebugger *dbg) {
 		dbg->set_debug_mute_audio(p_mute);

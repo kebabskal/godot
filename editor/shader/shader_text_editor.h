@@ -162,6 +162,9 @@ class ShaderTextEditor : public CodeEditorBase {
 	bool block_shader_changed = false;
 	void _shader_changed();
 
+	String live_synced_code;
+	void _update_running_game();
+
 	void _focus_preview_line(int p_line);
 	void _toggle_shader_preview(int p_line);
 	void _remove_shader_preview(int p_line);

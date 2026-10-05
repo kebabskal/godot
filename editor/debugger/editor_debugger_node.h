@@ -221,6 +221,8 @@ public:
 	void live_debug_restore_node(ObjectID p_id, const NodePath &p_at, int p_at_pos);
 	void live_debug_duplicate_node(const NodePath &p_at, const String &p_new_name);
 	void live_debug_reparent_node(const NodePath &p_at, const NodePath &p_new_place, const String &p_new_name, int p_at_pos);
+	void live_debug_set_property(Object *p_object, const StringName &p_property, const Variant &p_value);
+	void live_debug_resource_saved(const Ref<Resource> &p_resource, const String &p_path);
 
 	void set_debug_mute_audio(bool p_mute);
 	bool get_debug_mute_audio() const;

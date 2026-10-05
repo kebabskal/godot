@@ -33,6 +33,7 @@
 #include "core/config/project_settings.h"
 #include "core/object/callable_mp.h"
 #include "core/string/regex.h"
+#include "editor/debugger/editor_debugger_node.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
@@ -1227,8 +1228,23 @@ void ShaderTextEditor::_validate_script() {
 	}
 
 	validation_success = last_compile_result == OK;
+	_update_running_game();
 
 	TextEditorBase::_validate_script();
+}
+
+// Sends the code to a running game as it is typed, but only once it compiles,
+// so a half-typed line never breaks the game's rendering.
+void ShaderTextEditor::_update_running_game() {
+	if (!validation_success || edited_res->get_path().is_empty()) {
+		return;
+	}
+	const String code = code_editor->get_text_editor()->get_text();
+	if (code == live_synced_code) {
+		return;
+	}
+	live_synced_code = code;
+	EditorDebuggerNode::get_singleton()->live_debug_set_property(edited_res.ptr(), SNAME("code"), code);
 }
 
 void ShaderTextEditor::_update_warnings(bool p_validate) {
@@ -1298,6 +1314,7 @@ void ShaderTextEditor::set_edited_resource(const Ref<Resource> &p_res) {
 	callable_mp((TextEdit *)code_editor->get_text_editor(), &TextEdit::set_v_scroll).call_deferred(0);
 	code_editor->get_text_editor()->tag_saved_version();
 
+	live_synced_code = code;
 	_validate_script();
 	code_editor->update_line_and_column();
 

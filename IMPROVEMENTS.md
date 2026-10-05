@@ -1433,6 +1433,17 @@ of Play shows how the project stands (green, yellow or red) and opens the
 panel; **Project → Tools → Scan Project for Problems** starts over from
 scratch.
 
+### Editing a running game
+
+Keep the game running while you work: changes made in the editor show up
+in it without a restart (with **Debug → Synchronize Scene Changes**, which
+is on by default). On top of what mainline already syncs, this fork sends:
+
+- shader code as you type it in the shader editor, as soon as it compiles,
+  so a half-typed line never breaks the running game;
+- any shader, material or other resource you save, so a `.tres` changed by
+  a tool or a script reaches the game too.
+
 ### VS Code
 
 Keep using the official **godot-tools** extension — there is no forked

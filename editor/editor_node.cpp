@@ -7977,6 +7977,10 @@ void EditorNode::_resource_saved(Ref<Resource> p_resource, const String &p_path)
 	}
 
 	singleton->editor_folding.save_resource_folding(p_resource, p_path);
+
+	if (EditorDebuggerNode::get_singleton()) {
+		EditorDebuggerNode::get_singleton()->live_debug_resource_saved(p_resource, p_path);
+	}
 }
 
 void EditorNode::_resource_loaded(Ref<Resource> p_resource, const String &p_path) {

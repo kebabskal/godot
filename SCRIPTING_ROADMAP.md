@@ -105,7 +105,15 @@ Phase 0, make live edit reliable:
    Add a coalesced preview message.
 2. Resources saved to disk (shaders, `.tres`) never reach the game; only
    reimports send `scene:reload_cached_files`. Send it on save, and send
-   shader code as you type when it compiles.
+   shader code as you type when it compiles. **Done.** The hook is
+   `EditorNode::_resource_saved` (ResourceSaver's save callback, so every
+   save, including external resources saved with a scene). Skips scripts
+   (own reload message), PackedScenes (running instances get node edits;
+   reloading the scene for later spawns is not attempted) and
+   `res://.godot/`. The shader editor sends `code` from `_validate_script()`
+   only when it compiles. Resource property sync no longer needs an open
+   scene. Verified with an editor plugin that plays a game and saves/types;
+   the build from before the change sends nothing.
 3. Assigning a resource without a path (a new material, a new StyleBox
    theme override) is silently dropped, and so is every later edit to it.
    Give it a stable id and send its contents.

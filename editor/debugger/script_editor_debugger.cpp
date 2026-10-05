@@ -1527,13 +1527,16 @@ void ScriptEditorDebugger::_method_changed(Object *p_base, const StringName &p_n
 }
 
 void ScriptEditorDebugger::_property_changed(Object *p_base, const StringName &p_property, const Variant &p_value) {
-	if (!p_base || !live_debug || !EditorNode::get_singleton()->get_edited_scene()) {
+	if (!p_base || !live_debug) {
 		return;
 	}
 
 	Node *node = Object::cast_to<Node>(p_base);
 
 	if (node) {
+		if (!EditorNode::get_singleton()->get_edited_scene()) {
+			return;
+		}
 		NodePath path = EditorNode::get_singleton()->get_edited_scene()->get_path_to(node);
 		int pathid = _get_node_path_cache(path);
 
@@ -1710,6 +1713,13 @@ void ScriptEditorDebugger::live_debug_reparent_node(const NodePath &p_at, const 
 	if (live_debug) {
 		Array msg = { p_at, p_new_place, p_new_name, p_at_pos };
 		_put_msg("scene:live_reparent_node", msg);
+	}
+}
+
+void ScriptEditorDebugger::live_debug_reload_resource(const String &p_path) {
+	if (live_debug) {
+		Array msg = { PackedStringArray({ p_path }) };
+		_put_msg("scene:reload_cached_files", msg);
 	}
 }
 
