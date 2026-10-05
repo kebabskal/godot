@@ -1081,6 +1081,25 @@ group are independent and can proceed in any order.
   rebuild; it never reproduced on demand (30+ tries, including forcing the
   doc cache to regenerate). Capture the console output of editor runs so a
   backtrace exists next time.
+- Check All Scripts: a run-bar button (left of Play) and Project -> Tools
+  item that validates every `Script` in `EditorFileSystem` through its
+  language's `EditorLanguage::validate()` (parse and analyze, no reload) and
+  posts each error to the Output panel as an error-type message with a
+  `[url=res://path:line]` link, which `EditorLog::_meta_clicked()` already
+  opens in the script editor. The button's icon reports the last result.
+  Asked for because clearing Output lost the startup errors, with no way to
+  get them back short of reopening the project. Verified headlessly through
+  the real button (errors listed, count drops after a fix on disk); the link
+  click was not verifiable headlessly (no script editor tab).
+  Upstream made `EditorLog` a dock: `bottom_panel->make_item_visible(log)`
+  fails now, `log->make_visible()` is the call.
+- The editor shutdown crash, fourth sighting, with the console captured this
+  time: the last line before the segfault is `Parameter "singleton" is null`
+  in `EditorNode::is_cmdline_mode()`, so something runs after `EditorNode` is
+  destroyed. Only two callers: `EditorFileSystem::_process_update_pending()`
+  and `EditorHelp::load_script_doc_cache()`. All four sightings were the first
+  editor launch after a rebuild (probably a timing effect, e.g. the first run
+  of a new executable being scanned); none reproduced on demand.
 - Lessons from 4a: the result of a discarded call must never be written
   to the shared `nil` stack slot (GH-70964), and `_ready` must keep
   going through `GDScriptInstance::callp()` so `@onready` runs first.

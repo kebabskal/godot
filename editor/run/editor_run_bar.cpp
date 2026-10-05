@@ -95,6 +95,7 @@ void EditorRunBar::_notification(int p_what) {
 			}
 
 			_update_play_buttons();
+			_update_check_scripts_button();
 			profiler_autostart_indicator->set_button_icon(get_editor_theme_icon(SNAME("ProfilerAutostartWarning")));
 			pause_button->set_button_icon(get_editor_theme_icon(SNAME("Pause")));
 			stop_button->set_button_icon(get_editor_theme_icon(SNAME("Stop")));
@@ -115,6 +116,33 @@ void EditorRunBar::_notification(int p_what) {
 
 		} break;
 	}
+}
+
+void EditorRunBar::_check_scripts_pressed() {
+	last_script_check_errors = EditorNode::get_singleton()->check_all_scripts().errors;
+	_update_check_scripts_button();
+}
+
+// The icon says how the last check went, so the bar doubles as a status light.
+void EditorRunBar::_update_check_scripts_button() {
+	if (check_scripts_button == nullptr) {
+		return;
+	}
+	String tooltip = TTR("Check all scripts in the project and list their errors in the Output panel.");
+	if (last_script_check_errors < 0) {
+		check_scripts_button->set_button_icon(get_editor_theme_icon(SNAME("Script")));
+	} else if (last_script_check_errors == 0) {
+		check_scripts_button->set_button_icon(get_editor_theme_icon(SNAME("StatusSuccess")));
+		tooltip += "\n" + TTR("Last check: no errors.");
+	} else {
+		check_scripts_button->set_button_icon(get_editor_theme_icon(SNAME("StatusError")));
+		tooltip += "\n" + vformat(TTRN("Last check: %d error.", "Last check: %d errors.", last_script_check_errors), last_script_check_errors);
+	}
+	const Ref<Shortcut> shortcut = ED_GET_SHORTCUT("editor/check_all_scripts");
+	if (shortcut.is_valid() && shortcut->has_valid_event()) {
+		tooltip += " (" + shortcut->get_as_text() + ")";
+	}
+	check_scripts_button->set_tooltip_text(tooltip);
 }
 
 void EditorRunBar::_reset_play_buttons() {
@@ -612,6 +640,13 @@ EditorRunBar::EditorRunBar() {
 
 		return;
 	}
+
+	check_scripts_button = memnew(Button);
+	main_hbox->add_child(check_scripts_button);
+	check_scripts_button->set_theme_type_variation("RunBarButton");
+	check_scripts_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+	check_scripts_button->set_accessibility_name(TTRC("Check All Scripts"));
+	check_scripts_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::_check_scripts_pressed));
 
 	play_button = memnew(Button);
 	main_hbox->add_child(play_button);

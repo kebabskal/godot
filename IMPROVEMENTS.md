@@ -1359,6 +1359,18 @@ the debug adapter, such as VS Code. In the built-in remote inspector they
 show their type with the fields in the tooltip; a full inspector editor for
 structs is still to come.
 
+### Check All Scripts
+
+A button left of Play checks every script in the project and lists each
+error in the Output panel as a link to its line, with a summary at the end.
+It is the same check the script editor runs on an open script, so nothing is
+reloaded and a running game is not disturbed, and it can be run again at any
+time: clearing the Output panel no longer loses the errors the editor printed
+at startup. The button's icon shows how the last check went (green: no
+errors, red: errors), and the tooltip has the count. It is also under
+**Project → Tools → Check All Scripts**, with a shortcut you can assign in
+the editor settings (`editor/check_all_scripts`), and in the command palette.
+
 ### VS Code
 
 Keep using the official **godot-tools** extension — there is no forked

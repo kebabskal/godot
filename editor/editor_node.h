@@ -77,6 +77,7 @@ class DynamicFontImportSettingsDialog;
 class EditorAbout;
 class EditorBuildProfileManager;
 class EditorBottomPanel;
+class EditorFileSystemDirectory;
 class EditorCommandPalette;
 class EditorDockManager;
 class EditorExport;
@@ -186,6 +187,7 @@ public:
 		TOOLS_BUILD_PROFILE_MANAGER,
 		TOOLS_PROJECT_UPGRADE,
 		TOOLS_CLEAR_PROJECT_CACHE,
+		TOOLS_CHECK_ALL_SCRIPTS,
 		TOOLS_CUSTOM,
 
 		VCS_METADATA,
@@ -570,6 +572,7 @@ private:
 	void _check_system_theme_changed();
 
 	void _tool_menu_option(int p_idx);
+	void _collect_script_paths(EditorFileSystemDirectory *p_dir, Vector<String> &r_paths);
 	void _export_as_menu_option(int p_idx);
 	void _update_file_menu_opened();
 	void _palette_quick_open_dialog();
@@ -772,6 +775,15 @@ public:
 	static VSplitContainer *get_top_split() { return singleton->top_split; }
 	static DockSplitContainer *get_center_split() { return singleton->center_split; }
 	static EditorBottomPanel *get_bottom_panel() { return singleton->bottom_panel; }
+
+	struct ScriptCheckResult {
+		int checked = 0;
+		int errors = 0;
+		int files_with_errors = 0;
+		int warnings = 0;
+	};
+	// Validates every script in the project and lists the errors in the Output panel.
+	ScriptCheckResult check_all_scripts();
 	static EditorMainScreen *get_editor_main_screen() { return singleton->editor_main_screen; }
 
 	static Button *get_distraction_free_button() { return singleton->distraction_free; }
