@@ -39,6 +39,7 @@
 #include "editor/animation/animation_player_editor_plugin.h"
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/docks/groups_dock.h"
+#include "editor/docks/problems_dock.h"
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
@@ -69,6 +70,12 @@ Node *SceneTreeEditor::get_scene_node() const {
 
 PackedStringArray SceneTreeEditor::_get_node_configuration_warnings(Node *p_node) {
 	PackedStringArray warnings = p_node->get_configuration_warnings();
+	// The root's required properties are normally set where the scene is instantiated.
+	if (p_node != get_scene_node()) {
+		for (const StringName &property : ProblemsDock::get_missing_required_properties(p_node)) {
+			warnings.append(vformat(TTR("Required property \"%s\" is not set."), property));
+		}
+	}
 	if (p_node == get_scene_node()) {
 		Node2D *node_2d = Object::cast_to<Node2D>(p_node);
 		if (node_2d) {

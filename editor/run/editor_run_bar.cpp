@@ -35,6 +35,7 @@
 #include "core/object/callable_mp.h"
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
+#include "editor/docks/problems_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/export/editor_export_platform.h"
@@ -95,7 +96,7 @@ void EditorRunBar::_notification(int p_what) {
 			}
 
 			_update_play_buttons();
-			_update_check_scripts_button();
+			update_problems_button();
 			profiler_autostart_indicator->set_button_icon(get_editor_theme_icon(SNAME("ProfilerAutostartWarning")));
 			pause_button->set_button_icon(get_editor_theme_icon(SNAME("Pause")));
 			stop_button->set_button_icon(get_editor_theme_icon(SNAME("Stop")));
@@ -118,31 +119,33 @@ void EditorRunBar::_notification(int p_what) {
 	}
 }
 
-void EditorRunBar::_check_scripts_pressed() {
-	last_script_check_errors = EditorNode::get_singleton()->check_all_scripts().errors;
-	_update_check_scripts_button();
+void EditorRunBar::_problems_pressed() {
+	if (ProblemsDock::get_singleton()) {
+		ProblemsDock::get_singleton()->make_visible();
+	}
 }
 
-// The icon says how the last check went, so the bar doubles as a status light.
-void EditorRunBar::_update_check_scripts_button() {
-	if (check_scripts_button == nullptr) {
+// The icon says how the project stands, so the bar doubles as a status light.
+void EditorRunBar::update_problems_button() {
+	const ProblemsDock *problems = ProblemsDock::get_singleton();
+	if (problems_button == nullptr || problems == nullptr || !is_inside_tree()) {
 		return;
 	}
-	String tooltip = TTR("Check all scripts in the project and list their errors in the Output panel.");
-	if (last_script_check_errors < 0) {
-		check_scripts_button->set_button_icon(get_editor_theme_icon(SNAME("Script")));
-	} else if (last_script_check_errors == 0) {
-		check_scripts_button->set_button_icon(get_editor_theme_icon(SNAME("StatusSuccess")));
-		tooltip += "\n" + TTR("Last check: no errors.");
+	const int errors = problems->get_error_count();
+	const int warnings = problems->get_warning_count();
+	String tooltip = TTR("Problems in the project. Click to show them.");
+	if (errors > 0) {
+		problems_button->set_button_icon(get_editor_theme_icon(SNAME("StatusError")));
+	} else if (warnings > 0) {
+		problems_button->set_button_icon(get_editor_theme_icon(SNAME("StatusWarning")));
 	} else {
-		check_scripts_button->set_button_icon(get_editor_theme_icon(SNAME("StatusError")));
-		tooltip += "\n" + vformat(TTRN("Last check: %d error.", "Last check: %d errors.", last_script_check_errors), last_script_check_errors);
+		problems_button->set_button_icon(get_editor_theme_icon(SNAME("StatusSuccess")));
 	}
-	const Ref<Shortcut> shortcut = ED_GET_SHORTCUT("editor/check_all_scripts");
-	if (shortcut.is_valid() && shortcut->has_valid_event()) {
-		tooltip += " (" + shortcut->get_as_text() + ")";
+	tooltip += "\n" + vformat(TTRN("%d error", "%d errors", errors), errors) + ", " + vformat(TTRN("%d warning", "%d warnings", warnings), warnings);
+	if (problems->is_scanning()) {
+		tooltip += " " + TTR("(still checking)");
 	}
-	check_scripts_button->set_tooltip_text(tooltip);
+	problems_button->set_tooltip_text(tooltip);
 }
 
 void EditorRunBar::_reset_play_buttons() {
@@ -641,12 +644,12 @@ EditorRunBar::EditorRunBar() {
 		return;
 	}
 
-	check_scripts_button = memnew(Button);
-	main_hbox->add_child(check_scripts_button);
-	check_scripts_button->set_theme_type_variation("RunBarButton");
-	check_scripts_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
-	check_scripts_button->set_accessibility_name(TTRC("Check All Scripts"));
-	check_scripts_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::_check_scripts_pressed));
+	problems_button = memnew(Button);
+	main_hbox->add_child(problems_button);
+	problems_button->set_theme_type_variation("RunBarButton");
+	problems_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+	problems_button->set_accessibility_name(TTRC("Problems"));
+	problems_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::_problems_pressed));
 
 	play_button = memnew(Button);
 	main_hbox->add_child(play_button);

@@ -71,8 +71,7 @@ class EditorRunBar : public MarginContainer {
 	Button *recovery_mode_reload_button = nullptr;
 	AcceptDialog *recovery_mode_popup = nullptr;
 
-	Button *check_scripts_button = nullptr;
-	int last_script_check_errors = -1; // -1: not checked yet.
+	Button *problems_button = nullptr;
 	Button *play_button = nullptr;
 	Button *pause_button = nullptr;
 	Button *stop_button = nullptr;
@@ -95,8 +94,7 @@ class EditorRunBar : public MarginContainer {
 	String run_current_filename;
 
 	void _reset_play_buttons();
-	void _check_scripts_pressed();
-	void _update_check_scripts_button();
+	void _problems_pressed();
 	void _update_play_buttons();
 
 	void _movie_maker_item_pressed(int p_id);
@@ -120,6 +118,8 @@ protected:
 
 public:
 	static EditorRunBar *get_singleton() { return singleton; }
+
+	void update_problems_button();
 
 	void recovery_mode_show_dialog();
 	void recovery_mode_reload_project();

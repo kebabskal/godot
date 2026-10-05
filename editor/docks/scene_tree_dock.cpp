@@ -1696,6 +1696,11 @@ void SceneTreeDock::_notification(int p_what) {
 			first_enter = false;
 
 			EditorFeatureProfileManager::get_singleton()->connect("current_feature_profile_changed", callable_mp(this, &SceneTreeDock::_feature_profile_changed));
+			// A property set in the inspector can clear a warning, e.g. a required property; most setters
+			// in scripts do not ask for the warnings to be updated.
+			// A commit changes the history, an undo or a redo the version.
+			EditorUndoRedoManager::get_singleton()->connect("history_changed", callable_mp(scene_tree, &SceneTreeEditor::update_warning));
+			EditorUndoRedoManager::get_singleton()->connect("version_changed", callable_mp(scene_tree, &SceneTreeEditor::update_warning));
 
 			CanvasItemEditorPlugin *canvas_item_plugin = Object::cast_to<CanvasItemEditorPlugin>(editor_data->get_editor_by_name("2D"));
 			if (canvas_item_plugin) {

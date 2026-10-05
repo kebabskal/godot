@@ -64,6 +64,7 @@
 #include "editor/docks/history_dock.h"
 #include "editor/docks/import_dock.h"
 #include "editor/docks/inspector_dock.h"
+#include "editor/docks/problems_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_data.h"
@@ -4191,96 +4192,6 @@ void EditorNode::_check_system_theme_changed() {
 	}
 }
 
-void EditorNode::_collect_script_paths(EditorFileSystemDirectory *p_dir, Vector<String> &r_paths) {
-	for (int i = 0; i < p_dir->get_subdir_count(); i++) {
-		_collect_script_paths(p_dir->get_subdir(i), r_paths);
-	}
-	for (int i = 0; i < p_dir->get_file_count(); i++) {
-		if (ClassDB::is_parent_class(p_dir->get_file_type(i), SNAME("Script"))) {
-			r_paths.push_back(p_dir->get_file_path(i));
-		}
-	}
-}
-
-// Validates every script in the project as the script editor does while one is open: parse and
-// analyze only, so nothing is reloaded and running scenes and tool scripts are left alone. Each
-// error goes to the Output panel as a link to its line, which clearing the panel does not lose,
-// since this can be run again at any time.
-EditorNode::ScriptCheckResult EditorNode::check_all_scripts() {
-	ScriptCheckResult result;
-	EditorFileSystemDirectory *root = EditorFileSystem::get_singleton()->get_filesystem();
-	if (root == nullptr) {
-		return result;
-	}
-	Vector<String> paths;
-	_collect_script_paths(root, paths);
-	paths.sort();
-
-	int checked = 0;
-	int files_with_errors = 0;
-	int error_count = 0;
-	int warning_count = 0;
-	{
-		EditorProgress progress("check_all_scripts", TTR("Checking Scripts"), paths.size());
-		for (int i = 0; i < paths.size(); i++) {
-			const String &path = paths[i];
-			progress.step(path.get_file(), i);
-
-			ScriptLanguage *language = nullptr;
-			const String extension = path.get_extension().to_lower();
-			for (int j = 0; j < ScriptServer::get_language_count(); j++) {
-				if (ScriptServer::get_language(j)->get_extension() == extension) {
-					language = ScriptServer::get_language(j);
-					break;
-				}
-			}
-			if (language == nullptr || language->get_editor_language() == nullptr) {
-				continue; // A script type without a source language here (C# needs its own build).
-			}
-
-			Error read_error = OK;
-			const String source = FileAccess::get_file_as_string(path, &read_error);
-			if (read_error != OK) {
-				continue;
-			}
-
-			List<EditorLanguage::ScriptError> errors;
-			List<EditorLanguage::Warning> warnings;
-			language->get_editor_language()->validate(source, path, &errors, &warnings, nullptr, nullptr);
-			checked++;
-			warning_count += warnings.size();
-			if (errors.is_empty()) {
-				continue;
-			}
-			files_with_errors++;
-			for (const EditorLanguage::ScriptError &error : errors) {
-				// An error can belong to another script this one depends on.
-				const String where = (error.path.is_empty() ? path : error.path) + ":" + itos(MAX(error.start_line, 1));
-				log->add_message(vformat("[url=%s]%s[/url] - %s", where, where, error.message.xml_escape()), EditorLog::MSG_TYPE_ERROR);
-				error_count++;
-			}
-		}
-	}
-
-	String summary;
-	if (error_count == 0) {
-		summary = vformat(TTR("Checked %d scripts: no errors."), checked);
-	} else {
-		summary = vformat(TTR("Checked %d scripts: %d errors in %d of them."), checked, error_count, files_with_errors);
-	}
-	if (warning_count > 0) {
-		summary += " " + vformat(TTR("%d warnings (shown in the script editor)."), warning_count);
-	}
-	log->add_message(summary, error_count == 0 ? EditorLog::MSG_TYPE_EDITOR : EditorLog::MSG_TYPE_WARNING);
-	log->make_visible();
-
-	result.checked = checked;
-	result.errors = error_count;
-	result.files_with_errors = files_with_errors;
-	result.warnings = warning_count;
-	return result;
-}
-
 void EditorNode::_tool_menu_option(int p_idx) {
 	switch (tool_menu->get_item_id(p_idx)) {
 		case TOOLS_ORPHAN_RESOURCES: {
@@ -4295,8 +4206,9 @@ void EditorNode::_tool_menu_option(int p_idx) {
 		case TOOLS_CLEAR_PROJECT_CACHE: {
 			clear_cache_dialog->popup_centered();
 		} break;
-		case TOOLS_CHECK_ALL_SCRIPTS: {
-			check_all_scripts();
+		case TOOLS_SCAN_PROBLEMS: {
+			ProblemsDock::get_singleton()->rescan();
+			ProblemsDock::get_singleton()->make_visible();
 		} break;
 		case TOOLS_CUSTOM: {
 			if (tool_menu->get_item_submenu(p_idx) == "") {
@@ -8316,7 +8228,7 @@ void EditorNode::_build_project_menu(bool p_dark_mode) {
 		tool_menu->add_shortcut(ED_GET_SHORTCUT("editor/engine_compilation_configuration_editor"), TOOLS_BUILD_PROFILE_MANAGER);
 		tool_menu->add_shortcut(ED_GET_SHORTCUT("editor/upgrade_project"), TOOLS_PROJECT_UPGRADE);
 		tool_menu->add_shortcut(ED_GET_SHORTCUT("editor/clear_project_cache"), TOOLS_CLEAR_PROJECT_CACHE);
-		tool_menu->add_shortcut(ED_GET_SHORTCUT("editor/check_all_scripts"), TOOLS_CHECK_ALL_SCRIPTS);
+		tool_menu->add_shortcut(ED_GET_SHORTCUT("editor/scan_project_problems"), TOOLS_SCAN_PROBLEMS);
 	}
 	project_menu->add_submenu_node_item(TTRC("Tools"), tool_menu);
 
@@ -9254,7 +9166,7 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_AND_COMMAND("editor/engine_compilation_configuration_editor", TTRC("Engine Compilation Configuration Editor..."));
 	ED_SHORTCUT_AND_COMMAND("editor/upgrade_project", TTRC("Upgrade Project Files..."));
 	ED_SHORTCUT_AND_COMMAND("editor/clear_project_cache", TTRC("Clear Project Cache..."));
-	ED_SHORTCUT_AND_COMMAND("editor/check_all_scripts", TTRC("Check All Scripts"));
+	ED_SHORTCUT_AND_COMMAND("editor/scan_project_problems", TTRC("Scan Project for Problems"));
 
 #ifdef WEB_ENABLED
 	ED_SHORTCUT_AND_COMMAND("editor/download_project_source", TTRC("Download Project Source"));
@@ -9490,6 +9402,8 @@ EditorNode::EditorNode() {
 
 	log = memnew(EditorLog);
 	editor_dock_manager->add_dock(log);
+
+	editor_dock_manager->add_dock(memnew(ProblemsDock));
 
 	center_split->connect(SceneStringName(resized), callable_mp(this, &EditorNode::_vp_resized));
 

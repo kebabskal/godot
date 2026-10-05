@@ -26,6 +26,7 @@ Contents:
 - [Finding nodes by type](#finding-nodes-by-type)
 - [String interpolation](#string-interpolation)
 - [Enums with methods](#enums-with-methods)
+- [Required exports](#required-exports)
 - [Editor support](#editor-support)
 - [Roadmap](#roadmap)
 
@@ -109,6 +110,10 @@ An override keeps its parent's return type (`func _to_string(): return "x"`
 still returns a String), and a lambda still infers its own from its body.
 Without strict mode a missing return type keeps meaning "untyped", as in
 mainline.
+
+An exported object without `?` is [required](#required-exports): in strict
+mode `@export var camera: Camera3D` can only be null by mistake, so the editor
+reports it until it is set. Write `Camera3D?` for one that may stay empty.
 
 Turn it on per project. Existing projects are unaffected until you do.
 
@@ -1346,6 +1351,48 @@ Write `1 as State` when the number is intended, and add a `_` branch when
 the other values really don't matter. Using an enum value as an `int` stays
 allowed, since nothing is lost.
 
+## Required exports
+
+`@required` marks an export that has to be filled in. Forgetting to drag a
+node into a slot is no longer something you find out about by pressing Play:
+
+```gdscript
+extends CharacterBody3D
+
+@export @required var camera: Camera3D
+@export @required var spawn_points: Array[Marker3D]
+@export var music: AudioStream          # optional
+```
+
+While a required property is empty (null, or an empty path, string, array or
+dictionary), the editor says so everywhere it can:
+
+- the node gets a warning icon in the **Scene** dock,
+- the property's name is highlighted in the **Inspector**,
+- the [Problems panel](#problems-panel) lists it, for every scene in the
+  project, open or not, and clicking it opens the scene with the node
+  selected.
+
+A debug build of the game reports it too, as an error pointing at the
+declaration, at the end of the frame the node became ready (so a value set
+right after `add_child()` still counts).
+
+**Where it is reported.** A required property on the *root* of a scene is
+usually filled in where the scene is placed: `enemy.tscn` cannot know which
+player its `target` is. So for the root it is reported in each scene that
+instantiates it and leaves it empty, not in `enemy.tscn` itself. The main
+scene is the exception, since nothing instantiates it.
+
+`@required` only makes sense on a type that can be empty; on an `int` or a
+`Vector3` it is an error, and so is combining it with a nullable type
+(`Node3D?`), which says the opposite. In [strict mode](#strict-mode) a
+non-nullable object export is required without the annotation.
+
+The flag behind it is a property usage flag, `PROPERTY_USAGE_REQUIRED`, so a
+plugin or a `_get_property_list()` can mark properties required as well.
+
+---
+
 ## Editor support
 
 Every feature above works in the script editor and in external editors
@@ -1359,17 +1406,32 @@ the debug adapter, such as VS Code. In the built-in remote inspector they
 show their type with the fields in the tooltip; a full inspector editor for
 structs is still to come.
 
-### Check All Scripts
+### Problems panel
 
-A button left of Play checks every script in the project and lists each
-error in the Output panel as a link to its line, with a summary at the end.
-It is the same check the script editor runs on an open script, so nothing is
-reloaded and a running game is not disturbed, and it can be run again at any
-time: clearing the Output panel no longer loses the errors the editor printed
-at startup. The button's icon shows how the last check went (green: no
-errors, red: errors), and the tooltip has the count. It is also under
-**Project → Tools → Check All Scripts**, with a shortcut you can assign in
-the editor settings (`editor/check_all_scripts`), and in the command palette.
+A **Problems** tab next to Output lists everything wrong with the project,
+grouped by file, and keeps itself up to date: it checks the whole project
+when the editor opens, then re-checks whatever changes on disk, and the open
+scene as you edit it. Nothing is run and you do not have to press Play.
+
+It finds:
+
+- errors and warnings in every script (the check the script editor runs on
+  an open one),
+- required properties left empty, in every scene and in resources with a
+  script,
+- node configuration warnings in every scene, such as a `RigidBody3D`
+  without a collision shape,
+- node paths and node references that point to a node that was renamed,
+  moved or deleted,
+- missing dependencies: a scene or resource that refers to a file that is
+  gone.
+
+Clicking a problem goes to it: a script opens at the line, a scene opens
+with the node selected and the property shown in the inspector. The filter
+box and the error and warning toggles narrow the list down. The button left
+of Play shows how the project stands (green, yellow or red) and opens the
+panel; **Project → Tools → Scan Project for Problems** starts over from
+scratch.
 
 ### VS Code
 
