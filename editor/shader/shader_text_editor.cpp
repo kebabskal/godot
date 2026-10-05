@@ -31,6 +31,7 @@
 #include "shader_text_editor.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/file_access.h"
 #include "core/object/callable_mp.h"
 #include "core/string/regex.h"
 #include "editor/debugger/editor_debugger_node.h"
@@ -45,6 +46,7 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/3d/mesh_instance_3d.h"
+#include "scene/gui/dialogs.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/rich_text_label.h"
@@ -792,6 +794,22 @@ void ShaderTextEditor::_shader_changed() {
 	if (block_shader_changed) {
 		return;
 	}
+	if (_get_resource_code() != applied_code) {
+		// Changed from outside this tab: by a tool script or plugin, or reloaded
+		// because the file changed. Revalidating would apply this tab's text and
+		// silently undo that change.
+		if (!edited_res->is_built_in() && FileAccess::get_modified_time(edited_res->get_path()) != edited_file_data.last_modified_time) {
+			// The file changed; the script editor's "newer on disk" check asks.
+			return;
+		}
+		if (EDITOR_GET("text_editor/behavior/files/auto_reload_scripts_on_external_change") && !is_unsaved()) {
+			_take_outside_change();
+		} else if (!changed_outside_dialog->is_visible()) {
+			changed_outside_dialog->set_text(vformat(TTR("\"%s\" was changed outside the shader editor.\nLoad the changed version, or keep the code in this tab?"), get_document_name()));
+			changed_outside_dialog->popup_centered();
+		}
+		return;
+	}
 	dependencies_changed = true;
 	_validate_script();
 	if (edited_res->is_built_in() && previous_name != get_document_name()) {
@@ -1314,6 +1332,7 @@ void ShaderTextEditor::set_edited_resource(const Ref<Resource> &p_res) {
 	callable_mp((TextEdit *)code_editor->get_text_editor(), &TextEdit::set_v_scroll).call_deferred(0);
 	code_editor->get_text_editor()->tag_saved_version();
 
+	applied_code = code;
 	live_synced_code = code;
 	_validate_script();
 	code_editor->update_line_and_column();
@@ -1331,7 +1350,43 @@ void ShaderTextEditor::goto_line_centered(int p_line, int p_column) {
 	preview_timer->start();
 }
 
+String ShaderTextEditor::_get_resource_code() const {
+	Ref<Shader> shader = edited_res;
+	if (shader.is_valid()) {
+		return shader->get_code();
+	}
+	Ref<ShaderInclude> shader_inc = edited_res;
+	if (shader_inc.is_valid()) {
+		return shader_inc->get_code();
+	}
+	return String();
+}
+
+void ShaderTextEditor::_take_outside_change() {
+	const String code = _get_resource_code();
+	applied_code = code;
+
+	CodeEdit *te = code_editor->get_text_editor();
+	const Variant state = get_edit_state();
+	te->set_text(code);
+	set_edit_state(state, false);
+	// The tab is unsaved unless the new code is what the file holds.
+	if (edited_res->is_built_in() || FileAccess::get_file_as_string(edited_res->get_path()) == code) {
+		te->tag_saved_version();
+	}
+	_saved_update();
+
+	dependencies_changed = true;
+	_validate_script();
+}
+
+void ShaderTextEditor::_keep_own_code() {
+	dependencies_changed = true;
+	_validate_script(); // Applies this tab's text to the resource again.
+}
+
 void ShaderTextEditor::set_code_block_changed(const String &p_code) {
+	applied_code = p_code;
 	Ref<Shader> shader = edited_res;
 	Ref<ShaderInclude> shader_inc = edited_res;
 	block_shader_changed = true;
@@ -1502,4 +1557,12 @@ ShaderTextEditor::ShaderTextEditor() {
 	preview_timer->connect("timeout", callable_mp(this, &ShaderTextEditor::_redraw_preview_lines));
 
 	InspectorDock::get_inspector_singleton()->connect(SNAME("edited_object_changed"), callable_mp(this, &ShaderTextEditor::_recompile_previews));
+
+	changed_outside_dialog = memnew(ConfirmationDialog);
+	changed_outside_dialog->set_title(TTRC("Shader Changed"));
+	changed_outside_dialog->set_ok_button_text(TTRC("Load Changed Version"));
+	changed_outside_dialog->set_cancel_button_text(TTRC("Keep Mine"));
+	changed_outside_dialog->connect(SceneStringName(confirmed), callable_mp(this, &ShaderTextEditor::_take_outside_change));
+	changed_outside_dialog->connect("canceled", callable_mp(this, &ShaderTextEditor::_keep_own_code));
+	add_child(changed_outside_dialog);
 }

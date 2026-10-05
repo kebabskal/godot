@@ -162,6 +162,14 @@ class ShaderTextEditor : public CodeEditorBase {
 	bool block_shader_changed = false;
 	void _shader_changed();
 
+	// The code this tab last put into the resource or took from it. Anything
+	// else in the resource was changed from outside the tab.
+	String applied_code;
+	ConfirmationDialog *changed_outside_dialog = nullptr;
+	String _get_resource_code() const;
+	void _take_outside_change();
+	void _keep_own_code();
+
 	String live_synced_code;
 	void _update_running_game();
 

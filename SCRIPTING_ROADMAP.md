@@ -126,6 +126,14 @@ Phase 0, make live edit reliable:
    regains focus; cache key uid vs path).
 5. Report changes live edit could not apply instead of dropping them.
 
+Found on the way: an open shader tab reverted any outside change to its
+shader (`_shader_changed`, meant for include changes, revalidated and
+`apply_code` wrote the tab's text back), including reloads from disk.
+**Fixed:** the tab remembers the code it last applied (`applied_code`); a
+different code is an outside change. File changed on disk: left to the
+"newer on disk" check (no second dialog). Otherwise taken silently when
+the tab is clean and auto-reload is on, else a Load / Keep Mine dialog.
+
 Also dropped today: method calls with object arguments (visual shader
 graph edits), `local_to_scene` resources (the game's copies have no path).
 

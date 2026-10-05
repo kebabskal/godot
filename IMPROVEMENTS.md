@@ -1406,6 +1406,16 @@ the debug adapter, such as VS Code. In the built-in remote inspector they
 show their type with the fields in the tooltip; a full inspector editor for
 structs is still to come.
 
+### Shader tabs and changes made elsewhere
+
+An open shader tab used to quietly undo any change made to its shader from
+elsewhere (a tool script or plugin setting `code`, or the file being
+reloaded from disk) by writing its own text straight back. Now the tab
+takes the new code if it has no unsaved edits, and asks otherwise: load the
+changed version, or keep yours. When the file itself changed, the existing
+"Files have been modified outside Godot" dialog asks as before, now with
+the new code still in place.
+
 ### Problems panel
 
 A **Problems** tab next to Output lists everything wrong with the project,
