@@ -1455,6 +1455,12 @@ from the marketplace as usual.
 
 Everything on the original list is done.
 
+Next: editing a running game. Every change made in the editor should show
+up in the game straight away, including shaders, materials, textures and
+colours while you drag the picker. After that, inspecting the running 3D
+scene: a live scene tree and inspector, a move/rotate/scale gizmo in the
+game, and a free-camera view of the running scene next to the Game view.
+
 Further out: fixed multidimensional arrays of real numbers, a formatter,
 and direct dispatch for trait methods if profiling asks for it.
 

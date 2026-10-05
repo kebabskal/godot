@@ -75,6 +75,60 @@ Editor and tooling:
 Critical path: 1 -> 5 -> 4d. Items 4a-4c, the syntax group and the editor
 group are independent and can proceed in any order.
 
+## Live editing and runtime inspection
+
+Goal: Unity-style work on a running game. Keep the game running, edit in the
+editor, see it in the game; inspect and tweak the running 3D scene.
+
+Decisions (Oct 2026):
+
+- The game stays a separate process; everything goes through the debugger
+  protocol. In-process play mode is out (global singletons, crashes take the
+  editor down, upstream rejected it). Shared memory buys nothing for the
+  inspector (the cost is serialisation and full resends, not the socket);
+  it only pays off later for GPU texture sharing.
+- The running game is the preview. An edit-mode Game view (scene camera,
+  UI overlay, editor-only lighting kept out by layer) is parked: live edit
+  covers most of it, and the floating Game window already sits next to the
+  3D view. Docking the Game view is parked with it.
+
+How live edit works: only committed undo/redo operations reach the game
+(`EditorDebuggerNode::_properties_changed` / `_methods_changed`). Nodes are
+addressed by path relative to the edited scene and the change applies to
+every instance of that scene; resources by path, looked up in the game's
+`ResourceCache` (built-in subresources are cached as `res://x.tscn::id`).
+
+Phase 0, make live edit reliable:
+
+1. Changes that bypass undo/redo: the color picker previews with a direct
+   `set()` (`EditorPropertyColor::_color_changed`), gizmo drags likely too.
+   Add a coalesced preview message.
+2. Resources saved to disk (shaders, `.tres`) never reach the game; only
+   reimports send `scene:reload_cached_files`. Send it on save, and send
+   shader code as you type when it compiles.
+3. Assigning a resource without a path (a new material, a new StyleBox
+   theme override) is silently dropped, and so is every later edit to it.
+   Give it a stable id and send its contents.
+4. Textures: reimports already send `reload_cached_files`, yet reportedly
+   never update. Reproduce first (suspects: no rescan until the editor
+   regains focus; cache key uid vs path).
+5. Report changes live edit could not apply instead of dropping them.
+
+Also dropped today: method calls with object arguments (visual shader
+graph edits), `local_to_scene` resources (the game's copies have no path).
+
+Later phases:
+
+- Remote tree and inspector: send tree deltas instead of the full tree every
+  second; show saved resources as the live remote object (today the editor
+  shows its own disk copy); delete, duplicate, rename, reparent and toggle
+  visibility from the remote tree.
+- In-game 3D move/rotate/scale gizmo, like upstream's `CanvasItemManipulator`
+  for 2D. Check upstream first.
+- A second, free-camera view of the running 3D scene next to the Game view,
+  with gizmos for lights, cameras and colliders.
+- Apply runtime property changes back to the edited scene.
+
 ## Progress
 
 - 4a landed as `OPCODE_CALL_SCRIPT` (slot + name guard, falls back to the
