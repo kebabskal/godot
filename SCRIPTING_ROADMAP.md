@@ -102,7 +102,11 @@ Phase 0, make live edit reliable:
 
 1. Changes that bypass undo/redo: the color picker previews with a direct
    `set()` (`EditorPropertyColor::_color_changed`), gizmo drags likely too.
-   Add a coalesced preview message.
+   Color picker **done**: the preview goes out through
+   `EditorDebuggerNode::live_debug_set_property()`, one message per change
+   (editor input is accumulated per frame, so no coalescing needed). Escape
+   needs nothing extra: the button re-emits `color_changed` with the old
+   color first. Gizmo drags still to do.
 2. Resources saved to disk (shaders, `.tres`) never reach the game; only
    reimports send `scene:reload_cached_files`. Send it on save, and send
    shader code as you type when it compiles. **Done.** The hook is

@@ -37,6 +37,7 @@
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/string/translation_server.h"
+#include "editor/debugger/editor_debugger_node.h"
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
@@ -2975,8 +2976,12 @@ void EditorPropertyColor::_color_changed(const Color &p_color) {
 		return;
 	}
 
-	// Preview color change, bypassing undo/redo.
+	// Preview color change, bypassing undo/redo. Live edit only sees undo/redo
+	// actions, so send the preview to a running game here.
 	get_edited_object()->set(get_edited_property(), p_color);
+	if (EditorDebuggerNode::get_singleton()) {
+		EditorDebuggerNode::get_singleton()->live_debug_set_property(get_edited_object(), get_edited_property(), p_color);
+	}
 }
 
 void EditorPropertyColor::_picker_created() {

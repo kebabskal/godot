@@ -1441,6 +1441,8 @@ is on by default). On top of what mainline already syncs, this fork sends:
 
 - shader code as you type it in the shader editor, as soon as it compiles,
   so a half-typed line never breaks the running game;
+- colours while you drag them in the inspector's colour picker, not only
+  once you close it;
 - any shader, material or other resource you save, so a `.tres` changed by
   a tool or a script reaches the game too.
 
