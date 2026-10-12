@@ -699,14 +699,14 @@ void ProblemsDock::_item_activated() {
 	if (item == nullptr) {
 		return;
 	}
-	const Variant metadata = item->get_metadata(0);
-	if (metadata.get_type() == Variant::STRING) {
+	const Variant item_metadata = item->get_metadata(0);
+	if (item_metadata.get_type() == Variant::STRING) {
 		Problem problem; // A file row: open the file.
-		problem.file = metadata;
+		problem.file = item_metadata;
 		_navigate(problem);
 		return;
 	}
-	const int index = metadata;
+	const int index = item_metadata;
 	if (index >= 0 && index < shown.size()) {
 		_navigate(shown[index]);
 	}

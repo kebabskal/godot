@@ -579,20 +579,20 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 		} break;
 		case GDScriptParser::Node::TUPLE_ELEMENT: {
 			const GDScriptParser::TupleElementNode *element = static_cast<const GDScriptParser::TupleElementNode *>(p_expression);
-			const GDScriptCodeGenerator::Address *source = codegen.destructure_values.getptr(element->source);
-			if (source == nullptr) {
+			const GDScriptCodeGenerator::Address *source_address = codegen.destructure_values.getptr(element->source);
+			if (source_address == nullptr) {
 				_set_error("Compiler bug (please report): tuple element read outside of its unpacking.", element);
 				r_error = ERR_COMPILATION_FAILED;
 				return GDScriptCodeGenerator::Address();
 			}
 			if (element->index < 0) {
-				return *source;
+				return *source_address;
 			}
 			const GDScriptParser::DataType &value_type = element->source->value->type_constraint;
 			if (value_type.is_tuple && value_type.struct_layout.is_valid() && element->index < value_type.struct_layout->get_field_count()) {
 				// A tuple: its field, by name, which the typed source makes an indexed read.
 				GDScriptCodeGenerator::Address result = codegen.add_temporary(_gdtype_from_datatype(element->type_constraint, codegen.script));
-				gen->write_get_named(result, value_type.struct_layout->get_field_name(element->index), *source);
+				gen->write_get_named(result, value_type.struct_layout->get_field_name(element->index), *source_address);
 				return result;
 			}
 			// An array, or anything unknown until runtime: by position. Untyped, since nothing
@@ -602,7 +602,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 				element_type = _gdtype_from_datatype(element->type_constraint, codegen.script);
 			}
 			GDScriptCodeGenerator::Address result = codegen.add_temporary(element_type);
-			gen->write_get(result, codegen.add_constant(element->index), *source);
+			gen->write_get(result, codegen.add_constant(element->index), *source_address);
 			return result;
 		} break;
 		case GDScriptParser::Node::SELF: {
