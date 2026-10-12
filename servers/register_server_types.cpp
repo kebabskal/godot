@@ -400,8 +400,12 @@ void register_server_types() {
 void unregister_server_types() {
 	OS::get_singleton()->benchmark_begin_measure("Servers", "Unregister Extensions");
 
+#ifndef PHYSICS_3D_DISABLED
 	PhysicsDirectSpaceState3D::unregister_struct_layouts();
+#endif // PHYSICS_3D_DISABLED
+#ifndef PHYSICS_2D_DISABLED
 	PhysicsDirectSpaceState2D::unregister_struct_layouts();
+#endif // PHYSICS_2D_DISABLED
 
 	ServersDebugger::deinitialize();
 	memdelete(shader_types);
