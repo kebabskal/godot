@@ -315,6 +315,7 @@ TEST_CASE("[PackedScene] Root type of an empty scene") {
 	CHECK_FALSE(state->is_root_of_type("Node"));
 }
 
+#ifdef TOOLS_ENABLED // Instancing with an edit state needs the editor.
 TEST_CASE("[PackedScene] Root type of an inherited scene comes from its base") {
 	Node2D *base_root = memnew(Node2D);
 	base_root->set_name("Base");
@@ -340,5 +341,6 @@ TEST_CASE("[PackedScene] Root type of an inherited scene comes from its base") {
 
 	memdelete(inherited_root);
 }
+#endif // TOOLS_ENABLED
 
 } // namespace TestPackedScene

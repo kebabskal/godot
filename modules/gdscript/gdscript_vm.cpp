@@ -876,6 +876,10 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 
 #ifdef DEBUG_ENABLED
 	String err_text;
+// The struct helpers only write their error text in debug builds.
+#define STRUCT_ERR_TEXT &err_text
+#else
+#define STRUCT_ERR_TEXT nullptr
 #endif
 
 	GDScriptLanguage::CallLevel call_level;
@@ -1749,7 +1753,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				int indexname = _code_ptr[ip + 4];
 				GD_ERR_BREAK(indexname < 0 || indexname >= _global_names_count);
 
-				if (unlikely(!_struct_set_field(dst, value, _code_ptr[ip + 3], _global_names_ptr[indexname], &err_text))) {
+				if (unlikely(!_struct_set_field(dst, value, _code_ptr[ip + 3], _global_names_ptr[indexname], STRUCT_ERR_TEXT))) {
 					OPCODE_BREAK;
 				}
 				ip += 5;
@@ -1765,7 +1769,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				int indexname = _code_ptr[ip + 4];
 				GD_ERR_BREAK(indexname < 0 || indexname >= _global_names_count);
 
-				if (unlikely(!_struct_get_field(src, dst, _code_ptr[ip + 3], _global_names_ptr[indexname], &err_text))) {
+				if (unlikely(!_struct_get_field(src, dst, _code_ptr[ip + 3], _global_names_ptr[indexname], STRUCT_ERR_TEXT))) {
 					OPCODE_BREAK;
 				}
 				ip += 5;
@@ -2256,7 +2260,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				GET_INSTRUCTION_ARG(layout_variant, argc);
 				GET_INSTRUCTION_ARG(dst, argc + 1);
 
-				if (unlikely(!_struct_construct(dst, layout_variant, (const Variant **)argptrs, argc, &err_text))) {
+				if (unlikely(!_struct_construct(dst, layout_variant, (const Variant **)argptrs, argc, STRUCT_ERR_TEXT))) {
 					OPCODE_BREAK;
 				}
 				ip += 2;
@@ -2902,7 +2906,7 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 #endif
 
 				Callable::CallError err;
-				const bool ok = _struct_call_method(base, (const Variant **)argptrs, argc, method_index, *methodname, ret, err, &err_text);
+				const bool ok = _struct_call_method(base, (const Variant **)argptrs, argc, method_index, *methodname, ret, err, STRUCT_ERR_TEXT);
 
 #ifdef DEBUG_ENABLED
 				if (GDScriptLanguage::get_singleton()->profiling) {
