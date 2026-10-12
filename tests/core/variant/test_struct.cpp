@@ -371,30 +371,26 @@ TEST_CASE("[Struct] Text serialization") {
 	CHECK(text.contains("\"x\": 1.5"));
 	CHECK(text.contains("\"label\": \"moved\""));
 
-	VariantParser::StreamString stream;
-	stream.s = text;
+	// A fresh stream per parse: reassigning one copies its uninitialized read-ahead buffer.
 	Variant parsed;
-	String err_str;
-	int err_line = 0;
-	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) == OK);
+	const auto parse = [&parsed](const String &p_text) {
+		VariantParser::StreamString stream;
+		stream.s = p_text;
+		String err_str;
+		int err_line = 0;
+		return VariantParser::parse(&stream, parsed, err_str, err_line);
+	};
+	CHECK(parse(text) == OK);
 	CHECK(parsed.get_type() == Variant::STRUCT);
 	CHECK(parsed.operator Struct() == p);
 
 	// Missing fields keep their defaults; an unknown type or field is an error; the null struct round-trips.
-	stream = VariantParser::StreamString();
-	stream.s = "Struct(\"Point\", {\"y\": 2.0})";
-	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) == OK);
+	CHECK(parse("Struct(\"Point\", {\"y\": 2.0})") == OK);
 	CHECK(parsed.operator Struct().get_field(1) == Variant(2.0));
 	CHECK(parsed.operator Struct().get_field(2) == Variant("origin"));
-	stream = VariantParser::StreamString();
-	stream.s = "Struct(\"Nope\", {})";
-	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) != OK);
-	stream = VariantParser::StreamString();
-	stream.s = "Struct(\"Point\", {\"nope\": 1})";
-	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) != OK);
-	stream = VariantParser::StreamString();
-	stream.s = "Struct()";
-	CHECK(VariantParser::parse(&stream, parsed, err_str, err_line) == OK);
+	CHECK(parse("Struct(\"Nope\", {})") != OK);
+	CHECK(parse("Struct(\"Point\", {\"nope\": 1})") != OK);
+	CHECK(parse("Struct()") == OK);
 	CHECK(parsed.get_type() == Variant::STRUCT);
 	CHECK(parsed.operator Struct().is_null());
 	String null_text;
