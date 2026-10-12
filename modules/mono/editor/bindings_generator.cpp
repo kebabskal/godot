@@ -4716,6 +4716,9 @@ bool BindingsGenerator::_arg_default_value_from_variant(const Variant &p_val, Ar
 					"Parameter of type '" + String(r_iarg.type.cname) + "' can only have null/zero as the default value.");
 			r_iarg.default_argument = "default";
 			break;
+		case Variant::STRUCT:
+			// Methods that use `Struct` are skipped (it has no C# marshaling yet), so this is never reached.
+			ERR_FAIL_V_MSG(false, "Default values of type 'Struct' have no C# representation.");
 		case Variant::VARIANT_MAX:
 			ERR_FAIL_V_MSG(false, "Unexpected Variant type: " + itos(p_val.get_type()));
 			break;
