@@ -1,3 +1,5 @@
+#optimized-only
+# (Skipped on dev and sanitizer builds: unoptimized, a frame is tens of KB and this depth overflows any normal stack.)
 # Guards the VM's stack frame size. Every script call recurses into `GDScriptFunction::call()`, so its
 # frame bounds the reachable call depth. If that function grows past what MSVC optimizes, the frame
 # balloons and this depth crashes the process long before `MAX_CALL_DEPTH`.

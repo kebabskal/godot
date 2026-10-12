@@ -284,8 +284,9 @@ bool GDScriptTestRunner::make_tests_for_dir(const String &p_dir) {
 				next = dir->get_next();
 				continue;
 			} else if (next.has_extension("gd")) {
-#ifndef DEBUG_ENABLED
-				// On release builds, skip tests marked as debug only.
+#if !defined(DEBUG_ENABLED) || defined(DEV_ENABLED) || defined(ASAN_ENABLED) || defined(MSAN_ENABLED) || defined(TSAN_ENABLED)
+				// On release builds, skip tests marked as debug only. On unoptimized and sanitizer builds,
+				// whose stack frames are many times larger, skip tests marked as optimized only.
 				Error open_err = OK;
 				Ref<FileAccess> script_file(FileAccess::open(current_dir.path_join(next), FileAccess::READ, &open_err));
 				if (open_err != OK) {
@@ -293,10 +294,19 @@ bool GDScriptTestRunner::make_tests_for_dir(const String &p_dir) {
 					next = dir->get_next();
 					continue;
 				} else {
-					if (script_file->get_line() == "#debug-only") {
+					const String first_line = script_file->get_line();
+#ifndef DEBUG_ENABLED
+					if (first_line == "#debug-only") {
 						next = dir->get_next();
 						continue;
 					}
+#endif
+#if defined(DEV_ENABLED) || defined(ASAN_ENABLED) || defined(MSAN_ENABLED) || defined(TSAN_ENABLED)
+					if (first_line == "#optimized-only") {
+						next = dir->get_next();
+						continue;
+					}
+#endif
 				}
 #endif
 
