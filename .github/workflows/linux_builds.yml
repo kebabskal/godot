@@ -42,8 +42,9 @@ jobs:
             proj-export: true
             api-compat: true
             artifact: true
-            # Validate godot-cpp compatibility on one arbitrary editor build.
-            godot-cpp: true
+            # godot-cpp compatibility is not checked in this fork: its extension API names struct layouts
+            # (such as `PhysicsRayResult2D`) as types, which upstream godot-cpp does not know.
+            godot-cpp: false
             clangd-tidy: true
 
           - name: Editor with doubles and GCC sanitizers (target=editor, dev_build=yes, scu_build=yes, precision=double, use_asan=yes, use_ubsan=yes, linker=mold)
