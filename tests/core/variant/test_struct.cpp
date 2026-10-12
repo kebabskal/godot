@@ -288,17 +288,23 @@ TEST_CASE("[Struct] StructDB") {
 	CHECK_FALSE(StructDB::has_layout("TestEngineStruct"));
 
 	// The physics servers register their result layouts with the server types.
+#ifndef PHYSICS_3D_DISABLED
 	Ref<StructLayout> ray = StructDB::get_layout("PhysicsRayResult3D");
 	REQUIRE(ray.is_valid());
 	CHECK(ray->get_field_name(0) == "hit");
 	CHECK(ray->get_field_type(0) == Variant::BOOL);
 	CHECK(ray->find_field("face_index") >= 0);
-	CHECK(StructDB::get_layout("PhysicsRayResult2D").is_valid());
-	for (const char *name : { "PhysicsShapeResult2D", "PhysicsShapeResult3D", "PhysicsRestInfo2D", "PhysicsRestInfo3D", "PhysicsCastResult2D", "PhysicsCastResult3D" }) {
+	for (const char *name : { "PhysicsShapeResult3D", "PhysicsRestInfo3D", "PhysicsCastResult3D" }) {
 		CHECK_MESSAGE(StructDB::has_layout(name), name);
 	}
 	CHECK(StructDB::get_layout("PhysicsRestInfo3D")->get_field_default_value(0) == Variant(false)); // `hit`.
 	CHECK(StructDB::get_layout("PhysicsCastResult3D")->get_field_default_value(0) == Variant(1.0)); // `safe_fraction`.
+#endif // PHYSICS_3D_DISABLED
+#ifndef PHYSICS_2D_DISABLED
+	for (const char *name : { "PhysicsRayResult2D", "PhysicsShapeResult2D", "PhysicsRestInfo2D", "PhysicsCastResult2D" }) {
+		CHECK_MESSAGE(StructDB::has_layout(name), name);
+	}
+#endif // PHYSICS_2D_DISABLED
 	for (const char *name : { "DateTime", "Date", "TimeOfDay", "TimeZoneInfo", "TriangleMeshHit", "MemoryInfo", "VersionInfo" }) {
 		CHECK_MESSAGE(StructDB::has_layout(name), name);
 	}
