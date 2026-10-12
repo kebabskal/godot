@@ -6902,6 +6902,9 @@ void GDScriptParser::TreePrinter::print_binary_op(const BinaryOpNode *p_binary_o
 		case BinaryOpNode::OP_COMP_GREATER_EQUAL:
 			push_text(" >= ");
 			break;
+		case BinaryOpNode::OP_NULL_COALESCING:
+			push_text(" ?? ");
+			break;
 	}
 	print_expression(p_binary_op->right_operand);
 	// Surround in parenthesis for disambiguation.
@@ -6988,6 +6991,11 @@ void GDScriptParser::TreePrinter::print_class(const ClassNode *p_class) {
 				break;
 			case ClassNode::Member::STRUCT:
 				print_struct(m.m_struct);
+				break;
+			case ClassNode::Member::TRAIT:
+				push_text("Trait ");
+				print_identifier(m.m_trait->identifier);
+				push_line();
 				break;
 			case ClassNode::Member::ENUM_VALUE:
 				break; // Nothing. Will be printed by enum.

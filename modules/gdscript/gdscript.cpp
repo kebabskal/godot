@@ -2025,7 +2025,7 @@ void GDScriptInstance::_report_missing_required_members(ObjectID p_node) {
 	for (const GDScript *sptr = instance->script.ptr(); sptr; sptr = sptr->base.ptr()) {
 		for (const GDScript::RequiredMember &required : sptr->required_members) {
 			const HashMap<StringName, GDScript::MemberInfo>::ConstIterator E = sptr->member_indices.find(required.name);
-			if (!E || E->value.index >= instance->members.size() || !is_required_value_missing(instance->members[E->value.index])) {
+			if (!E || E->value.index < 0 || E->value.index >= int(instance->members.size()) || !is_required_value_missing(instance->members[E->value.index])) {
 				continue;
 			}
 			const String where = node->is_inside_tree() ? String(node->get_path()) : String(node->get_name());

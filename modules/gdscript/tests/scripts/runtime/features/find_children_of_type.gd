@@ -57,6 +57,8 @@ func test():
 
 	var typed: Array[Enemy] = level.find_children_of_type(Enemy)
 	print(typed.size(), " ", level.enemy_count())
-	print(Level.Custom.new().find_children_of_type(Enemy))
+	var custom := Level.Custom.new()
+	print(custom.find_children_of_type(Enemy))
 
+	custom.free()
 	level.free()

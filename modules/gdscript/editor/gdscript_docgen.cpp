@@ -162,6 +162,8 @@ void GDScriptDocGen::_doctype_from_datatype(const DataType &p_datatype, String &
 				}
 			}
 			return;
+		case DataType::TRAIT: // A Variant at runtime, and has no class reference page.
+		case DataType::TYPE_PARAMETER: // Erased.
 		case DataType::VARIANT:
 		case DataType::RESOLVING:
 		case DataType::UNRESOLVED:

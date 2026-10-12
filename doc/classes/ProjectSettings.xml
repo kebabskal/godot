@@ -587,6 +587,9 @@
 		<member name="debug/gdscript/warnings/enable" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables specific GDScript warnings (see [code]debug/gdscript/warnings/*[/code] settings). If [code]false[/code], disables all GDScript warnings.
 		</member>
+		<member name="debug/gdscript/warnings/enum_match_not_exhaustive" type="int" setter="" getter="" default="1">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a [code]match[/code] on an enum value has no branch for some of the enum's values, and no [code]_[/code] branch.
+		</member>
 		<member name="debug/gdscript/warnings/enum_variable_without_default" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a variable has an enum type but no explicit default value, but only if the enum does not contain [code]0[/code] as a valid value.
 		</member>
@@ -624,6 +627,9 @@
 		<member name="debug/gdscript/warnings/native_method_override" type="int" setter="" getter="" default="2">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a method in the script overrides a native method, because it may not behave as expected.
 		</member>
+		<member name="debug/gdscript/warnings/null_assigned_to_non_nullable" type="int" setter="" getter="" default="0">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a value that may be [code]null[/code] is assigned to a variable, parameter or return type that is not declared nullable with [code]?[/code].
+		</member>
 		<member name="debug/gdscript/warnings/onready_with_cast" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when an [code]@onready[/code] initializer uses a cast on a [code]$GetNodeLiteral[/code], because it may unexpectedly assign [code]null[/code].
 		</member>
@@ -632,6 +638,9 @@
 		</member>
 		<member name="debug/gdscript/warnings/redundant_await" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a function that is not a coroutine is called with await.
+		</member>
+		<member name="debug/gdscript/warnings/redundant_null_check" type="int" setter="" getter="" default="1">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when [code]?.[/code] or [code]??[/code] is used on a value that can never be [code]null[/code].
 		</member>
 		<member name="debug/gdscript/warnings/redundant_static_unload" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when the [code]@static_unload[/code] annotation is used in a script without any static variables.
@@ -680,6 +689,9 @@
 		</member>
 		<member name="debug/gdscript/warnings/unsafe_method_access" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when calling a method whose presence is not guaranteed at compile-time in the class.
+		</member>
+		<member name="debug/gdscript/warnings/unsafe_nullable_access" type="int" setter="" getter="" default="0">
+			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a member is accessed on a value whose type is nullable, without [code]?.[/code] or a prior check against [code]null[/code].
 		</member>
 		<member name="debug/gdscript/warnings/unsafe_property_access" type="int" setter="" getter="" default="0">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when accessing a property whose presence is not guaranteed at compile-time in the class.

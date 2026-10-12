@@ -2502,6 +2502,8 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 		case GDScriptParser::Node::TERNARY_OPERATOR:
 		case GDScriptParser::Node::TYPE_TEST:
 		case GDScriptParser::Node::UNARY_OPERATOR:
+		case GDScriptParser::Node::TUPLE:
+		case GDScriptParser::Node::TUPLE_ELEMENT:
 			reduce_expression(static_cast<GDScriptParser::ExpressionNode *>(p_node), p_is_root);
 			break;
 		case GDScriptParser::Node::BREAK:
@@ -2509,6 +2511,7 @@ void GDScriptAnalyzer::resolve_node(GDScriptParser::Node *p_node, bool p_is_root
 		case GDScriptParser::Node::CONTINUE:
 		case GDScriptParser::Node::ENUM:
 		case GDScriptParser::Node::STRUCT:
+		case GDScriptParser::Node::TRAIT:
 		case GDScriptParser::Node::FUNCTION:
 		case GDScriptParser::Node::PASS:
 		case GDScriptParser::Node::SIGNAL:
@@ -4692,6 +4695,8 @@ void GDScriptAnalyzer::reduce_expression(GDScriptParser::ExpressionNode *p_expre
 		case GDScriptParser::Node::CONTINUE:
 		case GDScriptParser::Node::ENUM:
 		case GDScriptParser::Node::STRUCT:
+		case GDScriptParser::Node::TRAIT:
+		case GDScriptParser::Node::DESTRUCTURE:
 		case GDScriptParser::Node::FOR:
 		case GDScriptParser::Node::FUNCTION:
 		case GDScriptParser::Node::IF:
@@ -7578,6 +7583,8 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 		case GDScriptParser::IdentifierNode::MEMBER_FUNCTION:
 		case GDScriptParser::IdentifierNode::MEMBER_CLASS:
 		case GDScriptParser::IdentifierNode::NATIVE_CLASS:
+		case GDScriptParser::IdentifierNode::STRUCT_FIELD: // Both resolved below.
+		case GDScriptParser::IdentifierNode::TRAIT_PROPERTY:
 			break;
 	}
 
@@ -7724,6 +7731,8 @@ void GDScriptAnalyzer::reduce_identifier(GDScriptParser::IdentifierNode *p_ident
 				case GDScriptParser::IdentifierNode::INHERITED_VARIABLE:
 				case GDScriptParser::IdentifierNode::STATIC_VARIABLE:
 				case GDScriptParser::IdentifierNode::NATIVE_CLASS:
+				case GDScriptParser::IdentifierNode::STRUCT_FIELD: // Reached through `self`, like a member.
+				case GDScriptParser::IdentifierNode::TRAIT_PROPERTY:
 					return; // No need to capture.
 			}
 
@@ -8299,6 +8308,7 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 										index_type.builtin_type != Variant::STRING && index_type.builtin_type != Variant::STRING_NAME;
 								break;
 							// Expect String or int.
+							case Variant::STRUCT: // A field by name, or a tuple's element by position.
 							case Variant::COLOR:
 								error = index_type.builtin_type != Variant::INT && index_type.builtin_type != Variant::STRING && index_type.builtin_type != Variant::STRING_NAME;
 								break;
@@ -8444,6 +8454,18 @@ void GDScriptAnalyzer::reduce_subscript(GDScriptParser::SubscriptNode *p_subscri
 						result_type.kind = GDScriptParser::DataType::VARIANT;
 						result_type.type_source = GDScriptParser::DataType::UNDETECTED;
 						break;
+					// A tuple's element at a constant position has its own type; anything else depends on the index.
+					case Variant::STRUCT: {
+						const Variant &index = p_subscript->index->reduced_value;
+						if (base_type.is_tuple && p_subscript->index->is_constant && index.get_type() == Variant::INT &&
+								int64_t(index) >= 0 && int64_t(index) < base_type.get_container_element_type_count()) {
+							result_type = base_type.get_container_element_type(int(index));
+							result_type.type_source = base_type.type_source;
+						} else {
+							result_type.kind = GDScriptParser::DataType::VARIANT;
+							result_type.type_source = GDScriptParser::DataType::UNDETECTED;
+						}
+					} break;
 					// Can have an element type.
 					case Variant::ARRAY:
 						if (base_type.has_container_element_type(0)) {
@@ -10264,6 +10286,8 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 		case GDScriptParser::DataType::VARIANT:
 		case GDScriptParser::DataType::BUILTIN:
 		case GDScriptParser::DataType::ENUM:
+		case GDScriptParser::DataType::TRAIT:
+		case GDScriptParser::DataType::TYPE_PARAMETER:
 		case GDScriptParser::DataType::RESOLVING:
 		case GDScriptParser::DataType::UNRESOLVED:
 			break; // Already solved before.
@@ -10316,6 +10340,8 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 		case GDScriptParser::DataType::VARIANT:
 		case GDScriptParser::DataType::BUILTIN:
 		case GDScriptParser::DataType::ENUM:
+		case GDScriptParser::DataType::TRAIT:
+		case GDScriptParser::DataType::TYPE_PARAMETER:
 		case GDScriptParser::DataType::RESOLVING:
 		case GDScriptParser::DataType::UNRESOLVED:
 			break; // Already solved before.
