@@ -141,7 +141,7 @@ entirely in the analyzer.
   names inside their function.
 
 Noticed while testing, pre-existing and left alone: the completion guesser
-drops the declared element type of a local initialised with an array literal
+drops the declared element type of a local initialized with an array literal
 (`var words: Array[String] = ["a"]` is guessed as plain `Array`), so
 completion on a generic call's result is only precise when the argument's
 element type survives. The analyzer itself is unaffected.
@@ -162,7 +162,7 @@ element type survives. The analyzer itself is unaffected.
   virtual dispatch and varargs, and it invents a calling convention upstream
   does not have. Monomorphising per binding was rejected too: a script in
   another file can call a generic function with a binding the defining
-  script never saw, so the specialisations cannot all be known at compile
+  script never saw, so the specializations cannot all be known at compile
   time.
 
 ## As built (increment 3, the sound part)
@@ -234,7 +234,7 @@ var ints: Pool[int] = Pool.new()
   spelling is not available**: `new()` with no base is already valid GDScript
   and constructs the *enclosing script*, verified by running it, so
   repurposing it would silently change what existing code means.
-- A generic `class_name`. Naming a *specialisation* covers the ground instead
+- A generic `class_name`. Naming a *specialization* covers the ground instead
   (see increment 6 below), and it is the better shape: the editor cannot offer
   a node type that still needs arguments.
 - A qualified generic type (`Lib.Pool[int]`) **is** supported now; it was not,
@@ -346,7 +346,7 @@ including a user's own structs, and is the smaller primitive: a named
 `Addable` could later be sugar for one. The cost is that the set is written
 out at each use, which is the trade this took.
 
-## As built (increment 6, extending a specialisation)
+## As built (increment 6, extending a specialization)
 
 ```
 class Pool[T]:

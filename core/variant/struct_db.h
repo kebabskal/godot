@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  struct_db.h                                                            */
+/*  struct_db.h                                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -46,6 +46,11 @@ public:
 		Variant::Type type = Variant::NIL;
 		Variant default_value;
 		StringName class_name; // For `OBJECT` fields.
+
+		// A constructor rather than aggregate initialization, so fields that are not objects can
+		// leave out `class_name` without tripping `-Wmissing-field-initializers` (an error on Clang).
+		FieldDef(const StringName &p_name, Variant::Type p_type, const Variant &p_default_value = Variant(), const StringName &p_class_name = StringName()) :
+				name(p_name), type(p_type), default_value(p_default_value), class_name(p_class_name) {}
 	};
 
 	// Creates and registers a layout. Returns null (and reports an error) if the name is taken or a

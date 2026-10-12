@@ -85,7 +85,7 @@ Decisions (Oct 2026):
 - The game stays a separate process; everything goes through the debugger
   protocol. In-process play mode is out (global singletons, crashes take the
   editor down, upstream rejected it). Shared memory buys nothing for the
-  inspector (the cost is serialisation and full resends, not the socket);
+  inspector (the cost is serialization and full resends, not the socket);
   it only pays off later for GPU texture sharing.
 - The running game is the preview. An edit-mode Game view (scene camera,
   UI overlay, editor-only lighting kept out by layer) is parked: live edit
@@ -673,7 +673,7 @@ Later phases:
      the body, so `_guess_expecting_callable()` still saw "this argument wants
      a `Callable`" and suppressed them. Inside the body that is the wrong
      question: the call wants the lambda, not what the lambda computes.
-     Upstream already asserts the intended behaviour for block lambdas
+     Upstream already asserts the intended behavior for block lambdas
      (`completion/no_parenthesis_when_callable_is_expected/lambda_body.gd`);
      the arrow path simply never got it. Parsing an arrow body now hides the
      stack and restores it afterwards, so a call written inside the body still
@@ -741,7 +741,7 @@ Later phases:
   `reduce_lambda()` before its body, so the inferred return is not there yet --
   true, but not sufficient on its own); letting an inferred return type into
   `set_callable_signature_from_function()`; and dropping the `is_hard_type()`
-  guard in `bind_type_parameters()`. The third did change behaviour, for the
+  guard in `bind_type_parameters()`. The third did change behavior, for the
   worse: the compile-time error became a runtime one, because `T` bound to
   something that substituted back to an unsafe type. The real fix needs the
   binding rule for inferred types thought through rather than the guard
@@ -820,7 +820,7 @@ Later phases:
   answering whether a "module" file could hold generics.
   Context for the rest of feedback item 9, from the discussion that turned it
   around: a generic `class_name` is the wrong shape, because the editor cannot
-  offer a node type that still needs arguments. Naming a *specialisation* is the
+  offer a node type that still needs arguments. Naming a *specialization* is the
   right shape -- `class_name CertainTileMap extends TileMap[CertainTile]` has no
   type parameters, so it behaves like any other class in a node slot or an
   export. That needs `extends` to accept arguments (parser) and member lookup to
@@ -866,7 +866,7 @@ Later phases:
 - `extends Pool[int]` landed, which closes feedback item 9 in the shape the
   feedback itself proposed: a generic `class_name` is wrong because the editor
   cannot offer a node type that still needs arguments, but naming a
-  *specialisation* gives an ordinary class that can take a `class_name`, sit in
+  *specialization* gives an ordinary class that can take a `class_name`, sit in
   a node slot and be exported. Verified end to end with
   `class_name CertainGrid extends GridBase.Grid[CertainTile]` in a scanned
   project, used from another script by its global name.
@@ -956,7 +956,7 @@ Later phases:
     drag-and-drop. Verified by driving the real picker and
     `EditorInspector.instantiate_property_editor()` from a headless editor
     plugin: Player refused, Boss and Enemy accepted, a script-path root
-    honoured, the plain export untouched. That run also caught a wrong message
+    honored, the plain export untouched. That run also caught a wrong message
     ("only accepts 'PackedScene'" about a `PackedScene`), now specific to the
     root.
   - Quick Load from a typed slot lists only matching scenes, through
@@ -1118,7 +1118,7 @@ Later phases:
   `PROPERTY_HINT_SCENE_ROOT_TYPE` per element; the inspector's array and
   dictionary editors used to read an element hint string as a class name,
   which for this hint is the root type, so they now map it to `PackedScene`
-  (initialising an empty collection, the drop filter) and show
+  (initializing an empty collection, the drop filter) and show
   `Array[PackedScene[Enemy]]` as the label. Dropped files are filtered
   through `EditorSceneRootIndex` and re-checked after loading. Verified
   headlessly: the label, and an added element's picker carrying the root.
@@ -1172,7 +1172,7 @@ Later phases:
   one place without pressing Play; the debugger's error panel only shows
   runtime errors). `@required` sets a new core flag,
   `PROPERTY_USAGE_REQUIRED` (bit 30), so the editor needs no GDScript
-  knowledge: the Scene dock adds a warning, the inspector colours the
+  knowledge: the Scene dock adds a warning, the inspector colors the
   label, and `ProblemsDock` lists it. Strict mode sets the flag on every
   non-nullable object export; `T?` opts out. Debug builds report an empty
   one at the end of the frame the node got `NOTIFICATION_READY` (deferred
@@ -1286,7 +1286,7 @@ work are recorded as such so they are not "fixed" twice.
    put arguments, so this needs design, not just parsing. **Done**, in a better
    shape than asked: a generic `class_name` is not the answer, since the editor
    cannot offer a node type that needs arguments. `class_name X extends Pool[int]`
-   names the specialisation instead, and that is an ordinary class.
+   names the specialization instead, and that is an ordinary class.
 
 Order these imply: 6 (small, self-contained, high daily value), then 3, then
 1+2 together, then 9, then 5 and 7 which both need a decision first.

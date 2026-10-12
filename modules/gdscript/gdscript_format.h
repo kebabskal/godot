@@ -38,7 +38,7 @@
 //
 //     [[fill]align][sign][#][0][width][grouping][.precision][type]
 //
-// align: `<` left, `>` right, `^` centre, `=` pad after the sign. sign: `+`, `-`, or ` `.
+// align: `<` left, `>` right, `^` center, `=` pad after the sign. sign: `+`, `-`, or ` `.
 // `#`: `0b`/`0o`/`0x` prefixes. `0`: pad with zeros after the sign. grouping: `,` or `_`.
 // type: `d` `b` `o` `x` `X` for integers; `f` `F` `e` `E` `g` `G` `%` for numbers; `s` for text.
 struct GDScriptFormatSpec {

@@ -417,7 +417,7 @@
 			]
 		},
 		"fstring": {
-			"comment": "`f\"{name} has {hp:.1f} HP\"`. The fields are code, so they are coloured as code, and the rule starts at the `f`, before the bundled string rule's quote.",
+			"comment": "`f\"{name} has {hp:.1f} HP\"`. The fields are code, so they are colored as code, and the rule starts at the `f`, before the bundled string rule's quote.",
 			"patterns": [
 				{
 					"include": "#fstring_triple_double"

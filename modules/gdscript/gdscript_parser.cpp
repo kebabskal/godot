@@ -1069,7 +1069,7 @@ void GDScriptParser::parse_extends() {
 		current_class->extends.push_back(parse_identifier());
 	}
 
-	// `extends Pool[int]`: naming a specialisation, so the derived class has no type parameters of
+	// `extends Pool[int]`: naming a specialization, so the derived class has no type parameters of
 	// its own and behaves like any other class.
 	if (match(GDScriptTokenizer::Token::BRACKET_OPEN)) {
 		do {

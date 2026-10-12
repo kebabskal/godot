@@ -105,106 +105,106 @@ struct Fixture {
 };
 
 TEST_SUITE("[Modules][GDScript][SceneRootIndex]") {
-TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Engine class roots") {
-	EditorSceneRootIndex index;
-	CHECK(index.match(at("sprite.tscn"), "Sprite2D") == Match::MATCH);
-	CHECK(index.match(at("sprite.tscn"), "Node2D") == Match::MATCH);
-	CHECK(index.match(at("sprite.tscn"), "Control") == Match::NO_MATCH);
-	CHECK(index.match(at("boss.tscn"), "Sprite2D") == Match::NO_MATCH);
-}
-
-TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Script roots, followed one file at a time") {
-	EditorSceneRootIndex index;
-	// boss.gd extends enemy.gd by path, which declares the class.
-	CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
-	CHECK(index.match(at("boss.tscn"), at("enemy.gd")) == Match::MATCH);
-	CHECK(index.match(at("boss.tscn"), at("boss.gd")) == Match::MATCH);
-	CHECK(index.match(at("player.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
-	CHECK(index.match(at("sprite.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
-	// An inherited scene's root comes from its base scene.
-	CHECK(index.match(at("boss_inherited.tscn"), "TestIndexEnemy") == Match::MATCH);
-	CHECK(index.match(at("boss_inherited.tscn"), "Node2D") == Match::MATCH);
-}
-
-TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] What cannot be read from files is unknown, not a mismatch") {
-	EditorSceneRootIndex index;
-	// A built-in script is inside the scene, not in a file to follow.
-	CHECK(index.match(at("builtin.tscn"), "TestIndexEnemy") == Match::UNKNOWN);
-	// Its engine class is still known.
-	CHECK(index.match(at("builtin.tscn"), "Node2D") == Match::MATCH);
-	// A class the editor has not registered yet.
-	CHECK(index.match(at("boss.tscn"), "TestIndexNeverDeclared") == Match::UNKNOWN);
-	// The editor's class list is behind: it names a file that no longer declares the class.
-	ScriptServer::add_global_class("TestIndexGhost", "Node2D", "GDScript", at("player.gd"), false, false);
-	CHECK(index.match(at("player.tscn"), "TestIndexGhost") == Match::UNKNOWN);
-	// A scene that is not there.
-	CHECK(index.match(at("missing.tscn"), "Node2D") == Match::UNKNOWN);
-}
-
-TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Facts are only kept once their file has settled") {
-	EditorSceneRootIndex index;
-	// Read in the second the files were written: a second write in that second would not change
-	// their time, so nothing is kept.
-	EditorSceneRootIndex::unix_time_override = same_second;
-	CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
-	CHECK_FALSE(index.has_cached(at("boss.tscn")));
-	CHECK_FALSE(index.has_cached(at("boss.gd")));
-
-	EditorSceneRootIndex::unix_time_override = later;
-	CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
-	CHECK(index.has_cached(at("boss.tscn")));
-	CHECK(index.has_cached(at("boss.gd")));
-	CHECK(index.has_cached(at("enemy.gd")));
-}
-
-TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Files changed behind its back are seen at once") {
-	EditorSceneRootIndex index;
-	CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
-	CHECK(index.match(at("player.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
-	CHECK(index.match(at("sprite.tscn"), "Sprite2D") == Match::MATCH);
-	REQUIRE(index.has_cached(at("boss.gd")));
-
-	// Rewritten without telling anyone, as an external tool would.
-	wait_for_next_second();
-	write("boss.gd", "extends Node2D\n"); // No longer an enemy, one file up the chain.
-	write("player.gd", "extends \"enemy.gd\"\n"); // Now one.
-	write("sprite.tscn", "[gd_scene format=3]\n\n[node name=\"Root\" type=\"Control\"]\n");
-
-	CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
-	CHECK(index.match(at("boss_inherited.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
-	CHECK(index.match(at("player.tscn"), "TestIndexEnemy") == Match::MATCH);
-	CHECK(index.match(at("sprite.tscn"), "Sprite2D") == Match::NO_MATCH);
-
-	// A file that is deleted is forgotten.
-	DirAccess::remove_absolute(at("sprite.tscn"));
-	CHECK(index.match(at("sprite.tscn"), "Control") == Match::UNKNOWN);
-	CHECK_FALSE(index.has_cached(at("sprite.tscn")));
-}
-
-TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Saved facts are checked against the disk too") {
-	const String cache = at("index_cache");
-	{
+	TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Engine class roots") {
 		EditorSceneRootIndex index;
-		index.load(cache);
-		CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
-		index.save();
+		CHECK(index.match(at("sprite.tscn"), "Sprite2D") == Match::MATCH);
+		CHECK(index.match(at("sprite.tscn"), "Node2D") == Match::MATCH);
+		CHECK(index.match(at("sprite.tscn"), "Control") == Match::NO_MATCH);
+		CHECK(index.match(at("boss.tscn"), "Sprite2D") == Match::NO_MATCH);
 	}
-	{
+
+	TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Script roots, followed one file at a time") {
 		EditorSceneRootIndex index;
-		index.load(cache);
+		// boss.gd extends enemy.gd by path, which declares the class.
+		CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
+		CHECK(index.match(at("boss.tscn"), at("enemy.gd")) == Match::MATCH);
+		CHECK(index.match(at("boss.tscn"), at("boss.gd")) == Match::MATCH);
+		CHECK(index.match(at("player.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
+		CHECK(index.match(at("sprite.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
+		// An inherited scene's root comes from its base scene.
+		CHECK(index.match(at("boss_inherited.tscn"), "TestIndexEnemy") == Match::MATCH);
+		CHECK(index.match(at("boss_inherited.tscn"), "Node2D") == Match::MATCH);
+	}
+
+	TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] What cannot be read from files is unknown, not a mismatch") {
+		EditorSceneRootIndex index;
+		// A built-in script is inside the scene, not in a file to follow.
+		CHECK(index.match(at("builtin.tscn"), "TestIndexEnemy") == Match::UNKNOWN);
+		// Its engine class is still known.
+		CHECK(index.match(at("builtin.tscn"), "Node2D") == Match::MATCH);
+		// A class the editor has not registered yet.
+		CHECK(index.match(at("boss.tscn"), "TestIndexNeverDeclared") == Match::UNKNOWN);
+		// The editor's class list is behind: it names a file that no longer declares the class.
+		ScriptServer::add_global_class("TestIndexGhost", "Node2D", "GDScript", at("player.gd"), false, false);
+		CHECK(index.match(at("player.tscn"), "TestIndexGhost") == Match::UNKNOWN);
+		// A scene that is not there.
+		CHECK(index.match(at("missing.tscn"), "Node2D") == Match::UNKNOWN);
+	}
+
+	TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Facts are only kept once their file has settled") {
+		EditorSceneRootIndex index;
+		// Read in the second the files were written: a second write in that second would not change
+		// their time, so nothing is kept.
+		EditorSceneRootIndex::unix_time_override = same_second;
+		CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
+		CHECK_FALSE(index.has_cached(at("boss.tscn")));
+		CHECK_FALSE(index.has_cached(at("boss.gd")));
+
+		EditorSceneRootIndex::unix_time_override = later;
+		CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
+		CHECK(index.has_cached(at("boss.tscn")));
 		CHECK(index.has_cached(at("boss.gd")));
-		CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
+		CHECK(index.has_cached(at("enemy.gd")));
 	}
 
-	// Changed while the editor was closed.
-	wait_for_next_second();
-	write("boss.gd", "extends Node2D\n");
-	{
+	TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Files changed behind its back are seen at once") {
 		EditorSceneRootIndex index;
-		index.load(cache);
+		CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
+		CHECK(index.match(at("player.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
+		CHECK(index.match(at("sprite.tscn"), "Sprite2D") == Match::MATCH);
+		REQUIRE(index.has_cached(at("boss.gd")));
+
+		// Rewritten without telling anyone, as an external tool would.
+		wait_for_next_second();
+		write("boss.gd", "extends Node2D\n"); // No longer an enemy, one file up the chain.
+		write("player.gd", "extends \"enemy.gd\"\n"); // Now one.
+		write("sprite.tscn", "[gd_scene format=3]\n\n[node name=\"Root\" type=\"Control\"]\n");
+
 		CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
+		CHECK(index.match(at("boss_inherited.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
+		CHECK(index.match(at("player.tscn"), "TestIndexEnemy") == Match::MATCH);
+		CHECK(index.match(at("sprite.tscn"), "Sprite2D") == Match::NO_MATCH);
+
+		// A file that is deleted is forgotten.
+		DirAccess::remove_absolute(at("sprite.tscn"));
+		CHECK(index.match(at("sprite.tscn"), "Control") == Match::UNKNOWN);
+		CHECK_FALSE(index.has_cached(at("sprite.tscn")));
 	}
-}
+
+	TEST_CASE_FIXTURE(Fixture, "[SceneRootIndex] Saved facts are checked against the disk too") {
+		const String cache = at("index_cache");
+		{
+			EditorSceneRootIndex index;
+			index.load(cache);
+			CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
+			index.save();
+		}
+		{
+			EditorSceneRootIndex index;
+			index.load(cache);
+			CHECK(index.has_cached(at("boss.gd")));
+			CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::MATCH);
+		}
+
+		// Changed while the editor was closed.
+		wait_for_next_second();
+		write("boss.gd", "extends Node2D\n");
+		{
+			EditorSceneRootIndex index;
+			index.load(cache);
+			CHECK(index.match(at("boss.tscn"), "TestIndexEnemy") == Match::NO_MATCH);
+		}
+	}
 } // TEST_SUITE
 
 } // namespace TestSceneRootIndex

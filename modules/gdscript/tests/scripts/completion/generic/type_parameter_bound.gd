@@ -4,5 +4,5 @@ trait Named:
 	func get_name() -> String:
 		return "?"
 
-class Registry[T: Nam➡]:
+class Registry[T: Na➡]:
 	pass

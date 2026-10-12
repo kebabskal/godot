@@ -4902,7 +4902,7 @@ void GDScriptAnalyzer::reduce_assignment(GDScriptParser::AssignmentNode *p_assig
 	}
 
 	if (!narrowed_locals.is_empty() && p_assignment->assignee->type == GDScriptParser::Node::IDENTIFIER) {
-		// Whatever an earlier test proved about this local, the new value need not honour it.
+		// Whatever an earlier test proved about this local, the new value need not honor it.
 		const void *key = narrowing_key(static_cast<GDScriptParser::IdentifierNode *>(p_assignment->assignee));
 		if (key != nullptr) {
 			narrowed_locals.erase(key);
@@ -10270,7 +10270,7 @@ bool GDScriptAnalyzer::check_type_compatibility(const GDScriptParser::DataType &
 	}
 
 	// A generic class is invariant in its type arguments: a `Pool[String]` is not a `Pool[int]`.
-	// A value with no arguments (`Pool.new()`) still fits, so it can initialise either.
+	// A value with no arguments (`Pool.new()`) still fits, so it can initialize either.
 	if (p_target.kind == GDScriptParser::DataType::CLASS && p_source.kind == GDScriptParser::DataType::CLASS &&
 			p_target.class_type != nullptr && !p_target.class_type->type_parameters.is_empty() &&
 			p_target.has_container_element_types() && p_source.has_container_element_types()) {

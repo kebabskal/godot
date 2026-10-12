@@ -794,7 +794,7 @@
 				[/codeblock]
 				A required property on the root node of a scene is reported where that scene is instantiated rather than in the scene itself, since that is usually where it is set.
 				In strict mode, an exported property whose type is an object type without [code]?[/code] is required without the annotation. Write [code]@export var target: Node3D?[/code] for one that may stay empty.
-				[b]Note:[/b] [code]@required[/code] has no effect on types that cannot be empty, such as [int] or [Vector3], and using it on them is an error.
+				[b]Note:[/b] [code skip-lint]@required[/code] has no effect on types that cannot be empty, such as [int] or [Vector3], and using it on them is an error.
 			</description>
 		</annotation>
 		<annotation name="@rpc">

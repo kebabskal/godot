@@ -706,10 +706,10 @@ print(Lib.Element.ICE)
 `@abstract` keeps the file from being instantiated, which is what you want for
 one that exists only to hold declarations.
 
-### Naming a specialisation
+### Naming a specialization
 
 A generic class cannot have a `class_name`: the editor has no way to offer a
-node type that still needs its arguments. Name the *specialisation* instead,
+node type that still needs its arguments. Name the *specialization* instead,
 and you get an ordinary class that works in a node slot, an `@export` and
 anywhere else:
 
@@ -1011,7 +1011,7 @@ func find(id: String) -> Item?:
     return inventory.get(id)
 ```
 
-This is new information, not new behaviour: an object-typed variable could
+This is new information, not new behavior: an object-typed variable could
 always hold null, and GDScript simply had no way to say whether that was
 intended. Now it does, and the two operators below let you act on it.
 
@@ -1237,7 +1237,7 @@ print(f"{ratio:.1%}")       # 75.5%       as a percentage
 print(f"{hp:x} {hp:#b}")    # 2a 0b101010 hex and binary
 print(f"{name:<8}|")        # Bob     |   left-aligned in 8 columns
 print(f"{name:>8}|")        #      Bob|   right-aligned
-print(f"{name:*^9}")        # ***Bob***   centred, padded with *
+print(f"{name:*^9}")        # ***Bob***   centered, padded with *
 print(f"{-7:+} {7:+}")      # -7 +7       always show the sign
 ```
 
@@ -1451,7 +1451,7 @@ is on by default). On top of what mainline already syncs, this fork sends:
 
 - shader code as you type it in the shader editor, as soon as it compiles,
   so a half-typed line never breaks the running game;
-- colours while you drag them in the inspector's colour picker, not only
+- colors while you drag them in the inspector's colour picker, not only
   once you close it;
 - any shader, material or other resource you save, so a `.tres` changed by
   a tool or a script reaches the game too.
@@ -1464,7 +1464,7 @@ shows you about your code it asks this fork's editor for over the language
 server, so completion, hovers, go-to-definition and errors already know
 about structs, traits and generics.
 
-The one thing the extension answers by itself is syntax colouring, from a
+The one thing the extension answers by itself is syntax coloring, from a
 grammar file baked into it. That grammar predates these features, so
 `struct`, `uses`, `=>`, type parameters, `.IDLE`, `-> (bool, int)` and f-strings come out looking like
 ordinary identifiers or stray punctuation. [`misc/vscode/gdscript-fork-syntax`](misc/vscode/gdscript-fork-syntax)
@@ -1480,7 +1480,7 @@ Everything on the original list is done.
 
 Next: editing a running game. Every change made in the editor should show
 up in the game straight away, including shaders, materials, textures and
-colours while you drag the picker. After that, inspecting the running 3D
+colors while you drag the picker. After that, inspecting the running 3D
 scene: a live scene tree and inspector, a move/rotate/scale gizmo in the
 game, and a free-camera view of the running scene next to the Game view.
 

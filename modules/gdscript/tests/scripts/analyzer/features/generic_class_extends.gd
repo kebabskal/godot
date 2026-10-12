@@ -7,7 +7,7 @@ class Pool[T]:
 	func first() -> T:
 		return last
 
-# Naming a specialisation: `IntPool` has no type parameters of its own, so it is an
+# Naming a specialization: `IntPool` has no type parameters of its own, so it is an
 # ordinary class everywhere a class can be used.
 class IntPool extends Pool[int]:
 	func doubled() -> int:
