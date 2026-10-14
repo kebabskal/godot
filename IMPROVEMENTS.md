@@ -828,6 +828,25 @@ untyped array internally, so the typed one is produced where the call
 happens, which costs one extra pass over the result. If the lambda returns
 something that does not fit, you get a clear error at the call.
 
+The methods that *test* what the callable returns, `any`, `all`, `filter`,
+`sort_custom` and `bsearch_custom`, reject a callable that returns nothing,
+since nothing is never true and the condition would silently never hold:
+
+```gdscript
+var pads: Array[Pad] = [Pad.new()]
+pads.any(func(pad) -> void: pad.hit(p))   # error: "any()" uses what the callable returns,
+                                           #        but this one returns nothing
+pads.any(pad => pad.mark(p))               # error: same, `mark()` is void
+pads.any(pad => pad.hit(p))                # fine, `hit()` returns a bool
+```
+
+A written `-> void` is caught on a plain `Array` too, as is a named function
+passed by name. The arrow form is caught when the body's return type is
+known, which needs the element type: on a plain `Array`, `pad` is a Variant
+and `pad.mark(p)` could return anything. `map` is left alone: a lambda that
+returns nothing there maps every element to `null`, which is occasionally
+what is wanted.
+
 ### Signal handlers are typed too
 
 A signal's declared parameters reach the lambda you connect to it, so the
@@ -1471,6 +1490,22 @@ ordinary identifiers or stray punctuation. [`misc/vscode/gdscript-fork-syntax`](
 fixes that: copy it into `~/.vscode/extensions/` and restart. It layers on
 top of godot-tools rather than replacing it, so the extension still updates
 from the marketplace as usual.
+
+The other thing the extension does by itself is **Format Document**. Its
+formatter tokenizes the file with that same baked-in grammar, loaded
+directly from its own files rather than through VS Code, so the injection
+grammar cannot reach it: it still sees `=>` as `=` followed by `>` and
+rewrites `n => n * 2` to `n = > n * 2`, which does not parse. Until this
+fork has its own formatter (see the roadmap), turn the extension's off for
+GDScript, in `settings.json`:
+
+```json
+"[gdscript]": {
+    "editor.formatOnSave": false
+}
+```
+
+and avoid running **Format Document** on files that use short lambdas.
 
 ---
 

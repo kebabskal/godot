@@ -290,6 +290,7 @@ public:
 	void apply_expected_lambda_signature(GDScriptParser::ExpressionNode *p_argument, const GDScriptParser::DataType &p_expected);
 	// Resolves a lambda's body ahead of the deferred pass, so its return type is known while the
 	// call that receives it is still being reduced. Idempotent.
+	void check_callable_argument_returns(const GDScriptParser::CallNode *p_call, GDScriptParser::ExpressionNode *p_argument, const GDScriptParser::DataType &p_expected, bool p_report);
 	void resolve_lambda_body_now(GDScriptParser::LambdaNode *p_lambda);
 
 	// Typed callables: `func(A, B) -> R`. The signature is analyzer-only.

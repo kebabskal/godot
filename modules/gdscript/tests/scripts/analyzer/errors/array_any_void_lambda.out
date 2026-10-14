@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 10: "any()" uses what the callable returns, but this one returns nothing. It needs a "bool".

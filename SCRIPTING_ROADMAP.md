@@ -445,6 +445,28 @@ Later phases:
   in `reduce_call()` (utility functions, built-ins, struct and trait
   methods, scripts). An arrow lambda body passes `p_allow_void` so a body
   that returns nothing simply makes the lambda return nothing.
+  Third trap, found in a game: `lily_pads.any(func(lp) -> void: ...)` is
+  always false and nothing said so, because `MethodInfo` describes the
+  parameter as a bare `Callable` and so the argument check had no return
+  type to compare. The built-in table now also serves a plain `Array`
+  (Variant parameter, the same return type), and a callable that returns
+  nothing passed to `any`/`all`/`filter`/`sort_custom`/`bsearch_custom` is
+  an error. The lambda's body is resolved at the call for that, as `map`
+  already did, since an arrow body's return type only exists after it.
+  Not caught: an untyped block lambda with no `return` at all, whose return
+  type stays "untyped" as upstream has it, and an arrow body on a plain
+  `Array`, where the parameter is a Variant and the body's call could
+  return anything. Trap: a lambda's *inferred* return type is soft (set by
+  `resolve_suite()` as `INFERRED`), so the check must not ask for a hard
+  type or the arrow form passes silently, which the first test run showed.
+- godot-tools' **Format Document** rewrites `=>` as `= >`. Its formatter
+  tokenizes with the bundled grammar loaded straight from the extension's
+  files (`src/formatter/textmate.ts`), not through VS Code, so the injection
+  grammar in `misc/vscode` cannot fix it and nothing in this repository can.
+  Documented as "turn format-on-save off for GDScript" in `IMPROVEMENTS.md`;
+  the real fix is item 15, a formatter of our own served over LSP
+  (`textDocument/formatting`), which VS Code would then offer as a second
+  formatter to pick as default.
 - 12 (`for` with two variables) landed: `for key, value in dictionary`
   and `for index, item in` anything else, with optional types on both.
   The VM still yields one value per step; the compiler fills the other

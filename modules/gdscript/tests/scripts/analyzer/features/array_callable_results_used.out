@@ -1,0 +1,12 @@
+GDTEST_OK
+~~ WARNING at line 13: (UNSAFE_METHOD_ACCESS) The method "length()" is not present on the inferred type "Variant" (but may be present on a subtype).
+true
+true
+["bb", "a"]
+["bb", "a"]
+true
+["a", "bb", "cccc"]
+bb
+a
+cccc
+[<null>, <null>, <null>]
