@@ -4347,6 +4347,9 @@ void GDScriptAnalyzer::check_match_exhaustive(GDScriptParser::MatchNode *p_match
 #ifdef DEBUG_ENABLED
 	// Only enums declared in scripts: an engine enum such as `Key` is rarely matched in full, and
 	// listing what is missing would bury the code in names.
+	if (p_match->test == nullptr) {
+		return; // Half-typed `match`; completion and lookup analyze code with parse errors.
+	}
 	const GDScriptParser::DataType &test_type = p_match->test->type_constraint;
 	if (test_type.kind != GDScriptParser::DataType::ENUM || test_type.is_meta_type || !test_type.is_hard_type()) {
 		return;
