@@ -1,0 +1,2 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 7: "sort_custom()" uses what the callable returns, but this one returns nothing. It needs a "bool".

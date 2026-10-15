@@ -161,21 +161,26 @@ bool GDScriptAnalyzer::callable_signatures_compatible(const GDScriptParser::Data
 	return check_type_compatibility(wanted, given, false);
 }
 
-// The callable a built-in container method is given, for a container whose element type is known.
-// `Array[T].map(f)` calls `f` with a `T`, which is what lets a lambda written at the call site take
-// its parameter type from here.
+// The callable a built-in container method is given. `Array[T].map(f)` calls `f` with a `T`, which
+// is what lets a lambda written at the call site take its parameter type from here, and `any(f)`
+// tests what `f` returns, which is what catches an `f` that returns nothing.
 static GDScriptParser::DataType expected_callable_for_builtin(const GDScriptParser::DataType &p_base_type, const StringName &p_method) {
 	GDScriptParser::DataType expected;
-	if (p_base_type.kind != GDScriptParser::DataType::BUILTIN || p_base_type.is_meta_type || p_base_type.builtin_type != Variant::ARRAY || !p_base_type.has_container_element_types()) {
-		return expected;
-	}
-	const GDScriptParser::DataType element = p_base_type.get_container_element_type_or_variant(0);
-	if (!element.is_set() || element.is_variant() || !element.is_hard_type()) {
+	if (p_base_type.kind != GDScriptParser::DataType::BUILTIN || p_base_type.is_meta_type || p_base_type.builtin_type != Variant::ARRAY) {
 		return expected;
 	}
 
 	GDScriptParser::DataType variant_type;
 	variant_type.kind = GDScriptParser::DataType::VARIANT;
+	// A plain `Array` passes whatever it holds, so the lambda's parameter stays untyped; what the
+	// method does with the result is the same either way, which is what the return type records.
+	GDScriptParser::DataType element = variant_type;
+	if (p_base_type.has_container_element_types()) {
+		const GDScriptParser::DataType declared = p_base_type.get_container_element_type_or_variant(0);
+		if (declared.is_set() && !declared.is_variant() && declared.is_hard_type()) {
+			element = declared;
+		}
+	}
 	GDScriptParser::DataType bool_type;
 	bool_type.type_source = GDScriptParser::DataType::ANNOTATED_EXPLICIT;
 	bool_type.kind = GDScriptParser::DataType::BUILTIN;
@@ -300,6 +305,42 @@ void GDScriptAnalyzer::apply_expected_lambda_signature(GDScriptParser::Expressio
 	}
 	if (changed) {
 		set_callable_signature_from_function(lambda->type_constraint, lambda->function);
+	}
+}
+
+// `lily_pads.any(func(lp) -> void: lp.hit(p))` is never true: `any()` tests what the callable
+// returns, and nothing is never true. The same goes for `all()`, `filter()` and the sort and search
+// comparators, so a callable that returns nothing where its result decides something is an error
+// here rather than a condition that silently never holds. Only for a parameter that `MethodInfo`
+// describes as a bare `Callable`; one declared `func(T) -> bool` is checked like any other argument,
+// which is why the lambda's body is resolved now in both cases: its return type comes from there.
+void GDScriptAnalyzer::check_callable_argument_returns(const GDScriptParser::CallNode *p_call, GDScriptParser::ExpressionNode *p_argument, const GDScriptParser::DataType &p_expected, bool p_report) {
+	if (p_argument == nullptr || !p_expected.is_set() || !p_expected.has_callable_signature || p_expected.callable_signature.is_empty()) {
+		return;
+	}
+	const GDScriptParser::DataType &wanted = p_expected.callable_signature[0];
+	const bool wanted_void = wanted.kind == GDScriptParser::DataType::BUILTIN && wanted.builtin_type == Variant::NIL;
+	if (!wanted.is_set() || wanted.is_variant() || !wanted.is_hard_type() || wanted_void) {
+		return; // The result is not used, or anything goes.
+	}
+
+	GDScriptParser::DataType given;
+	if (p_argument->type == GDScriptParser::Node::LAMBDA) {
+		GDScriptParser::LambdaNode *lambda = static_cast<GDScriptParser::LambdaNode *>(p_argument);
+		if (lambda->function == nullptr) {
+			return;
+		}
+		resolve_lambda_body_now(lambda);
+		given = lambda->function->return_type_constraint;
+	} else if (p_argument->type_constraint.has_callable_signature && !p_argument->type_constraint.callable_signature.is_empty()) {
+		given = p_argument->type_constraint.callable_signature[0];
+	} else {
+		return; // A plain `Callable`: nothing is known about what it returns.
+	}
+	// A lambda's inferred return type is not a hard type (see `resolve_suite()`), and a `-> void`
+	// one is, so hardness is not asked about: a `NIL` return type either way means nothing comes back.
+	if (p_report && given.is_set() && given.kind == GDScriptParser::DataType::BUILTIN && given.builtin_type == Variant::NIL) {
+		push_error(vformat(R"*("%s()" uses what the callable returns, but this one returns nothing. It needs a "%s".)*", p_call->function_name, wanted.to_string()), p_argument);
 	}
 }
 
@@ -6533,6 +6574,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 					break;
 				}
 				GDScriptParser::DataType expected = par_type;
+				const bool described_here = !expected.has_callable_signature;
 				if (!expected.has_callable_signature) {
 					expected = expected_callable_for_builtin(base_type, p_call->function_name);
 				}
@@ -6540,6 +6582,7 @@ void GDScriptAnalyzer::reduce_call(GDScriptParser::CallNode *p_call, bool p_is_a
 					expected = expected_callable_for_signal(base_type, p_call->function_name);
 				}
 				apply_expected_lambda_signature(p_call->arguments[i], expected);
+				check_callable_argument_returns(p_call, p_call->arguments[i], expected, described_here);
 				i++;
 			}
 		}

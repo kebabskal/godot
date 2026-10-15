@@ -472,6 +472,50 @@ TEST_SUITE("[Modules][GDScript][LSP][Editor]") {
 		finish_language();
 	}
 
+	TEST_CASE("[workspace][formatting]") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		GDScriptLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+
+		// A document the client opened, as `textDocument/didOpen` delivers it; it need not exist on disk.
+		const String uri = proto->get_workspace()->get_file_uri("res://lsp/formatting_request.gd");
+		Dictionary document;
+		document["uri"] = uri;
+		document["languageId"] = "gdscript";
+		document["version"] = 1;
+		document["text"] = "var f = n=>n*2\n\n\n\n\nvar x=[ 1,2 ]\n";
+		Dictionary open_params;
+		open_params["textDocument"] = document;
+		proto->lsp_did_open(open_params);
+
+		Dictionary identifier;
+		identifier["uri"] = uri;
+		Dictionary params;
+		params["textDocument"] = identifier;
+		Array edits = proto->get_text_document()->formatting(params);
+		REQUIRE(edits.size() == 3);
+
+		Dictionary first = edits[0];
+		CHECK(String(first["newText"]) == "var f = n => n * 2");
+		CHECK(int(Dictionary(Dictionary(first["range"])["start"])["line"]) == 0);
+		CHECK(int(Dictionary(Dictionary(first["range"])["end"])["line"]) == 0);
+		CHECK(int(Dictionary(Dictionary(first["range"])["end"])["character"]) == 14);
+
+		Dictionary second = edits[1]; // Two of the four blank lines go, line endings included.
+		CHECK(String(second["newText"]).is_empty());
+		CHECK(int(Dictionary(Dictionary(second["range"])["start"])["line"]) == 3);
+		CHECK(int(Dictionary(Dictionary(second["range"])["start"])["character"]) == 0);
+		CHECK(int(Dictionary(Dictionary(second["range"])["end"])["line"]) == 5);
+		CHECK(int(Dictionary(Dictionary(second["range"])["end"])["character"]) == 0);
+
+		Dictionary third = edits[2];
+		CHECK(String(third["newText"]) == "var x = [1, 2]");
+		CHECK(int(Dictionary(Dictionary(third["range"])["start"])["line"]) == 5);
+
+		memdelete(efs);
+		finish_language();
+	}
+
 	TEST_CASE("BBCode to markdown conversion") {
 		// This tests the conversion from BBCode docstrings to the markdown markup sent to
 		// the LSP client on documentation requests
