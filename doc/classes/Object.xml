@@ -362,6 +362,28 @@
 				[/codeblock]
 			</description>
 		</method>
+		<method name="_validate" qualifiers="virtual">
+			<return type="void" />
+			<param index="0" name="property" type="StringName" />
+			<description>
+				Called by the editor's Inspector dock after it changes [param property] on this object, including through undo and redo and while a value is still being dragged. Override it to react to edits made in the editor, for example to regenerate procedural content, without writing a setter for every exported property.
+				The value has already been set, so any setter has run. The method is not called when a scene is loaded, when the property is set from code, or in a running game, so no [method Engine.is_editor_hint] check is needed. In GDScript the script must be a [annotation @GDScript.@tool] script, or it does not run in the editor at all.
+				[codeblock]
+				@tool
+				extends Node3D
+
+				@export var random_seed: int
+				@export var desired_count: int
+
+				func _validate(_property: StringName) -&gt; void:
+					generate()
+
+				func generate() -&gt; void:
+					pass # Rebuild the children from the exported values.
+				[/codeblock]
+				[b]Note:[/b] Editing a sub-resource in the Inspector calls [method _validate] on that resource, not on the object that holds it. Connect to the resource's [signal Resource.changed] signal to react to those edits.
+			</description>
+		</method>
 		<method name="_validate_property" qualifiers="virtual">
 			<return type="void" />
 			<param index="0" name="property" type="Dictionary" />

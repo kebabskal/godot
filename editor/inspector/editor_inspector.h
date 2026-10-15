@@ -884,6 +884,7 @@ private:
 
 	void _changed_callback();
 	void _edit_request_change(Object *p_object, const String &p_prop);
+	void _edit_validate(Object *p_object, const String &p_prop);
 
 	void _keying_changed();
 

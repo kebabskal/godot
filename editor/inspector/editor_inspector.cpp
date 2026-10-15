@@ -5730,6 +5730,37 @@ void EditorInspector::_edit_request_change(Object *p_object, const String &p_pro
 	}
 }
 
+// Tells the edited object that the inspector changed one of its properties, by
+// calling its `_validate(property)` if it has one. Runs after the value is set
+// (so after any setter), on direct edits, on undo and on redo, and while a
+// value is still being dragged. Not on scene load or on runtime assignment:
+// that is what makes it usable for regeneration without a setter per property.
+void EditorInspector::_edit_validate(Object *p_object, const String &p_prop) {
+	Object *object = ObjectDB::get_instance(edited_object_id);
+	if (object != p_object) { // May be undoing/redoing for a non edited object, so ignore.
+		return;
+	}
+
+	MultiNodeEdit *mne = Object::cast_to<MultiNodeEdit>(p_object);
+	if (mne) {
+		Node *es = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_edited_scene() : nullptr;
+		if (!es) {
+			return;
+		}
+		for (int i = 0; i < mne->get_node_count(); i++) {
+			Node *n = es->get_node_or_null(mne->get_node(i));
+			if (n && n->has_method(SNAME("_validate"))) {
+				n->call(SNAME("_validate"), StringName(p_prop));
+			}
+		}
+		return;
+	}
+
+	if (p_object->has_method(SNAME("_validate"))) {
+		p_object->call(SNAME("_validate"), StringName(p_prop));
+	}
+}
+
 void EditorInspector::_edit_set(const String &p_name, const Variant &p_value, bool p_refresh_all, const String &p_changed_field) {
 	if (autoclear && editor_property_map.has(p_name)) {
 		for (EditorProperty *E : editor_property_map[p_name]) {
@@ -5763,11 +5794,13 @@ void EditorInspector::_edit_set(const String &p_name, const Variant &p_value, bo
 		} else {
 			_edit_request_change(object, p_name);
 		}
+		_edit_validate(object, p_name);
 
 		emit_signal(_prop_edited, p_name);
 	} else if (Object::cast_to<MultiNodeEdit>(object)) {
 		Object::cast_to<MultiNodeEdit>(object)->set_property_field(p_name, new_value, p_changed_field);
 		_edit_request_change(object, p_name);
+		_edit_validate(object, p_name);
 		emit_signal(_prop_edited, p_name);
 	} else if (Object::cast_to<EditorDebuggerRemoteObjects>(object)) {
 		Object::cast_to<EditorDebuggerRemoteObjects>(object)->set_property_field(p_name, new_value, p_changed_field);
@@ -5839,6 +5872,8 @@ void EditorInspector::_edit_set(const String &p_name, const Variant &p_value, bo
 			undo_redo->add_do_method(this, "_edit_request_change", object, p_name);
 			undo_redo->add_undo_method(this, "_edit_request_change", object, p_name);
 		}
+		undo_redo->add_do_method(this, "_edit_validate", object, p_name);
+		undo_redo->add_undo_method(this, "_edit_validate", object, p_name);
 
 		Resource *r = Object::cast_to<Resource>(object);
 
@@ -6488,6 +6523,7 @@ EditorInspector *EditorInspector::_get_control_parent_inspector(Control *p_contr
 void EditorInspector::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("edit", "object"), &EditorInspector::edit);
 	ClassDB::bind_method("_edit_request_change", &EditorInspector::_edit_request_change);
+	ClassDB::bind_method("_edit_validate", &EditorInspector::_edit_validate);
 	ClassDB::bind_method("get_selected_path", &EditorInspector::get_selected_path);
 	ClassDB::bind_method("get_edited_object", &EditorInspector::get_edited_object);
 	ClassDB::bind_method("collapse_all_folding", &EditorInspector::collapse_all_folding);

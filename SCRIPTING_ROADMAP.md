@@ -71,6 +71,22 @@ Editor and tooling:
 
 14. Typed `PackedScene` exports (slot only accepts a given root type). **Done.**
 15. A formatter.
+16. `_validate(property)`: one editor hook per object instead of a setter
+    with an `is_editor_hint()` guard per export. **Done.** Unity's
+    `OnValidate()`. Bound as an Object core virtual next to
+    `_validate_property`; the Inspector calls it from `_edit_set` after the
+    value is written, through undo/redo as a do/undo method next to
+    `_edit_request_change`, and on `MultiNodeEdit` once per node. Not a
+    setter and not called from `GDScriptInstance::set`, on purpose: the whole
+    point is that scene load and runtime assignment stay silent. Sub-resource
+    edits reach the resource, not its owner. The inspector cannot run without
+    `EditorNode` (`update_tree()` dereferences it), so there is no doctest for
+    the hook itself; it was verified by a headless editor plugin driving the
+    real inspector (`EditorProperty.emit_changed`, `UndoRedo.undo/redo`, a
+    two-node selection): scene open silent, edit/undo/redo each one call with
+    the restored value, code assignment silent, multi-edit once per node. The
+    GDScript suite covers the override signature (`analyzer/features/
+    validate_override.gd`, `analyzer/errors/validate_wrong_signature.gd`).
 
 Critical path: 1 -> 5 -> 4d. Items 4a-4c, the syntax group and the editor
 group are independent and can proceed in any order.

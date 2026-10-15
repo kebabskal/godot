@@ -27,6 +27,7 @@ Contents:
 - [String interpolation](#string-interpolation)
 - [Enums with methods](#enums-with-methods)
 - [Required exports](#required-exports)
+- [Reacting to edits in the Inspector](#reacting-to-edits-in-the-inspector)
 - [Editor support](#editor-support)
 - [Roadmap](#roadmap)
 
@@ -1390,6 +1391,53 @@ non-nullable object export is required without the annotation.
 
 The flag behind it is a property usage flag, `PROPERTY_USAGE_REQUIRED`, so a
 plugin or a `_get_property_list()` can mark properties required as well.
+
+---
+
+## Reacting to edits in the Inspector
+
+A `@tool` script that regenerates something whenever one of its exports is
+changed used to need a setter per property, each with the same guard:
+
+```gdscript
+@export var random_seed: int:
+    set(v):
+        random_seed = v
+        if Engine.is_editor_hint():
+            generate()
+# ... repeated for every export.
+```
+
+The guard is there because a setter runs on every write, including the six
+writes the editor makes while loading the scene, and every assignment in the
+game. Now there is one hook for the whole object, modelled on Unity's
+`OnValidate()`:
+
+```gdscript
+@tool
+extends Node3D
+
+@export var random_seed: int
+@export var desired_count: int
+@export var shore_distance: float
+
+func _validate(_property: StringName) -> void:
+    generate()
+```
+
+`_validate(property)` is called by the Inspector after it changes a property
+on the object, and only then: on the edit itself, on undo and redo of it, and
+on every step while a value is being dragged. It is not called when a scene
+loads, when a property is set from code, or in a running game, so no
+`Engine.is_editor_hint()` check is needed. The value has already been written
+when the hook runs, so a setter the property still has gets to run first.
+The parameter names the property, for the cases where only some of them
+matter.
+
+Editing a sub-resource in the Inspector (a material, a curve) calls
+`_validate` on the resource, not on the node that holds it. Connect to the
+resource's `changed` signal for that, as before. The hook is a virtual on
+`Object`, so it works on resources and plain objects as well as on nodes.
 
 ---
 
