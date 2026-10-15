@@ -1429,7 +1429,7 @@ changed used to need a setter per property, each with the same guard:
 
 The guard is there because a setter runs on every write, including the six
 writes the editor makes while loading the scene, and every assignment in the
-game. Now there is one hook for the whole object, modelled on Unity's
+game. Now there is one hook for the whole object, modeled on Unity's
 `OnValidate()`:
 
 ```gdscript
