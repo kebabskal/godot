@@ -1751,7 +1751,7 @@ struct ServerCapabilities {
 	/**
 	 * The server provides document formatting.
 	 */
-	bool documentFormattingProvider = false;
+	bool documentFormattingProvider = true;
 
 	/**
 	 * The server provides document range formatting.

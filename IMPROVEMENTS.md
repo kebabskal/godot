@@ -1475,6 +1475,32 @@ is on by default). On top of what mainline already syncs, this fork sends:
 - any shader, material or other resource you save, so a `.tres` changed by
   a tool or a script reaches the game too.
 
+### Formatting
+
+The editor formats GDScript on request: **Format Document** in VS Code, or
+any other editor that asks the language server for `textDocument/formatting`.
+It normalizes whitespace and nothing else, so it never changes what a line
+means:
+
+- one space around a binary operator (`=>`, `->`, `??`, `:=` included) and
+  after a comma or a colon, none after a unary one (`-x`, `*args`, `%Name`);
+- none inside brackets or around `.`, `?.` and `?[`, and none before a `(`
+  or `[` that calls or indexes;
+- two spaces before an inline comment, no trailing whitespace, at most two
+  blank lines in a row, none at the start or end of the file.
+
+Indentation is kept as written, and so are strings, f-strings, node paths
+(`$Path/To/%Node`) and comments. A slice keeps the colon spacing it was
+written with (`a[1:2]` and `a[1: 2]` are both left), since a type parameter
+bound (`[T: int]`) shares the brackets. A script that does not tokenize, say
+with an unterminated string or mixed indentation, is left alone rather than
+reshaped.
+
+```gdscript
+var alive=units.filter(u=>u.hp>0)   # becomes
+var alive = units.filter(u => u.hp > 0)
+```
+
 ### VS Code
 
 Keep using the official **godot-tools** extension — there is no forked
@@ -1491,21 +1517,24 @@ fixes that: copy it into `~/.vscode/extensions/` and restart. It layers on
 top of godot-tools rather than replacing it, so the extension still updates
 from the marketplace as usual.
 
-The other thing the extension does by itself is **Format Document**. Its
-formatter tokenizes the file with that same baked-in grammar, loaded
-directly from its own files rather than through VS Code, so the injection
-grammar cannot reach it: it still sees `=>` as `=` followed by `>` and
-rewrites `n => n * 2` to `n = > n * 2`, which does not parse. Until this
-fork has its own formatter (see the roadmap), turn the extension's off for
-GDScript, in `settings.json`:
+The other thing the extension does by itself is **Format Document**, with
+a formatter of its own that tokenizes using that same baked-in grammar. It
+does not know `=>` and rewrites `n => n * 2` to `n = > n * 2`, which does
+not parse. This fork's editor serves its own formatter over the language
+server instead (see [Formatting](#formatting)); to make VS Code use it,
+name the extension as the default formatter for GDScript in `settings.json`:
 
 ```json
 "[gdscript]": {
-    "editor.formatOnSave": false
+    "editor.defaultFormatter": "geequlim.godot-tools",
+    "editor.formatOnSave": true
 }
 ```
 
-and avoid running **Format Document** on files that use short lambdas.
+Both formatters belong to that extension, and VS Code then takes the one
+registered last, which is the language server's (it registers once the
+editor is connected). Without the setting VS Code sees two formatters and
+formats nothing on save until one is chosen.
 
 ---
 
@@ -1519,8 +1548,8 @@ colors while you drag the picker. After that, inspecting the running 3D
 scene: a live scene tree and inspector, a move/rotate/scale gizmo in the
 game, and a free-camera view of the running scene next to the Game view.
 
-Further out: fixed multidimensional arrays of real numbers, a formatter,
-and direct dispatch for trait methods if profiling asks for it.
+Further out: fixed multidimensional arrays of real numbers, and direct
+dispatch for trait methods if profiling asks for it.
 
 Deliberately not planned: a JIT or ahead-of-time compilation, and
 structural (duck-typed) trait conformance.

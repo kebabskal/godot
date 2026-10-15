@@ -31,6 +31,7 @@
 #include "gdscript_text_document.h"
 
 #include "../gdscript.h"
+#include "../gdscript_formatter.h"
 #include "gdscript_extend_parser.h"
 #include "gdscript_language_protocol.h"
 
@@ -52,6 +53,7 @@ void GDScriptTextDocument::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("didSave", "params"), &GDScriptTextDocument::didSave);
 	ClassDB::bind_method(D_METHOD("nativeSymbol", "params"), &GDScriptTextDocument::nativeSymbol);
 	ClassDB::bind_method(D_METHOD("documentSymbol", "params"), &GDScriptTextDocument::documentSymbol);
+	ClassDB::bind_method(D_METHOD("formatting", "params"), &GDScriptTextDocument::formatting);
 	ClassDB::bind_method(D_METHOD("completion", "params"), &GDScriptTextDocument::completion);
 	ClassDB::bind_method(D_METHOD("resolve", "params"), &GDScriptTextDocument::resolve);
 	ClassDB::bind_method(D_METHOD("rename", "params"), &GDScriptTextDocument::rename);
@@ -148,6 +150,58 @@ Array GDScriptTextDocument::documentSymbol(const Dictionary &p_params) {
 	if (parser) {
 		LSP::DocumentSymbol symbol = parser->get_symbols();
 		arr.push_back(symbol.to_json(true));
+	}
+	return arr;
+}
+
+// `textDocument/formatting`: whitespace edits from `GDScriptFormatter`, on the text the client
+// last sent, which is what the parse result holds.
+Array GDScriptTextDocument::formatting(const Dictionary &p_params) {
+	Dictionary params = p_params["textDocument"];
+	String uri = params["uri"];
+	String path = GDScriptLanguageProtocol::get_singleton()->get_workspace()->get_file_path(uri);
+	Array arr;
+
+	ExtendGDScriptParser *parser = GDScriptLanguageProtocol::get_singleton()->get_parse_result(path);
+	if (parser == nullptr) {
+		return arr;
+	}
+	const Vector<String> &lines = parser->get_lines();
+	Vector<GDScriptFormatter::Edit> edits;
+	if (!GDScriptFormatter::format(String("\n").join(lines), edits)) {
+		return arr;
+	}
+
+	// A position's character counts what is in front of the line ending; the carriage return of a
+	// CRLF file is part of the ending.
+	auto line_length = [&lines](int p_line) {
+		const String &line = lines[p_line];
+		return line.ends_with("\r") ? line.length() - 1 : line.length();
+	};
+	const int last = lines.size() - 1;
+	for (const GDScriptFormatter::Edit &edit : edits) {
+		LSP::TextEdit text_edit;
+		if (edit.remove) {
+			if (edit.end_line <= last) {
+				text_edit.range.start.line = edit.line;
+				text_edit.range.end.line = edit.end_line;
+			} else if (edit.line > 0) {
+				// Through the end of the file, which has no line ending to take.
+				text_edit.range.start.line = edit.line - 1;
+				text_edit.range.start.character = line_length(edit.line - 1);
+				text_edit.range.end.line = last;
+				text_edit.range.end.character = line_length(last);
+			} else {
+				text_edit.range.end.line = last;
+				text_edit.range.end.character = line_length(last);
+			}
+		} else {
+			text_edit.range.start.line = edit.line;
+			text_edit.range.end.line = edit.line;
+			text_edit.range.end.character = line_length(edit.line);
+			text_edit.newText = edit.text;
+		}
+		arr.push_back(text_edit.to_json());
 	}
 	return arr;
 }

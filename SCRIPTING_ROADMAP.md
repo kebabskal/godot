@@ -70,7 +70,7 @@ Syntax:
 Editor and tooling:
 
 14. Typed `PackedScene` exports (slot only accepts a given root type). **Done.**
-15. A formatter.
+15. A formatter. **Done.**
 
 Critical path: 1 -> 5 -> 4d. Items 4a-4c, the syntax group and the editor
 group are independent and can proceed in any order.
@@ -459,14 +459,29 @@ Later phases:
   return anything. Trap: a lambda's *inferred* return type is soft (set by
   `resolve_suite()` as `INFERRED`), so the check must not ask for a hard
   type or the arrow form passes silently, which the first test run showed.
-- godot-tools' **Format Document** rewrites `=>` as `= >`. Its formatter
-  tokenizes with the bundled grammar loaded straight from the extension's
-  files (`src/formatter/textmate.ts`), not through VS Code, so the injection
-  grammar in `misc/vscode` cannot fix it and nothing in this repository can.
-  Documented as "turn format-on-save off for GDScript" in `IMPROVEMENTS.md`;
-  the real fix is item 15, a formatter of our own served over LSP
-  (`textDocument/formatting`), which VS Code would then offer as a second
-  formatter to pick as default.
+- 15 (formatter) landed, prompted by godot-tools' **Format Document**
+  rewriting `=>` as `= >`: its formatter tokenizes with the bundled grammar
+  loaded straight from the extension's files (`src/formatter/textmate.ts`),
+  not through VS Code, so the injection grammar in `misc/vscode` cannot
+  reach it. `GDScriptFormatter` (`gdscript_formatter.{h,cpp}`) is a
+  whitespace normalizer driven by the fork's own tokenizer: it decides the
+  gap between each pair of adjacent tokens on a line from their types (and
+  for the ambiguous ones, slices versus type parameter bounds, node paths,
+  f-strings, from the gap that was there) and never touches indentation,
+  strings or comments. It is served as `textDocument/formatting`
+  (`documentFormattingProvider` is on). Design choices: a script that does
+  not tokenize is left alone; the decision is a single ordered rule list in
+  `_gap()`, since the godot-tools one is the same shape and proved it works.
+  Tests: a rule-by-rule suite, a corpus run over every test script checking
+  that the token stream is unchanged and a second pass changes nothing, and
+  a request-level test through the protocol. VS Code selection: both
+  formatters belong to `geequlim.godot-tools`; with
+  `editor.defaultFormatter` set to it, VS Code's provider registry orders
+  equal-score providers newest first (`_compareByScoreAndTime`), and the
+  language client registers after the extension's own, so ours wins. Not
+  done: formatting from inside the Godot script editor (the class is ready
+  for a menu action), range formatting, and a formatter that re-indents or
+  re-wraps, which this one deliberately is not.
 - 12 (`for` with two variables) landed: `for key, value in dictionary`
   and `for index, item in` anything else, with optional types on both.
   The VM still yields one value per step; the compiler fills the other

@@ -32,10 +32,11 @@ the TextMate grammar, which is bundled inside the extension, is static.
 `trait` already highlights without this, because mainline Godot reserves the
 word and the bundled grammar lists it.
 
-It does not reach the extension's **Format Document** command. That formatter
-tokenizes with the bundled grammar loaded from the extension's own files, so
-it still reads `=>` as two operators and rewrites `n => n * 2` to `n = > n * 2`.
-Turn `editor.formatOnSave` off for `[gdscript]` while using short lambdas.
+It does not reach the extension's own **Format Document**, which tokenizes
+with the bundled grammar loaded from the extension's files and so rewrites
+`n => n * 2` as `n = > n * 2`. Use the fork's formatter instead, served by the
+editor over the language server: set `editor.defaultFormatter` to
+`geequlim.godot-tools` for `[gdscript]` (see `IMPROVEMENTS.md`, "Formatting").
 
 The block form of an enum (`enum State:` with methods) also highlights
 correctly without it: the bundled grammar already reads the name as a type and
