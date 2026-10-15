@@ -62,50 +62,6 @@ static bool _is_value_like(Token::Type p_type) {
 	}
 }
 
-// A keyword that is followed by a space (`self` and `super` are values, see above).
-static bool _is_keyword(Token::Type p_type) {
-	switch (p_type) {
-		case Token::IF:
-		case Token::ELIF:
-		case Token::ELSE:
-		case Token::FOR:
-		case Token::WHILE:
-		case Token::BREAK:
-		case Token::CONTINUE:
-		case Token::PASS:
-		case Token::RETURN:
-		case Token::MATCH:
-		case Token::WHEN:
-		case Token::AS:
-		case Token::ASSERT:
-		case Token::AWAIT:
-		case Token::BREAKPOINT:
-		case Token::CLASS:
-		case Token::CLASS_NAME:
-		case Token::TK_CONST:
-		case Token::ENUM:
-		case Token::EXTENDS:
-		case Token::FUNC:
-		case Token::TK_IN:
-		case Token::IS:
-		case Token::NAMESPACE:
-		case Token::PRELOAD:
-		case Token::SIGNAL:
-		case Token::STATIC:
-		case Token::STRUCT:
-		case Token::TRAIT:
-		case Token::VAR:
-		case Token::TK_VOID:
-		case Token::YIELD:
-		case Token::AND:
-		case Token::OR:
-		case Token::NOT:
-			return true;
-		default:
-			return false;
-	}
-}
-
 // An operator that can also be a prefix: `a - b` but `-b`, `a * b` but `*args`, `"%d" % x` but `%Name`.
 static bool _can_be_unary(Token::Type p_type) {
 	switch (p_type) {
