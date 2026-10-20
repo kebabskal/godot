@@ -47,4 +47,10 @@ public:
 	virtual Projection get_view_projection(uint32_t p_view) const = 0;
 
 	virtual RID get_uniform_buffer() const = 0;
+
+	// Directional light shadows, for compositor effects that want to know what's
+	// in shadow. Empty where a renderer doesn't provide them.
+	virtual RID get_directional_shadow_texture() const { return RID(); }
+	virtual RID get_directional_light_buffer() const { return RID(); }
+	virtual uint32_t get_directional_light_count() const { return 0; }
 };

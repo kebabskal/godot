@@ -24,6 +24,26 @@
 				[b]Note:[/b] If more than one view is rendered, this will return a centered transform.
 			</description>
 		</method>
+		<method name="get_directional_light_buffer" qualifiers="const">
+			<return type="RID" />
+			<description>
+				Returns the [RID] of the uniform buffer holding the directional lights used to render this frame, one [code]DirectionalLightData[/code] struct each (see [code]light_data_inc.glsl[/code]). Their shadow matrices map view space positions into the directional shadow atlas, see [method get_directional_shadow_texture]. Only the first [method get_directional_light_count] entries are in use.
+				[b]Note:[/b] Returns an empty [RID] with renderers that don't provide it.
+			</description>
+		</method>
+		<method name="get_directional_light_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of directional lights in [method get_directional_light_buffer].
+			</description>
+		</method>
+		<method name="get_directional_shadow_texture" qualifiers="const">
+			<return type="RID" />
+			<description>
+				Returns the [RID] of the directional shadow atlas: the depth texture every directional light's shadow cascades are rendered into. Sample it with the shadow matrices from [method get_directional_light_buffer] to find out what's in shadow, for example from a [CompositorEffect].
+				[b]Note:[/b] Returns an empty [RID] with renderers that don't provide it, or when no directional shadows are rendered.
+			</description>
+		</method>
 		<method name="get_uniform_buffer" qualifiers="const">
 			<return type="RID" />
 			<description>

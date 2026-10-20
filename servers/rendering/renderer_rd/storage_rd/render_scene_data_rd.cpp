@@ -311,3 +311,15 @@ void RenderSceneDataRD::update_ubo(RID p_uniform_buffer, RSE::ViewportDebugDraw 
 RID RenderSceneDataRD::get_uniform_buffer() const {
 	return uniform_buffer;
 }
+
+RID RenderSceneDataRD::get_directional_shadow_texture() const {
+	return RendererRD::LightStorage::get_singleton()->directional_shadow_get_texture();
+}
+
+RID RenderSceneDataRD::get_directional_light_buffer() const {
+	return RendererRD::LightStorage::get_singleton()->get_directional_light_buffer();
+}
+
+uint32_t RenderSceneDataRD::get_directional_light_count() const {
+	return directional_light_count;
+}
