@@ -1,13 +1,13 @@
 # Working in this fork
 
-- This fork mirrors `godotengine/godot` master. `master` must stay identical
-  to upstream; do all work on feature branches. To resync, fetch master from
-  the godotengine remote, point `master` at it and push it to the fork. Remote
-  names differ between clones: in the main Windows checkout `origin` is
-  godotengine and `kebabskal` is the fork, so there it is
-  `git fetch origin master && git branch -f master origin/master && git push kebabskal master`.
-  Then merge `master` into the feature branch (merge, not rebase: the branch
-  has dozens of commits that would each need their conflicts resolved).
+- `master` on the fork carries this fork's changes on top of
+  `godotengine/godot` master. To pull in upstream, fetch master from the
+  godotengine remote, merge it into `master` (merge, not rebase: the fork has
+  dozens of commits that would each need their conflicts resolved) and push it
+  to the fork. Remote names differ between clones: in the main Windows
+  checkout `origin` is godotengine and `kebabskal` is the fork, so there it is
+  `git fetch origin master`, then `git merge origin/master` on `master`, then
+  `git push kebabskal master`. Feature branches merge `master` the same way.
 - The plan for scripting/GDScript work lives in `SCRIPTING_ROADMAP.md`. Read it
   before starting a scripting task and update it when a decision changes.
 - `IMPROVEMENTS.md` is the user-facing summary of what this fork adds over
