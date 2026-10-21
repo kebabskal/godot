@@ -1,0 +1,256 @@
+name: 📦 Release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create (e.g. v4.8-dev.20261021). Leave empty to only build.
+        type: string
+        default: ""
+
+# Global Settings
+env:
+  # LTO is left off: it multiplies link times and would push the macOS and Windows editors
+  # past the runner time limit.
+  SCONS_FLAGS: >-
+    production=yes
+    lto=none
+    debug_symbols=no
+    module_text_server_fb_enabled=yes
+  SCONS_CACHE_MSVC_CONFIG: true
+  PYTHONIOENCODING: utf8
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.platform }} ${{ matrix.target }}
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-26]
+        target: [editor, template_debug, template_release]
+        include:
+          - os: ubuntu-22.04
+            platform: linuxbsd
+          - os: windows-latest
+            platform: windows
+          - os: macos-26
+            platform: macos
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Setup dependencies (Linux)
+        if: matrix.platform == 'linuxbsd'
+        run: |
+          sudo apt-get update
+          sudo apt-get install libwayland-bin
+
+      - name: Restore Godot build cache
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: release-${{ matrix.platform }}-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Download pre-built AccessKit
+        shell: sh
+        id: accesskit-sdk
+        run: |
+          if python ./misc/scripts/install_accesskit.py; then
+            echo "ACCESSKIT_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::AccessKit SDK installation failed, building without AccessKit support."
+            echo "ACCESSKIT_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download pre-built ANGLE
+        if: matrix.platform != 'linuxbsd'
+        shell: sh
+        id: angle-sdk
+        run: |
+          if python ./misc/scripts/install_angle.py; then
+            echo "ANGLE_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ANGLE SDK installation failed, building without ANGLE support."
+            echo "ANGLE_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download Direct3D 12 SDK components
+        if: matrix.platform == 'windows'
+        shell: sh
+        id: d3d12-sdk
+        run: |
+          if python ./misc/scripts/install_d3d12_sdk_windows.py; then
+            echo "D3D12_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Windows: Direct3D 12 SDK installation failed, building without Direct3D 12 support."
+            echo "D3D12_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Setup Vulkan SDK
+        if: matrix.platform == 'macos'
+        id: vulkan-sdk
+        run: |
+          if sh misc/scripts/install_vulkan_sdk_macos.sh; then
+            echo "VULKAN_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::macOS: Vulkan SDK installation failed, building without Vulkan support."
+            echo "VULKAN_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Compilation
+        if: matrix.platform != 'macos'
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: >-
+            ${{ env.SCONS_FLAGS }}
+            accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }}
+            ${{ matrix.platform == 'windows' && format('angle={0} d3d12={1}', steps.angle-sdk.outputs.ANGLE_ENABLED, steps.d3d12-sdk.outputs.D3D12_ENABLED) || '' }}
+          platform: ${{ matrix.platform }}
+          target: ${{ matrix.target }}
+
+      - name: Compilation (macOS x86_64)
+        if: matrix.platform == 'macos'
+        uses: ./.github/actions/godot-build
+        with:
+          # Silence warning about Metal not being supported in x86_64 builds using `metal=no`.
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }} angle=${{ steps.angle-sdk.outputs.ANGLE_ENABLED }} metal=no
+          platform: macos
+          target: ${{ matrix.target }}
+
+      - name: Compilation (macOS arm64)
+        if: matrix.platform == 'macos'
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }} angle=${{ steps.angle-sdk.outputs.ANGLE_ENABLED }}
+          platform: macos
+          target: ${{ matrix.target }}
+
+      - name: Save Godot build cache
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: release-${{ matrix.platform }}-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Prepare artifact (Linux)
+        if: matrix.platform == 'linuxbsd'
+        run: |
+          rm -rf bin/build_deps
+          strip bin/godot.*
+          ./bin/godot.linuxbsd.${{ matrix.target }}.x86_64 --version
+
+      - name: Prepare artifact (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          Remove-Item bin/build_deps -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force
+          ./bin/godot.windows.${{ matrix.target }}.x86_64.console.exe --version
+
+      - name: Prepare artifact (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          lipo -create ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64 -output ./bin/godot.macos.${{ matrix.target }}.universal
+          rm ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64
+          rm -rf ./bin/build_deps
+          strip bin/godot.*
+          chmod +x bin/godot.*
+          ./bin/godot.macos.${{ matrix.target }}.universal --version
+          if [ "${{ matrix.target }}" = "editor" ]; then
+            # Bundle and ad-hoc sign the editor here, as signing needs macOS.
+            cp -R misc/dist/macos_tools.app bin/Godot.app
+            mkdir -p bin/Godot.app/Contents/MacOS
+            mv bin/godot.macos.editor.universal bin/Godot.app/Contents/MacOS/Godot
+            codesign --force --deep --sign - bin/Godot.app
+            (cd bin && ditto -c -k --keepParent Godot.app Godot.app.zip && rm -rf Godot.app)
+          fi
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-${{ matrix.platform }}-${{ matrix.target }}
+
+  package:
+    runs-on: ubuntu-24.04
+    name: Package and publish
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Package editors and export templates
+        id: package
+        run: |
+          set -e
+          # Must match GODOT_VERSION_FULL_CONFIG, which names the editor's templates folder.
+          VERSION=$(python3 -c 'import version as v; print(f"{v.major}.{v.minor}" + (f".{v.patch}" if v.patch else "") + f".{v.status}{v.module_config}")')
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          A="$PWD/artifacts"
+          mkdir -p dist tpl/templates
+          chmod +x "$A"/godot.linuxbsd.* "$A"/godot.macos.*
+
+          # Editors.
+          (cd "$A" && cp godot.linuxbsd.editor.x86_64 Godot_${TAG}_linux.x86_64 && zip -9 "$OLDPWD/dist/Godot_${TAG}_linux.x86_64.zip" Godot_${TAG}_linux.x86_64)
+          (cd "$A" && cp godot.windows.editor.x86_64.exe Godot_${TAG}_win64.exe && cp godot.windows.editor.x86_64.console.exe Godot_${TAG}_win64_console.exe \
+            && zip -9 "$OLDPWD/dist/Godot_${TAG}_win64.exe.zip" Godot_${TAG}_win64.exe Godot_${TAG}_win64_console.exe)
+          cp "$A/Godot.app.zip" "dist/Godot_${TAG}_macos.universal.zip"
+
+          # Export templates, named as the exporters look them up.
+          T=tpl/templates
+          echo "$VERSION" > $T/version.txt
+          cp "$A/godot.linuxbsd.template_debug.x86_64" $T/linux_debug.x86_64
+          cp "$A/godot.linuxbsd.template_release.x86_64" $T/linux_release.x86_64
+          for t in debug release; do
+            cp "$A/godot.windows.template_$t.x86_64.exe" $T/windows_${t}_x86_64.exe
+            cp "$A/godot.windows.template_$t.x86_64.console.exe" $T/windows_${t}_x86_64_console.exe
+          done
+          mkdir -p macos_template/macos_template.app
+          cp -R misc/dist/macos_template.app/. macos_template/macos_template.app/
+          mkdir -p macos_template/macos_template.app/Contents/MacOS
+          cp "$A/godot.macos.template_debug.universal" macos_template/macos_template.app/Contents/MacOS/godot_macos_debug.universal
+          cp "$A/godot.macos.template_release.universal" macos_template/macos_template.app/Contents/MacOS/godot_macos_release.universal
+          chmod +x macos_template/macos_template.app/Contents/MacOS/*
+          (cd macos_template && zip -9 -r -y "$OLDPWD/$T/macos.zip" macos_template.app)
+          (cd tpl && zip -9 -r "$OLDPWD/dist/Godot_${TAG}_export_templates.tpz" templates)
+
+          ls -l dist $T
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dist
+          path: dist/*
+
+      - name: Publish GitHub release
+        if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          cat > notes.md <<EOF
+          Built from \`${{ github.sha }}\` (Godot ${{ steps.package.outputs.version }} plus this fork's changes; see IMPROVEMENTS.md).
+
+          - Editors: Linux x86_64, Windows x86_64, macOS universal (ad-hoc signed: run \`xattr -cr Godot.app\` after downloading).
+          - Export templates: \`Godot_${TAG}_export_templates.tpz\`, for Linux x86_64, Windows x86_64 and macOS. Install it from the editor's Export Template Manager.
+          EOF
+          gh release create "$TAG" dist/* --target "${{ github.sha }}" --title "$TAG" --notes-file notes.md --prerelease

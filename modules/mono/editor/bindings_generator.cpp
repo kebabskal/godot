@@ -142,6 +142,9 @@ const Vector<String> prop_allowed_inherited_member_hiding = {
 	"TextEdit.TextDirection",
 	"FoldableContainer.TextDirection",
 	"VisualShaderNodeReroute.PortType",
+	// `GodotObject._Validate(property)` and `ScriptLanguageExtension._Validate(script, ...)` are overloads,
+	// but their `MethodName` entries collide.
+	"ScriptLanguageExtension.MethodName._Validate",
 	// The following instances are uniquely egregious violations, hiding `GetType()` from `object`.
 	// Included for the sake of CI, with the understanding that they *deserve* warnings.
 	"GltfAccessor.GetType",
