@@ -63,6 +63,12 @@
 			<description>
 			</description>
 		</method>
+		<method name="formatting">
+			<return type="Array" />
+			<param index="0" name="params" type="Dictionary" />
+			<description>
+			</description>
+		</method>
 		<method name="hover" deprecated="Accessing LSP endpoints directly might lead to unwanted side effects. Connect to the server via TCP, like a regular language server client.">
 			<return type="Variant" />
 			<param index="0" name="params" type="Dictionary" />
