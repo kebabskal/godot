@@ -58,6 +58,7 @@
 #include "core/config/project_settings.h"
 #include "core/core_constants.h"
 #include "core/io/file_access.h"
+#include "scene/main/node.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/scene_string_names.h"
 
@@ -744,6 +745,33 @@ void GDScript::_restore_old_static_data() {
 
 #endif
 
+#ifdef DEBUG_ENABLED
+void GDScript::_initialize_reloaded_members() {
+	// By owner, as the initializers run script code, which may free any of these.
+	LocalVector<ObjectID> owners;
+	{
+		MutexLock lock(GDScriptLanguage::singleton->mutex);
+		for (GDScriptInstance &instance : instances) {
+			if (!instance.reloaded_members.is_empty()) {
+				owners.push_back(instance.owner_id);
+			}
+		}
+	}
+
+	for (const ObjectID &id : owners) {
+		Object *object = ObjectDB::get_instance(id);
+		ScriptInstance *instance = object != nullptr ? object->get_script_instance() : nullptr;
+		if (instance != nullptr && !instance->is_placeholder() && instance->get_script() == this) {
+			static_cast<GDScriptInstance *>(instance)->initialize_reloaded_members();
+		}
+	}
+
+	for (const KeyValue<StringName, Ref<GDScript>> &E : subclasses) {
+		E.value->_initialize_reloaded_members();
+	}
+}
+#endif // DEBUG_ENABLED
+
 Error GDScript::reload(bool p_keep_state) {
 	if (reloading) {
 		return OK;
@@ -911,6 +939,12 @@ Error GDScript::reload(bool p_keep_state) {
 	if (p_keep_state) {
 		// Update the properties in the inspector.
 		update_exports();
+	}
+#endif
+
+#ifdef DEBUG_ENABLED
+	if (can_run && p_keep_state) {
+		_initialize_reloaded_members();
 	}
 #endif
 
@@ -1516,6 +1550,17 @@ void GDScript::clear() {
 		functions_to_clear.insert(static_initializer);
 		static_initializer = nullptr;
 	}
+
+#ifdef DEBUG_ENABLED
+	for (const KeyValue<StringName, GDScriptFunction *> &E : reload_initializers) {
+		functions_to_clear.insert(E.value);
+	}
+	reload_initializers.clear();
+	for (const KeyValue<StringName, GDScriptFunction *> &E : reload_ready_initializers) {
+		functions_to_clear.insert(E.value);
+	}
+	reload_ready_initializers.clear();
+#endif
 
 	_save_orphaned_subclasses();
 
@@ -2124,15 +2169,56 @@ void GDScriptInstance::reload_members() {
 	TightLocalVector<Variant> new_members;
 	new_members.resize(script->member_indices.size());
 
-	// Transfer the old members into their new position.
-	for (KeyValue<StringName, GDScript::MemberInfo> &E : script->member_indices) {
-		const GDScript::MemberInfo *old = script->old_member_indices.getptr(E.key);
-		if (old != nullptr) {
-			Variant value = members[old->index];
-			new_members[E.value.index] = value;
+	reloaded_members.clear();
+
+	// Transfer the old members into their new position. What has no value of the member's type must
+	// not stay as it is: typed code trusts that it has one. `initialize_reloaded_members()` gives it
+	// one, once all of the script can run.
+	for (uint32_t i = 0; i < script->member_info_by_index.size(); i++) {
+		const GDScript::MemberInfo *member = script->member_info_by_index[i];
+		if (member == nullptr) {
+			continue;
 		}
+		const GDScript::MemberInfo *old = script->old_member_indices.getptr(member->name);
+		if (old != nullptr) {
+			const Variant &value = members[old->index];
+			// A freed object is left alone if the type stayed. It is what that code already had.
+			if ((old->data_type == member->data_type && value.get_type() != Variant::NIL) || member->data_type.is_type(value)) {
+				new_members[i] = value;
+				continue;
+			}
+		}
+		reloaded_members.push_back(i);
 	}
 	members = std::move(new_members);
+
+#endif
+}
+
+void GDScriptInstance::initialize_reloaded_members() {
+#ifdef DEBUG_ENABLED
+
+	const LocalVector<int> slots = std::move(reloaded_members);
+	reloaded_members.clear();
+
+	const Node *node = Object::cast_to<Node>(owner);
+	const bool past_ready = node != nullptr && node->is_ready();
+
+	// In the order a new instance would, except that `@onready` members of a node that isn't ready
+	// yet only get their type's default here. `_ready()` will do the rest.
+	for (int pass = 0; pass < (past_ready ? 2 : 1); pass++) {
+		for (int slot : slots) {
+			const StringName name = script->member_info_by_index[slot]->name;
+			for (GDScript *sptr = script.ptr(); sptr != nullptr; sptr = sptr->base.ptr()) {
+				GDScriptFunction **function = (pass == 0 ? sptr->reload_initializers : sptr->reload_ready_initializers).getptr(name);
+				if (function != nullptr) {
+					Callable::CallError err;
+					(*function)->call(this, nullptr, 0, err);
+					break;
+				}
+			}
+		}
+	}
 
 #endif
 }

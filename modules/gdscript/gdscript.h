@@ -181,6 +181,15 @@ private:
 
 	GDScriptFunction *implicit_initializer = nullptr; // `@implicit_new()` special function.
 	GDScriptFunction *implicit_ready = nullptr; // `@implicit_ready()` special function.
+#ifdef DEBUG_ENABLED
+	// What one member starts with, by name, for a live instance that gains it in a hot reload. Those
+	// two functions can't do this: they would run the initializer of every other member again.
+	// `reload_ready_initializers` has the `@onready` members. Kept until the next compilation, since
+	// an inheriting script may be reloaded after this one.
+	HashMap<StringName, GDScriptFunction *> reload_initializers;
+	HashMap<StringName, GDScriptFunction *> reload_ready_initializers;
+	bool recompiling = false; // This class was compiled before, so it may have live instances.
+#endif
 	GDScriptFunction *static_initializer = nullptr; // `@static_initializer()` special function.
 
 	Error _static_init();
@@ -204,6 +213,9 @@ private:
 
 	GDScriptFunction *_super_constructor(GDScript *p_script);
 	void _super_implicit_constructor(GDScript *p_script, GDScriptInstance *p_instance, Callable::CallError &r_error);
+#ifdef DEBUG_ENABLED
+	void _initialize_reloaded_members();
+#endif
 	GDScriptInstance *_create_instance(const Variant **p_args, int p_argcount, Object *p_owner, Callable::CallError &r_error);
 
 	String _get_debug_path() const;
@@ -417,6 +429,10 @@ class GDScriptInstance : public ScriptInstance {
 
 	void _call_implicit_ready_recursively(GDScript *p_script);
 
+#ifdef DEBUG_ENABLED
+	LocalVector<int> reloaded_members; // Slots `reload_members()` had nothing usable for.
+#endif
+
 public:
 	virtual Object *get_owner() override { return owner; }
 
@@ -449,6 +465,7 @@ public:
 	virtual ScriptLanguage *get_language() override;
 
 	void reload_members();
+	void initialize_reloaded_members();
 
 	virtual const Variant get_rpc_config() const override;
 

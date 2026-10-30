@@ -1523,6 +1523,29 @@ is on by default). On top of what mainline already syncs, this fork sends:
 - any shader, material or other resource you save, so a `.tres` changed by
   a tool or a script reaches the game too.
 
+### Adding a member to a script that is running
+
+Save a `@tool` script with a scene open, or reload a script in a running game,
+and the objects already using it keep working. A member the save added starts
+with its real default, as it would on a new object, including one that has to
+be computed:
+
+```gdscript
+@export var depth := 1.5
+@export var depth_curve := make_depth_curve()
+```
+
+Mainline left such a member `null`. With typed code that stops a function
+partway, with `Internal script error! Opcode: ...`, until the scene is reopened.
+
+Only the members that need it are set up. Everything else keeps its value and
+its initializer does not run again, so `var light := MeshInstance3D.new()` does
+not make a second light. A member whose type changed keeps its value if the
+value still fits and starts over if it does not, so `5` in a member that became
+a `float` is reset, not converted. An `@onready` member added to a node past
+`_ready()` is set up on the spot, and one added to a node that isn't ready yet
+waits for `_ready()` as usual.
+
 ### Formatting
 
 The editor formats GDScript on request: **Format Document** in VS Code, or

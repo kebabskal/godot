@@ -1259,6 +1259,23 @@ Later phases:
   `--test-suite="*GDScript*"`. Found by deliberately breaking a new
   completion test and watching the run stay green.
 
+### Hot reload: no `Nil` in members a reload added
+
+`GDScriptInstance::reload_members()` left added members `Nil`, which the typed
+opcodes treat as an internal error. Each class recompiled with
+`p_keep_state` now also compiles one small initializer per member
+(`reload_initializers`, `reload_ready_initializers` for `@onready`), and
+`GDScript::reload()` runs the ones each instance needs once compilation and
+static initialization are done.
+
+Decided: not `@implicit_new()` with the old values restored on top, as first
+proposed. That reruns every initializer, and what it makes for existing members
+can't be cleaned up: a `Node.new()` to free looks the same as a `get_parent()`
+that must not be. The functions stay until the class's next compilation because
+an inheriting script is reloaded after its base and needs the base's. A retyped
+member keeps its value if it fits and is not converted if it doesn't (`5` into
+`float` starts over).
+
 ## Feedback from manual testing (2026-09-17)
 
 First round of hands-on use of the landed features. Each item was reproduced

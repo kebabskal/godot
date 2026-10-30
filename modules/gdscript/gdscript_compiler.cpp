@@ -3068,7 +3068,7 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 			}
 
 			const GDScriptParser::VariableNode *field = member.variable;
-			if (field->is_static) {
+			if (field->is_static || (reload_field != nullptr && field != reload_field)) {
 				continue;
 			}
 
@@ -3100,7 +3100,7 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 				continue;
 			}
 			const GDScriptParser::VariableNode *field = member.variable;
-			if (field->is_static) {
+			if (field->is_static || (reload_field != nullptr && field != reload_field)) {
 				continue;
 			}
 
@@ -3201,6 +3201,8 @@ GDScriptFunction *GDScriptCompiler::_parse_function(Error &r_error, GDScript *p_
 
 	if (is_initializer) {
 		p_script->initializer = gd_function;
+	} else if (reload_field != nullptr) {
+		// The caller keeps it. A lambda inside it isn't any of these either.
 	} else if (is_implicit_initializer) {
 		p_script->implicit_initializer = gd_function;
 	} else if (is_implicit_ready) {
@@ -3395,6 +3397,7 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 
 #ifdef DEBUG_ENABLED
 	p_script->old_member_indices = p_script->member_indices;
+	p_script->recompiling = p_script->implicit_initializer != nullptr;
 #endif // DEBUG_ENABLED
 
 	p_script->clearing = true;
@@ -3440,6 +3443,17 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	memdelete(p_script->implicit_initializer);
 	memdelete(p_script->implicit_ready);
 	memdelete(p_script->static_initializer);
+
+#ifdef DEBUG_ENABLED
+	for (const KeyValue<StringName, GDScriptFunction *> &E : p_script->reload_initializers) {
+		memdelete(E.value);
+	}
+	p_script->reload_initializers.clear();
+	for (const KeyValue<StringName, GDScriptFunction *> &E : p_script->reload_ready_initializers) {
+		memdelete(E.value);
+	}
+	p_script->reload_ready_initializers.clear();
+#endif
 
 	p_script->member_functions.clear();
 	p_script->member_info_by_index.clear();
@@ -3916,6 +3930,31 @@ Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser:
 
 #ifdef DEBUG_ENABLED
 
+	if (p_keep_state && p_script->recompiling) {
+		for (const GDScriptParser::ClassNode::Member &member : p_class->members) {
+			if (member.type != GDScriptParser::ClassNode::Member::VARIABLE || member.variable->is_static) {
+				continue;
+			}
+			const StringName name = member.variable->identifier->name;
+			Error err = OK;
+			reload_field = member.variable;
+			GDScriptFunction *initializer = _parse_function(err, p_script, p_class, nullptr);
+			if (err == OK) {
+				p_script->reload_initializers[name] = initializer;
+			}
+			if (err == OK && member.variable->onready) {
+				GDScriptFunction *ready_initializer = _parse_function(err, p_script, p_class, nullptr, true);
+				if (err == OK) {
+					p_script->reload_ready_initializers[name] = ready_initializer;
+				}
+			}
+			reload_field = nullptr;
+			if (err) {
+				return err;
+			}
+		}
+	}
+
 	//validate instances if keeping state
 
 	if (p_keep_state) {
@@ -4055,6 +4094,15 @@ GDScriptCompiler::ScriptLambdaInfo GDScriptCompiler::_get_script_lambda_replacem
 		info.static_initializer_info = _get_function_lambda_replacement_info(p_script->static_initializer);
 	}
 
+#ifdef DEBUG_ENABLED
+	for (const KeyValue<StringName, GDScriptFunction *> &E : p_script->reload_initializers) {
+		info.reload_initializer_infos.insert(E.key, _get_function_lambda_replacement_info(E.value));
+	}
+	for (const KeyValue<StringName, GDScriptFunction *> &E : p_script->reload_ready_initializers) {
+		info.reload_ready_initializer_infos.insert(E.key, _get_function_lambda_replacement_info(E.value));
+	}
+#endif
+
 	for (const KeyValue<StringName, GDScriptFunction *> &E : p_script->member_functions) {
 		info.member_function_infos.insert(E.key, _get_function_lambda_replacement_info(E.value));
 	}
@@ -4113,6 +4161,12 @@ void GDScriptCompiler::_get_function_ptr_replacements(HashMap<GDScriptFunction *
 
 	for (const KeyValue<StringName, Vector<FunctionLambdaInfo>> &old_kv : p_old_info.member_function_infos) {
 		_get_function_ptr_replacements(r_replacements, old_kv.value, p_new_info != nullptr ? p_new_info->member_function_infos.getptr(old_kv.key) : nullptr);
+	}
+	for (const KeyValue<StringName, Vector<FunctionLambdaInfo>> &old_kv : p_old_info.reload_initializer_infos) {
+		_get_function_ptr_replacements(r_replacements, old_kv.value, p_new_info != nullptr ? p_new_info->reload_initializer_infos.getptr(old_kv.key) : nullptr);
+	}
+	for (const KeyValue<StringName, Vector<FunctionLambdaInfo>> &old_kv : p_old_info.reload_ready_initializer_infos) {
+		_get_function_ptr_replacements(r_replacements, old_kv.value, p_new_info != nullptr ? p_new_info->reload_ready_initializer_infos.getptr(old_kv.key) : nullptr);
 	}
 	for (int i = 0; i < p_old_info.other_function_infos.size(); ++i) {
 		const FunctionLambdaInfo &old_other_info = p_old_info.other_function_infos[i];

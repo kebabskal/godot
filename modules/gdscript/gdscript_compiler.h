@@ -41,6 +41,7 @@ class GDScriptCompiler {
 	const GDScriptParser *parser = nullptr;
 	HashSet<GDScript *> parsed_classes;
 	HashSet<GDScript *> parsing_classes;
+	const GDScriptParser::VariableNode *reload_field = nullptr; // The one member `_parse_function()` initializes, for hot reload.
 	GDScript *main_script = nullptr;
 
 	struct FunctionLambdaInfo {
@@ -68,6 +69,8 @@ class GDScriptCompiler {
 		Vector<FunctionLambdaInfo> static_initializer_info;
 		HashMap<StringName, Vector<FunctionLambdaInfo>> member_function_infos;
 		Vector<FunctionLambdaInfo> other_function_infos;
+		HashMap<StringName, Vector<FunctionLambdaInfo>> reload_initializer_infos;
+		HashMap<StringName, Vector<FunctionLambdaInfo>> reload_ready_initializer_infos;
 		HashMap<StringName, ScriptLambdaInfo> subclass_info;
 	};
 
